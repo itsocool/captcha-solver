@@ -7,7 +7,7 @@ captcha_id = 'kshop'
 captcha_type_list = get_captcha_type_list()
 train_data = captcha_type_list[captcha_id].train_data
 train_data.threshold = 60
-model = Model(train_data=train_data, weights_only=False)
+model = Model(train_data=train_data)
 model.validate_model()
 
 print("Done!")

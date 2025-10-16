@@ -166,11 +166,9 @@ except (AttributeError, TypeError):
 
 class Model:
 
-    def __init__(self, train_data: dataclass.TrainInfo, weights_only = True, save_model=False, save_weights=True, verbose=1):
+    def __init__(self, train_data: dataclass.TrainInfo, hard_mode=False, verbose=1):
         self.train_data = train_data
-        self.weights_only = weights_only
-        self.save_model = save_model
-        self.save_weights = save_weights
+        self.hard_mode = hard_mode
         self.char_to_num = layers.StringLookup(
             vocabulary=train_data.characters, mask_token=None, num_oov_indices=0
         )
@@ -243,13 +241,13 @@ class Model:
         )
         return {"image": image, "label": label}
 
-    def build_model(self, hard_mode=False):
+    def build_model(self):
         # Inputs to the model
         width, height = self.train_data.image_width, self.train_data.image_height
         input_img = layers.Input(shape=(width, height, 1), name="image", dtype="float32")
         labels = layers.Input(name="label", shape=(None,), dtype="float32")
 
-        if hard_mode :
+        if self.hard_mode :
             x = layers.Conv2D(64, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same", name="Conv1")(input_img)
             x = layers.BatchNormalization()(x)
             x = layers.Conv2D(64, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same", name="Conv2")(x)
@@ -273,11 +271,6 @@ class Model:
 
             x = layers.Bidirectional(layers.LSTM(256, return_sequences=True, dropout=0.25, recurrent_dropout=0.1))(x)
             x = layers.Bidirectional(layers.LSTM(128, return_sequences=True, dropout=0.25, recurrent_dropout=0.1))(x)
-
-            # unit = len(list(self.train_data.characters)) + 1
-            # x = layers.Dense(unit, activation="softmax", name="dense2")(x)
-            # output = CTCLayer(name="ctc_loss")(labels, x)
-            # model = keras.models.Model(inputs=[input_img, labels], outputs=output, name="ocr_model_v1")
 
             lr_schedule = keras.optimizers.schedules.ExponentialDecay(
                 initial_learning_rate=0.001,
@@ -326,9 +319,7 @@ class Model:
         epochs=100,
         batch_size=32,
         earlystopping=True,
-        early_stopping_patience: int = 8,
-        save_weights: bool = True,
-        save_model: bool = True,
+        early_stopping_patience: int = 8
     ):
 
         train_dataset, validation_dataset = self.split_dataset(
@@ -379,16 +370,18 @@ class Model:
 
     def load_prediction_model(self):
 
-        if self.weights_only:
-            model = self.build_model()
-            weights_path = self.train_data.get_model_path(weights_only=True)
-            model.load_weights(weights_path)
-        else:
-            weights_path = self.train_data.get_model_path(weights_only=False)
-            model = keras.models.load_model(weights_path, custom_objects={"CTCLayer": CTCLayer})
+        # if self.weights_only:
+        #     model = self.build_model(hard_mode=True)
+        #     weights_path = self.train_data.get_model_path(weights_only=True)
+        #     model.load_weights(weights_path)
+        # else:
+        model_dir = self.train_data.get_model_path(weights_only=False)
+        model:keras.models.Model = keras.models.load_model(model_dir, custom_objects={"CTCLayer": CTCLayer})
+        input_layer = model.input[0]
+        output_layer = model.get_layer(name="dense2").output
 
         self.predict_model = keras.models.Model(
-            model.input[0], model.get_layer(name="dense2").output
+            input_layer, output_layer
         )
 
         return self.predict_model

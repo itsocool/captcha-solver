@@ -16,13 +16,11 @@ early_stopping_patience = 16
 save_weights = True
 save_model = True
 
-model = Model(train_data=train_data, save_model=save_model, save_weights=save_weights) 
+model = Model(train_data=train_data, hard_mode=True) 
 model.train_model(
     epochs=epochs,
     batch_size=batch_size,
     earlystopping=earlystopping,
-    early_stopping_patience=early_stopping_patience,
-    save_weights=save_weights,
-    save_model=save_model)
+    early_stopping_patience=early_stopping_patience)
 
 print("Done!")
