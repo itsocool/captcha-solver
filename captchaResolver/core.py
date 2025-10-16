@@ -1,4 +1,8 @@
-import os, time
+import os
+import time
+from typing import Optional
+from pathlib import Path
+
 # os.environ["KERAS_BACKEND"] = "tensorflow"
 from PIL import Image
 import numpy as np
@@ -23,26 +27,8 @@ def get_captcha_type_list(image_dir: str = "./images", model_dir: str = "./model
         "kshop": kshop,
     }
 
-def setBG(image_path, color=(255,255,255)):
-    with Image.open(image_path) as img:
-        fill_color = color
-        # img = img.convert(img.mode)
-        img_mode = img.mode
-        if img_mode in ('RGBA', 'LA'):
-            background = Image.new(img_mode[:-1], img.size, fill_color)
-            background.paste(img, img.split()[-1]) # omit transparency
-            background.save(image_path)
-
-def convert_transparent_to_white(image_path: str, output_path: str):
-    with Image.open(image_path) as img:
-        if img.mode in ('RGBA', 'LA'):
-            alpha = img.convert(img.mode).split()[-1]
-            bg = Image.new(img.mode, img.size, (255, 255, 255) + (255,))
-            bg.paste(img, mask=alpha)
-            img = bg.convert(alpha)
-        img.save(output_path)
-
 def ctc_batch_cost(y_true, y_pred, input_length, label_length):
+    """CTC loss function using TF 2.x native API."""
     label_length = ops.cast(ops.squeeze(label_length, axis=-1), dtype="int32")
     input_length = ops.cast(ops.squeeze(input_length, axis=-1), dtype="int32")
     sparse_labels = ops.cast(
@@ -51,14 +37,20 @@ def ctc_batch_cost(y_true, y_pred, input_length, label_length):
 
     y_pred = ops.log(ops.transpose(y_pred, axes=[1, 0, 2]) + keras.backend.epsilon())
 
+    # Use TF 2.x native ctc_loss instead of deprecated compat.v1
     return ops.expand_dims(
-        tf.compat.v1.nn.ctc_loss(
-            inputs=y_pred, labels=sparse_labels, sequence_length=input_length
+        tf.nn.ctc_loss(
+            labels=sparse_labels, 
+            logits=y_pred, 
+            label_length=None,
+            logit_length=input_length,
+            blank_index=-1
         ),
         1,
     )
 
 def ctc_label_dense_to_sparse(labels, label_lengths):
+    """Convert dense labels to sparse format for CTC."""
     label_shape = ops.shape(labels)
     num_batches_tns = ops.stack([label_shape[0]])
     max_num_labels_tns = ops.stack([label_shape[1]])
@@ -69,7 +61,8 @@ def ctc_label_dense_to_sparse(labels, label_lengths):
         )
 
     init = ops.cast(tf.fill([1, label_shape[1]], 0), dtype="bool")
-    dense_mask = tf.compat.v1.scan(
+    # Replace deprecated tf.compat.v1.scan with tf.scan
+    dense_mask = tf.scan(
         range_less_than, label_lengths, initializer=init, parallel_iterations=1
     )
     dense_mask = dense_mask[:, 0, :]
@@ -77,7 +70,7 @@ def ctc_label_dense_to_sparse(labels, label_lengths):
     label_array = ops.reshape(
         ops.tile(ops.arange(0, label_shape[1]), num_batches_tns), label_shape
     )
-    label_ind = tf.compat.v1.boolean_mask(label_array, dense_mask)
+    label_ind = tf.boolean_mask(label_array, dense_mask)
 
     batch_array = ops.transpose(
         ops.reshape(
@@ -85,12 +78,12 @@ def ctc_label_dense_to_sparse(labels, label_lengths):
             tf.reverse(label_shape, [0]),
         )
     )
-    batch_ind = tf.compat.v1.boolean_mask(batch_array, dense_mask)
+    batch_ind = tf.boolean_mask(batch_array, dense_mask)
     indices = ops.transpose(
         ops.reshape(ops.concatenate([batch_ind, label_ind], axis=0), [2, -1])
     )
 
-    vals_sparse = tf.compat.v1.gather_nd(labels, indices)
+    vals_sparse = tf.gather_nd(labels, indices)
 
     return tf.SparseTensor(
         ops.cast(indices, dtype="int64"), 
@@ -99,6 +92,18 @@ def ctc_label_dense_to_sparse(labels, label_lengths):
     )
 
 def ctc_decode(y_pred, input_length, greedy=True, beam_width=100, top_paths=1):
+    """Decode CTC predictions to text.
+    
+    Args:
+        y_pred: Prediction tensor
+        input_length: Length of input sequences
+        greedy: If True, use greedy decoding; otherwise beam search
+        beam_width: Width of beam for beam search
+        top_paths: Number of top paths to return
+        
+    Returns:
+        Tuple of (decoded_sequences, log_probabilities)
+    """
     input_shape = ops.shape(y_pred)
     num_samples, num_steps = input_shape[0], input_shape[1]
     y_pred = ops.log(ops.transpose(y_pred, axes=[1, 0, 2]) + keras.backend.epsilon())
@@ -109,7 +114,8 @@ def ctc_decode(y_pred, input_length, greedy=True, beam_width=100, top_paths=1):
             inputs=y_pred, sequence_length=input_length
         )
     else:
-        (decoded, log_prob) = tf.compat.v1.nn.ctc_beam_search_decoder(
+        # Use TF 2.x native beam search decoder
+        (decoded, log_prob) = tf.nn.ctc_beam_search_decoder(
             inputs=y_pred,
             sequence_length=input_length,
             beam_width=beam_width,
@@ -121,18 +127,24 @@ def ctc_decode(y_pred, input_length, greedy=True, beam_width=100, top_paths=1):
         decoded_dense.append(tf.sparse.to_dense(sp_input=st, default_value=-1))
     return (decoded_dense, log_prob)
 
-@keras.saving.register_keras_serializable(package="Core")
 class CTCLayer(layers.Layer):
+    """Custom CTC layer for computing CTC loss.
+    
+    This layer is registered as a serializable Keras layer to ensure
+    proper model saving/loading without needing custom_objects in load_model.
+    """
     def __init__(self, name=None, **kwargs):
         super().__init__(name=name, **kwargs)
         self.loss_fn = ctc_batch_cost
-        self.supports_masking = True  # 마스킹 지원 추가
+        self.supports_masking = True
 
     def get_config(self):
+        """Return layer config for serialization."""
         config = super().get_config()
         return config
 
     def call(self, y_true, y_pred):
+        """Compute CTC loss and return predictions."""
         batch_len = tf.shape(y_true)[0]
         input_length = tf.shape(y_pred)[1]
         label_length = tf.shape(y_true)[1]
@@ -145,6 +157,12 @@ class CTCLayer(layers.Layer):
 
         # At test time, just return the computed predictions
         return y_pred
+
+try:
+    CTCLayer = keras.saving.register_keras_serializable(package="Core")(CTCLayer)
+except (AttributeError, TypeError):
+    # Fallback for older versions where register_keras_serializable might not exist
+    pass
 
 class Model:
 
@@ -187,20 +205,20 @@ class Model:
         train_dataset = (
             train_dataset.map(
                 self.encode_single_sample,
-                num_parallel_calls=tf.data.experimental.AUTOTUNE,
+                num_parallel_calls=tf.data.AUTOTUNE,
             )
             .batch(batch_size)
-            .prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
+            .prefetch(buffer_size=tf.data.AUTOTUNE)
         )
 
         validation_dataset = tf.data.Dataset.from_tensor_slices((x_valid, y_valid))
         validation_dataset = (
             validation_dataset.map(
                 self.encode_single_sample,
-                num_parallel_calls=tf.data.experimental.AUTOTUNE,
+                num_parallel_calls=tf.data.AUTOTUNE,
             )
             .batch(batch_size)
-            .prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
+            .prefetch(buffer_size=tf.data.AUTOTUNE)
         )
 
         return train_dataset, validation_dataset
@@ -375,7 +393,15 @@ class Model:
 
         return self.predict_model
 
-    def predict(self, image_path: str):
+    def predict(self, image_path: str) -> tuple[str, float]:
+        """Predict captcha text from image.
+        
+        Args:
+            image_path: Path to the image file
+            
+        Returns:
+            Tuple of (predicted_text, confidence_score)
+        """
         image_width = self.train_data.image_width
         image_height = self.train_data.image_height
         label = ''.join(self.train_data.characters[:self.train_data.label_length])
@@ -388,7 +414,7 @@ class Model:
         pred_val = self.predict_model.predict(target_img, verbose=self.verbose)
         pred = self.decode_batch_predictions(pred_val)[0]
 
-        confidence = np.max(pred_val, axis=-1).mean()
+        confidence = float(np.max(pred_val, axis=-1).mean())
 
         return pred, confidence
 
