@@ -1,5 +1,6 @@
 import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # TensorFlow 사용 시
+os.environ['GLOG_minloglevel'] = '2'  # Google 로깅
 
 from captchaResolver.core import Model, get_captcha_type_list
 

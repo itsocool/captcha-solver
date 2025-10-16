@@ -166,15 +166,15 @@ except (AttributeError, TypeError):
 
 class Model:
 
-    def __init__(self, train_data: dataclass.TrainInfo, hard_mode=False, verbose=1):
+    def __init__(self, train_data: dataclass.TrainInfo, verbose=1):
         self.train_data = train_data
-        self.hard_mode = hard_mode
         self.char_to_num = layers.StringLookup(
             vocabulary=train_data.characters, mask_token=None, num_oov_indices=0
         )
         self.num_to_char = layers.StringLookup(
             vocabulary=self.char_to_num.get_vocabulary(), mask_token=None, invert=True
         )
+        self.hard_mode = False
         self.predict_model = None
         self.verbose = verbose
 
@@ -318,6 +318,7 @@ class Model:
         self,
         epochs=100,
         batch_size=32,
+        hard_mode=False,
         earlystopping=True,
         early_stopping_patience: int = 8
     ):
@@ -326,7 +327,7 @@ class Model:
             batch_size=batch_size, train_size=0.9, shuffle=True
         )
         model = self.build_model()
-
+        self.hard_mode = hard_mode
         callbacks = []
         
         if earlystopping == True:

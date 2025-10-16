@@ -1,7 +1,6 @@
 import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-import warnings
-warnings.filterwarnings('ignore')
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # TensorFlow 사용 시
+os.environ['GLOG_minloglevel'] = '2'  # Google 로깅
 
 from captchaResolver.core import Model, get_captcha_type_list
 
@@ -16,10 +15,11 @@ early_stopping_patience = 16
 save_weights = True
 save_model = True
 
-model = Model(train_data=train_data, hard_mode=True) 
+model = Model(train_data=train_data) 
 model.train_model(
     epochs=epochs,
     batch_size=batch_size,
+    hard_mode=False,
     earlystopping=earlystopping,
     early_stopping_patience=early_stopping_patience)
 
