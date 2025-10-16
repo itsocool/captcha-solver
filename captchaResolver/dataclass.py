@@ -58,7 +58,7 @@ class TrainInfo:
         """Extract training configuration from existing data."""
         train_image_path = self.get_image_dir(train=True)
         pred_image_path = self.get_image_dir(train=False)
-        model_path = self.get_model_path()
+        model_path = self.get_model_path(keras_native=False)
         
         train_data_list = self.get_data_files(train=True)
         
@@ -127,7 +127,7 @@ class TrainInfo:
             for data_path in self.get_data_files(train)
         ]
 
-    def get_model_path(self, weights_only: bool = False) -> str:
+    def get_model_path(self, keras_native: bool = True) -> str:
         """Get absolute path to model file.
         
         Args:
@@ -143,9 +143,7 @@ class TrainInfo:
         if not os.path.exists(model_path):
             os.makedirs(model_path, exist_ok=True)
 
-        if weights_only:
-            model_path = os.path.join(model_path, ".weights.h5")
-        else:
+        if keras_native:
             model_path = os.path.join(model_path, "weights.keras")
 
         return model_path

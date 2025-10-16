@@ -166,7 +166,7 @@ except (AttributeError, TypeError):
 
 class Model:
 
-    def __init__(self, train_data: dataclass.TrainInfo, verbose=1):
+    def __init__(self, train_data: dataclass.TrainInfo, keras_native=True, verbose=1):
         self.train_data = train_data
         self.char_to_num = layers.StringLookup(
             vocabulary=train_data.characters, mask_token=None, num_oov_indices=0
@@ -175,6 +175,7 @@ class Model:
             vocabulary=self.char_to_num.get_vocabulary(), mask_token=None, invert=True
         )
         self.hard_mode = False
+        self.keras_native = keras_native
         self.predict_model = None
         self.verbose = verbose
 
@@ -348,9 +349,13 @@ class Model:
             history = model.fit(
                 train_dataset, validation_data=validation_dataset, epochs=epochs, verbose=self.verbose,
             )
-        model_path = self.train_data.get_model_path(False)
+        model_path = self.train_data.get_model_path(keras_native=self.keras_native)
         print("model_path : ", model_path)
-        model.save(model_path)
+
+        if self.keras_native:
+            model.save(model_path)
+        else:
+            tf.saved_model.save(model, model_path)
 
     def decode_batch_predictions(self, pred):
         input_len = np.ones(pred.shape[0]) * pred.shape[1]
@@ -376,8 +381,13 @@ class Model:
         #     weights_path = self.train_data.get_model_path(weights_only=True)
         #     model.load_weights(weights_path)
         # else:
-        model_dir = self.train_data.get_model_path(weights_only=False)
-        model:keras.models.Model = keras.models.load_model(model_dir, custom_objects={"CTCLayer": CTCLayer})
+        model_path = self.train_data.get_model_path(keras_native=self.keras_native)
+
+        if self.keras_native:
+            model:keras.models.Model = keras.models.load_model(model_path)
+        else:
+            model:keras.models.Model = tf.saved_model.load(model_path)
+
         input_layer = model.input[0]
         output_layer = model.get_layer(name="dense2").output
 
