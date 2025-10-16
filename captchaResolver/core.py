@@ -326,12 +326,6 @@ class Model:
                     monitor="val_loss", patience=early_stopping_patience, restore_best_weights=True
                 )
             )
-            # early_stopping = keras.callbacks.EarlyStopping(
-            #     monitor="val_loss",
-            #     patience=early_stopping_patience,
-            #     restore_best_weights=True,
-            # )
-            # Train the model
             history = model.fit(
                 train_dataset,
                 validation_data=validation_dataset,
@@ -344,18 +338,9 @@ class Model:
             history = model.fit(
                 train_dataset, validation_data=validation_dataset, epochs=epochs, verbose=self.verbose,
             )
-
-        if save_weights:
-            weights_path = self.train_data.get_model_path(True)
-            model.save_weights(weights_path)
-
-        # import absl.logging
-        # absl.logging.set_verbosity(absl.logging.ERROR)
-
-        if save_model:
-            model_path = self.train_data.get_model_path(False)
-            print("model_path : ", model_path)
-            model.save(model_path)
+        model_path = self.train_data.get_model_path(False)
+        print("model_path : ", model_path)
+        model.save(model_path)
 
     def decode_batch_predictions(self, pred):
         input_len = np.ones(pred.shape[0]) * pred.shape[1]
