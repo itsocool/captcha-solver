@@ -1,5 +1,5 @@
 import os, time
-os.environ["KERAS_BACKEND"] = "tensorflow"
+# os.environ["KERAS_BACKEND"] = "tensorflow"
 from PIL import Image
 import numpy as np
 import tensorflow as tf
