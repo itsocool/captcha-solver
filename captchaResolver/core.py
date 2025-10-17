@@ -1,5 +1,3 @@
-import os
-import time
 import numpy as np
 import tensorflow as tf
 import keras
@@ -122,6 +120,7 @@ def ctc_decode(y_pred, input_length, greedy=True, beam_width=100, top_paths=1):
         decoded_dense.append(tf.sparse.to_dense(sp_input=st, default_value=-1))
     return (decoded_dense, log_prob)
 
+@keras.saving.register_keras_serializable(package="captchaResolver")
 class CTCLayer(layers.Layer):
     """Custom CTC layer for computing CTC loss.
     
@@ -152,12 +151,6 @@ class CTCLayer(layers.Layer):
 
         # At test time, just return the computed predictions
         return y_pred
-
-# try:
-#     CTCLayer = keras.saving.register_keras_serializable(package="Core")(CTCLayer)
-# except (AttributeError, TypeError):
-#     # Fallback for older versions where register_keras_serializable might not exist
-#     pass
 
 class KerasModel:
 
@@ -310,48 +303,6 @@ class KerasModel:
         model.compile(optimizer=optimizer)
         return model
 
-    def train_model(
-        self,
-        epochs=100,
-        batch_size=32,
-        hard_mode=False,
-        earlystopping=True,
-        early_stopping_patience: int = 8
-    ):
-
-        train_dataset, validation_dataset = self.split_dataset(
-            batch_size=batch_size, train_size=0.9, shuffle=True
-        )
-        model = self.build_model()
-        self.hard_mode = hard_mode
-        callbacks = []
-        
-        if earlystopping == True:
-            callbacks.append(
-                keras.callbacks.EarlyStopping(
-                    monitor="val_loss", patience=early_stopping_patience, restore_best_weights=True
-                )
-            )
-            history = model.fit(
-                train_dataset,
-                validation_data=validation_dataset,
-                epochs=epochs,
-                callbacks=callbacks,
-                verbose=1,
-            )
-        else:
-            # Train the model
-            history = model.fit(
-                train_dataset, validation_data=validation_dataset, epochs=epochs, verbose=self.verbose,
-            )
-        model_path = self.train_data.get_model_path(keras_native=self.keras_native)
-        print("model_path : ", model_path)
-
-        if self.keras_native:
-            model.save(model_path)
-        else:
-            tf.saved_model.save(model, model_path)
-
     def decode_batch_predictions(self, pred):
         input_len = np.ones(pred.shape[0]) * pred.shape[1]
         # Use greedy search. For complex tasks, you can use beam search
@@ -379,7 +330,13 @@ class KerasModel:
         model_path = self.train_data.get_model_path(keras_native=self.keras_native)
 
         if self.keras_native:
-            model:keras.models.Model = keras.models.load_model(model_path)
+            # Pass custom_objects to ensure the custom CTCLayer is found during
+            # deserialization. This is a robust fallback in case registry-based
+            # lookup does not locate the class.
+            model:keras.models.Model = keras.models.load_model(
+                model_path, custom_objects={"CTCLayer": CTCLayer}
+            )
+            # model:keras.models.Model = keras.models.load_model(model_path)
         else:
             model:keras.models.Model = tf.saved_model.load(model_path)
 
@@ -391,122 +348,3 @@ class KerasModel:
         )
 
         return self.predict_model
-
-    def predict(self, image_path: str) -> tuple[str, float]:
-        """Predict captcha text from image.
-        
-        Args:
-            image_path: Path to the image file
-            
-        Returns:
-            Tuple of (predicted_text, confidence_score)
-        """
-        image_width = self.train_data.image_width
-        image_height = self.train_data.image_height
-        label = ''.join(self.train_data.characters[:self.train_data.label_length])
-        target_img = self.encode_single_sample(image_path, label)["image"]
-        target_img = tf.reshape(target_img, shape=[1, image_width, image_height, 1])
-
-        if self.predict_model is None:
-            self.load_prediction_model()
-    
-        pred_val = self.predict_model.predict(target_img, verbose=self.verbose)
-        pred = self.decode_batch_predictions(pred_val)[0]
-
-        confidence = float(np.max(pred_val, axis=-1).mean())
-
-        return pred, confidence
-
-    def validate_model(self):
-        start = time.time()
-        matched = 0
-        pred_img_path_list = self.train_data.get_data_files(train=False)
-
-        for pred_img_path in pred_img_path_list:
-            self.verbose = 0
-            pred, confidence = self.predict(pred_img_path)
-            ori = os.path.basename(pred_img_path).split(".")[0]
-            msg = ""
-            if ori == pred:
-                matched += 1
-            else:
-                msg = " Not matched!"
-            print("ori : ", ori, "pred : ", pred, "confidence : ", confidence, msg)
-
-        end = time.time()
-        print(
-            "Matched:",
-            matched,
-            ", Tottal : ",
-            len(pred_img_path_list),
-            ", Accuracy : ",
-            matched / len(pred_img_path_list) * 100,
-            "%",
-        )
-        print("pred time : ", end - start, "sec")
-
-def predict_model(model: KerasModel, batch_size=32):
-    """Validate model using dataset-based batch prediction.
-    
-    Args:
-        model: KerasModel instance
-        batch_size: Batch size for prediction
-    """
-    start = time.time()
-    matched = 0
-    
-    # Get prediction files and labels
-    pred_img_path_list = model.train_data.get_data_files(train=False)
-    pred_labels = model.train_data.get_labels(train=False)
-    
-    # Create dataset for batch processing
-    pred_dataset = tf.data.Dataset.from_tensor_slices((pred_img_path_list, pred_labels))
-    pred_dataset = (
-        pred_dataset
-        .map(model.encode_single_sample, num_parallel_calls=tf.data.AUTOTUNE)
-        .batch(batch_size)
-        .prefetch(buffer_size=tf.data.AUTOTUNE)
-    )
-    
-    # Load prediction model if not loaded
-    if model.predict_model is None:
-        model.load_prediction_model()
-    
-    # Batch prediction
-    all_preds = []
-    all_labels = []
-    
-    for batch in pred_dataset:
-        images = batch["image"]
-        labels = batch["label"]
-        
-        # Predict batch
-        pred_vals = model.predict_model.predict(images, verbose=0)
-        preds = model.decode_batch_predictions(pred_vals)
-        
-        # Decode original labels
-        for label in labels:
-            label_text = tf.strings.reduce_join(
-                model.num_to_char(label + 1)
-            ).numpy().decode("utf-8")
-            all_labels.append(label_text)
-        
-        all_preds.extend(preds)
-    
-    # Compare predictions with original labels
-    for idx, (ori, pred) in enumerate(zip(all_labels, all_preds)):
-        msg = ""
-        if ori == pred:
-            matched += 1
-        else:
-            msg = " Not matched!"
-        
-        # Calculate confidence for display (optional)
-        print(f"ori: {ori}, pred: {pred}{msg}")
-    
-    end = time.time()
-    total = len(pred_img_path_list)
-    accuracy = matched / total * 100 if total > 0 else 0
-    
-    print(f"Matched: {matched}, Total: {total}, Accuracy: {accuracy:.2f}%")
-    print(f"pred time: {end - start:.2f} sec")

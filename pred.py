@@ -10,7 +10,6 @@ captcha_type_list = get_captcha_type_list()
 train_data = captcha_type_list[captcha_id].train_data
 train_data.threshold = 60
 model = KerasModel(train_data=train_data)
-# model.validate_model()
 predict_model(model=model, batch_size=16)
 
 print("Done!")

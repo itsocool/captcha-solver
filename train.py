@@ -9,11 +9,11 @@ captcha_id = 'kshop'
 captcha_type_list = get_captcha_type_list()
 train_data = captcha_type_list[captcha_id].train_data
 train_data.threshold = 60
-epochs = 2
+epochs = 120
 batch_size = 32
 early_stopping_patience = 16
 
-model = KerasModel(train_data=train_data, hard_mode=False, keras_native=False)
+model = KerasModel(train_data=train_data)
 train_model(
     model,
     epochs=epochs,

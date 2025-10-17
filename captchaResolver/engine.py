@@ -60,8 +60,7 @@ def train_model(
     else:
         tf.saved_model.save(train_model, model_path)
 
-
-def predict_model(model, batch_size=32):
+def predict_model(model: KerasModel, batch_size=32):
     """Validate model using dataset-based batch prediction.
     
     Args:
@@ -72,6 +71,7 @@ def predict_model(model, batch_size=32):
     matched = 0
     
     # Get prediction files and labels
+    train_data = model.train_data
     pred_img_path_list = model.train_data.get_data_files(train=False)
     pred_labels = model.train_data.get_labels(train=False)
     
@@ -85,8 +85,7 @@ def predict_model(model, batch_size=32):
     )
     
     # Load prediction model if not loaded
-    if model.predict_model is None:
-        model.load_prediction_model()
+    model.load_prediction_model()
     
     # Batch prediction
     all_preds = []
