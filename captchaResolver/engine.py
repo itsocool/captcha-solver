@@ -1,24 +1,11 @@
 import time
 import keras
+import numpy as np
 import tensorflow as tf
 
+from PIL import Image
 from captchaResolver.core import KerasModel
 from captchaResolver.dataclass import CaptchaType
-
-def get_captcha_type_list(image_dir: str = "./images", model_dir: str = "./model"):
-    default = CaptchaType(id="default", name="기본 캡챠", desc="기본 캡챠")
-    supreme_court = CaptchaType(id="supreme_court", name="대법원", desc="대법원 캡챠")
-    gov24 = CaptchaType(id="gov24", name="gov24", desc="대한민국 정부 24 캡챠")
-    wetax = CaptchaType(id="wetax", name="wetax", desc="WETAX 캡챠")
-    kshop = CaptchaType(id="kshop", name="kshop", desc="KT Shopping 캡챠")
-
-    return {
-        "default": default,
-        "supreme_court": supreme_court,
-        "gov24": gov24,
-        "wetax": wetax,
-        "kshop": kshop,
-    }
 
 def train_model(
     model: KerasModel,
@@ -125,3 +112,20 @@ def predict_model(model: KerasModel, batch_size=32):
     
     print(f"Matched: {matched}, Total: {total}, Accuracy: {accuracy:.2f}%")
     print(f"pred time: {end - start:.2f} sec")
+
+def predict(model: KerasModel, image_path: str, model_path: str) -> tuple[str, float]:
+    
+    image_width = model.train_data.image_width
+    image_height = model.train_data.image_height
+    target_img = model.encode_single_sample(image_path)["image"]
+    target_img = tf.reshape(target_img, shape=[1, image_width, image_height, 1])
+
+    if model.predict_model is None:
+        model.load_prediction_model()
+
+    pred_val = model.predict_model.predict(target_img, verbose=model.verbose)
+    pred = model.decode_batch_predictions(pred_val)[0]
+
+    confidence = float(np.max(pred_val, axis=-1).mean())
+
+    return pred, confidence

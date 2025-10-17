@@ -210,7 +210,7 @@ class KerasModel:
 
         return train_dataset, validation_dataset
 
-    def encode_single_sample(self, image_path, label):
+    def encode_single_sample(self, image_path, label = None):
         image_width = self.train_data.image_width
         image_height = self.train_data.image_height
         image = tf.io.read_file(image_path)
@@ -225,9 +225,11 @@ class KerasModel:
         image = tf.image.resize(image, [image_height, image_width])
         image = tf.transpose(image, perm=[1, 0, 2])
 
-        label = self.char_to_num(
-            tf.strings.unicode_split(label, input_encoding="UTF-8")
-        )
+        if label is not None:
+            label = self.char_to_num(
+                tf.strings.unicode_split(label, input_encoding="UTF-8")
+            )
+
         return {"image": image, "label": label}
 
     def build_model(self):
@@ -320,14 +322,10 @@ class KerasModel:
             output_text.append(res)
         return output_text
 
-    def load_prediction_model(self):
+    def load_prediction_model(self, model_path: str = None):
 
-        # if self.weights_only:
-        #     model = self.build_model(hard_mode=True)
-        #     weights_path = self.train_data.get_model_path(weights_only=True)
-        #     model.load_weights(weights_path)
-        # else:
-        model_path = self.train_data.get_model_path(keras_native=self.keras_native)
+        if model_path is None:
+            model_path = self.train_data.get_model_path(keras_native=self.keras_native)
 
         if self.keras_native:
             # Pass custom_objects to ensure the custom CTCLayer is found during
