@@ -47,22 +47,11 @@ def train_model(
     else:
         tf.saved_model.save(train_model, model_path)
 
-def predict_model(model: KerasModel, batch_size=32):
-    """Validate model using dataset-based batch prediction.
-    
-    Args:
-        model: KerasModel instance
-        batch_size: Batch size for prediction
-    """
+def batch_predict_model(model: KerasModel, batch_size=32):
     start = time.time()
     matched = 0
-    
-    # Get prediction files and labels
-    train_data = model.train_data
     pred_img_path_list = model.train_data.get_data_files(train=False)
     pred_labels = model.train_data.get_labels(train=False)
-    
-    # Create dataset for batch processing
     pred_dataset = tf.data.Dataset.from_tensor_slices((pred_img_path_list, pred_labels))
     pred_dataset = (
         pred_dataset

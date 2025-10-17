@@ -24,7 +24,7 @@ from captchaResolver.core import KerasModel
 def execute(captcha_type: str, image_path: str) -> str:
 
     train_data = dataclass.TrainInfo(
-        id=captcha_type,
+        captcha_id=captcha_type,
         base_dir=base_dir,
         init=False,
         label_length=6,

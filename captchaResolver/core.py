@@ -1,16 +1,40 @@
+from sre_parse import DIGITS
 import numpy as np
 import tensorflow as tf
 import keras
 from keras import ops
 from keras import layers
-import captchaResolver.dataclass as dataclass
 
-def get_captcha_type_list(image_dir: str = "./images", model_dir: str = "./model"):
-    default = dataclass.CaptchaType(id="default", name="기본 캡챠", desc="기본 캡챠")
-    supreme_court = dataclass.CaptchaType(id="supreme_court", name="대법원", desc="대법원 캡챠")
-    gov24 = dataclass.CaptchaType(id="gov24", name="gov24", desc="대한민국 정부 24 캡챠")
-    wetax = dataclass.CaptchaType(id="wetax", name="wetax", desc="WETAX 캡챠")
-    kshop = dataclass.CaptchaType(id="kshop", name="kshop", desc="KT Shopping 캡챠")
+from captchaResolver.dataclass import CaptchaType, TrainInfo
+
+def get_captcha_type_list(base_dir: str = "./captcha_data"):
+    default_train_data = TrainInfo(
+        captcha_id="default",
+        base_dir=base_dir,
+        label_length=5,
+        characters=list('2345678bcdefgmnpwxy')
+    )
+    default = CaptchaType(id="default", name="기본 캡챠", desc="기본 캡챠", train_data=default_train_data)
+    supreme_court_train_data = TrainInfo(
+        captcha_id="supreme_court",
+        base_dir=base_dir
+    )
+    supreme_court = CaptchaType(id="supreme_court", name="대법원", desc="대법원 캡챠", train_data=supreme_court_train_data)
+    gov24_train_data = TrainInfo(
+        captcha_id="gov24",
+        base_dir=base_dir
+    )
+    gov24 = CaptchaType(id="gov24", name="gov24", desc="대한민국 정부 24 캡챠", train_data=gov24_train_data)
+    wetax_train_data = TrainInfo(
+        captcha_id="wetax",
+        base_dir=base_dir
+    )
+    wetax = CaptchaType(id="wetax", name="wetax", desc="WETAX 캡챠", train_data=wetax_train_data)
+    kshop_train_data = TrainInfo(
+        captcha_id="kshop",
+        base_dir=base_dir
+    )
+    kshop = CaptchaType(id="kshop", name="kshop", desc="KT Shopping 캡챠", train_data=kshop_train_data)
 
     return {
         "default": default,
@@ -154,7 +178,7 @@ class CTCLayer(layers.Layer):
 
 class KerasModel:
 
-    def __init__(self, train_data: dataclass.TrainInfo, hard_mode=False, keras_native=True, verbose=1):
+    def __init__(self, train_data: TrainInfo, hard_mode=False, keras_native=True, verbose=1):
         self.train_data = train_data
         self.char_to_num = layers.StringLookup(
             vocabulary=train_data.characters, mask_token=None, num_oov_indices=0
@@ -328,13 +352,9 @@ class KerasModel:
             model_path = self.train_data.get_model_path(keras_native=self.keras_native)
 
         if self.keras_native:
-            # Pass custom_objects to ensure the custom CTCLayer is found during
-            # deserialization. This is a robust fallback in case registry-based
-            # lookup does not locate the class.
             model:keras.models.Model = keras.models.load_model(
                 model_path, custom_objects={"CTCLayer": CTCLayer}
             )
-            # model:keras.models.Model = keras.models.load_model(model_path)
         else:
             model:keras.models.Model = tf.saved_model.load(model_path)
 
