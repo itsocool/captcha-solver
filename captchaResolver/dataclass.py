@@ -1,5 +1,6 @@
 import os, glob
 from dataclasses import dataclass, field
+import random
 from sre_parse import DIGITS
 from typing import Optional
 from PIL import Image
@@ -88,6 +89,17 @@ class TrainInfo:
             model_path = os.path.join(model_path, "weights.keras")
 
         return model_path
+
+    def get_pred_image_path(self) -> str:
+        image_dir = self.get_image_dir(train=False)
+        if isinstance(image_dir, (list, tuple)):
+            candidates = [p for p in image_dir if os.path.isfile(p)]
+        else:
+            candidates = glob.glob(os.path.join(image_dir, '*'))
+        if not candidates:
+            raise RuntimeError(f"No images found in {image_dir}")
+        image_path = random.choice(candidates)
+        return image_path
 
 @dataclass
 class CaptchaType:

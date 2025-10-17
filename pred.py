@@ -18,18 +18,7 @@ train_data.threshold = 60
 model = KerasModel(train_data=train_data)
 batch_predict_model(model=model)
 model_path = train_data.get_model_path()
-image_dir = train_data.get_image_dir(train=False)
-# image_dir may be a list of file paths or a directory path. Handle both cases.
-import random
-import glob
-if isinstance(image_dir, (list, tuple)):
-	candidates = [p for p in image_dir if os.path.isfile(p)]
-else:
-	# treat image_dir as a directory path
-	candidates = glob.glob(os.path.join(image_dir, '*'))
-if not candidates:
-	raise RuntimeError(f"No images found in {image_dir}")
-image_path = random.choice(candidates)
+image_path = train_data.get_pred_image_path()
 pred, confidence = predict(model=model, image_path=image_path, model_path=model_path)
 print("image_path : ", image_path)
 print("pred : ", pred)
