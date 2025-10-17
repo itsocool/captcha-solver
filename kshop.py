@@ -7,11 +7,13 @@ sys.stdout = NULL_OUT
 
 argv = None
 exec = 'kshop.exe'
-current_dir = os.path.abspath(os.path.dirname(__file__))
+base_dir = os.path.abspath(os.path.dirname(__file__))
 meipass = getattr(sys, '_MEIPASS', None)
 
 if meipass:
-    current_dir = os.path.abspath(meipass)
+    base_dir = os.path.join(meipass, "model")
+else:
+    base_dir = os.path.join(base_dir, "captcha_data")
 
 import tensorflow as tf
 tf.get_logger().setLevel('ERROR')
@@ -20,10 +22,6 @@ from PIL import Image
 from captchaResolver.core import KerasModel
 
 def execute(captcha_type: str, image_path: str) -> str:
-    if meipass:
-        base_dir = os.path.join(meipass, "model")
-    else:
-        base_dir = os.path.join(base_dir, "captcha_data")
 
     train_data = dataclass.TrainInfo(
         id=captcha_type,
@@ -44,7 +42,11 @@ def execute(captcha_type: str, image_path: str) -> str:
         model.train_data.image_width, model.train_data.image_height = image.size
         image.save(temp_image_path)
 
-    model_path = os.path.join(base_dir, 'weights.keras')
+    if meipass:
+        model_path = os.path.join(base_dir, 'weights.keras')
+    else:
+        model_path = train_data.get_model_path(keras_native=model.keras_native)
+
     pred, confidence = engine.predict(model,temp_image_path, model_path=model_path)
 
     if os.path.exists(temp_image_path):
