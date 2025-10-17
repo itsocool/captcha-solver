@@ -1,10 +1,5 @@
 import os
 import time
-from typing import Optional
-from pathlib import Path
-
-# os.environ["KERAS_BACKEND"] = "tensorflow"
-from PIL import Image
 import numpy as np
 import tensorflow as tf
 import keras
@@ -158,15 +153,15 @@ class CTCLayer(layers.Layer):
         # At test time, just return the computed predictions
         return y_pred
 
-try:
-    CTCLayer = keras.saving.register_keras_serializable(package="Core")(CTCLayer)
-except (AttributeError, TypeError):
-    # Fallback for older versions where register_keras_serializable might not exist
-    pass
+# try:
+#     CTCLayer = keras.saving.register_keras_serializable(package="Core")(CTCLayer)
+# except (AttributeError, TypeError):
+#     # Fallback for older versions where register_keras_serializable might not exist
+#     pass
 
-class Model:
+class KerasModel:
 
-    def __init__(self, train_data: dataclass.TrainInfo, keras_native=True, verbose=1):
+    def __init__(self, train_data: dataclass.TrainInfo, hard_mode=False, keras_native=True, verbose=1):
         self.train_data = train_data
         self.char_to_num = layers.StringLookup(
             vocabulary=train_data.characters, mask_token=None, num_oov_indices=0
@@ -174,7 +169,7 @@ class Model:
         self.num_to_char = layers.StringLookup(
             vocabulary=self.char_to_num.get_vocabulary(), mask_token=None, invert=True
         )
-        self.hard_mode = False
+        self.hard_mode = hard_mode
         self.keras_native = keras_native
         self.predict_model = None
         self.verbose = verbose
@@ -449,3 +444,69 @@ class Model:
             "%",
         )
         print("pred time : ", end - start, "sec")
+
+def predict_model(model: KerasModel, batch_size=32):
+    """Validate model using dataset-based batch prediction.
+    
+    Args:
+        model: KerasModel instance
+        batch_size: Batch size for prediction
+    """
+    start = time.time()
+    matched = 0
+    
+    # Get prediction files and labels
+    pred_img_path_list = model.train_data.get_data_files(train=False)
+    pred_labels = model.train_data.get_labels(train=False)
+    
+    # Create dataset for batch processing
+    pred_dataset = tf.data.Dataset.from_tensor_slices((pred_img_path_list, pred_labels))
+    pred_dataset = (
+        pred_dataset
+        .map(model.encode_single_sample, num_parallel_calls=tf.data.AUTOTUNE)
+        .batch(batch_size)
+        .prefetch(buffer_size=tf.data.AUTOTUNE)
+    )
+    
+    # Load prediction model if not loaded
+    if model.predict_model is None:
+        model.load_prediction_model()
+    
+    # Batch prediction
+    all_preds = []
+    all_labels = []
+    
+    for batch in pred_dataset:
+        images = batch["image"]
+        labels = batch["label"]
+        
+        # Predict batch
+        pred_vals = model.predict_model.predict(images, verbose=0)
+        preds = model.decode_batch_predictions(pred_vals)
+        
+        # Decode original labels
+        for label in labels:
+            label_text = tf.strings.reduce_join(
+                model.num_to_char(label + 1)
+            ).numpy().decode("utf-8")
+            all_labels.append(label_text)
+        
+        all_preds.extend(preds)
+    
+    # Compare predictions with original labels
+    for idx, (ori, pred) in enumerate(zip(all_labels, all_preds)):
+        msg = ""
+        if ori == pred:
+            matched += 1
+        else:
+            msg = " Not matched!"
+        
+        # Calculate confidence for display (optional)
+        print(f"ori: {ori}, pred: {pred}{msg}")
+    
+    end = time.time()
+    total = len(pred_img_path_list)
+    accuracy = matched / total * 100 if total > 0 else 0
+    
+    print(f"Matched: {matched}, Total: {total}, Accuracy: {accuracy:.2f}%")
+    print(f"pred time: {end - start:.2f} sec")
