@@ -1,10 +1,9 @@
 import os, glob
 from dataclasses import dataclass, field
 import random
-from sre_parse import DIGITS
 from typing import Optional
 from PIL import Image
-from captchaResolver.consts import ALPHA_NUMERIC
+from captchaResolver.consts import DIGITS
 
 @dataclass
 class TrainInfo:
@@ -35,7 +34,7 @@ class TrainInfo:
     def get_train_info(self) -> tuple[str, str, str, int, int, int, list[str], int]:
         train_image_path = self.get_image_dir(train=True)
         pred_image_path = self.get_image_dir(train=False)
-        model_path = self.get_model_path(keras_native=False)
+        model_path = self.get_model_path()
         train_data_list = self.get_data_files(train=True)
         
         with Image.open(train_data_list[-1]) as image:
@@ -78,16 +77,14 @@ class TrainInfo:
             os.path.basename(data_path).split(".")[0] for data_path in self.get_data_files(train)
         ]
 
-    def get_model_path(self, keras_native: bool = True) -> str:
+    def get_model_path(self) -> str:
         model_path = os.path.join(self.base_dir, self.captcha_id, str(self.rev), 'model')
         model_path = os.path.abspath(model_path)
 
         if not os.path.exists(model_path):
             os.makedirs(model_path, exist_ok=True)
 
-        if keras_native:
-            model_path = os.path.join(model_path, "weights.keras")
-
+        model_path = os.path.join(model_path, "weights.keras")
         return model_path
 
     def get_pred_image_path(self) -> str:

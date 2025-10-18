@@ -1,4 +1,3 @@
-from sre_parse import DIGITS
 import numpy as np
 import tensorflow as tf
 import keras
@@ -67,39 +66,28 @@ def ctc_batch_cost(y_true, y_pred, input_length, label_length):
     )
 
 def ctc_label_dense_to_sparse(labels, label_lengths):
-    """Convert dense labels to sparse format for CTC."""
+    """Convert dense labels to sparse format for CTC.
+    
+    Improved version using vectorized operations instead of tf.scan()
+    for better memory efficiency and performance.
+    """
     label_shape = ops.shape(labels)
-    num_batches_tns = ops.stack([label_shape[0]])
-    max_num_labels_tns = ops.stack([label_shape[1]])
+    batch_size = label_shape[0]
+    max_label_len = label_shape[1]
 
-    def range_less_than(old_input, current_input):
-        return ops.expand_dims(ops.arange(ops.shape(old_input)[1]), 0) < tf.fill(
-            max_num_labels_tns, current_input
-        )
+    # Vectorized mask generation using broadcasting
+    # Shape: (batch_size, max_label_len)
+    label_positions = ops.arange(max_label_len)  # [0, 1, 2, ..., max_label_len-1]
+    label_lengths_expanded = ops.expand_dims(label_lengths, axis=1)  # (batch_size, 1)
+    
+    # Broadcasting comparison: (batch_size, 1) vs (max_label_len,) -> (batch_size, max_label_len)
+    dense_mask = label_positions < label_lengths_expanded
 
-    init = ops.cast(tf.fill([1, label_shape[1]], 0), dtype="bool")
-    # Replace deprecated tf.compat.v1.scan with tf.scan
-    dense_mask = tf.scan(
-        range_less_than, label_lengths, initializer=init, parallel_iterations=1
-    )
-    dense_mask = dense_mask[:, 0, :]
+    # Use tf.where to get indices of True values
+    # Returns shape (num_valid, 2) where each row is [batch_idx, label_idx]
+    indices = tf.where(dense_mask)
 
-    label_array = ops.reshape(
-        ops.tile(ops.arange(0, label_shape[1]), num_batches_tns), label_shape
-    )
-    label_ind = tf.boolean_mask(label_array, dense_mask)
-
-    batch_array = ops.transpose(
-        ops.reshape(
-            ops.tile(ops.arange(0, label_shape[0]), max_num_labels_tns),
-            tf.reverse(label_shape, [0]),
-        )
-    )
-    batch_ind = tf.boolean_mask(batch_array, dense_mask)
-    indices = ops.transpose(
-        ops.reshape(ops.concatenate([batch_ind, label_ind], axis=0), [2, -1])
-    )
-
+    # Extract values at the valid positions
     vals_sparse = tf.gather_nd(labels, indices)
 
     return tf.SparseTensor(
@@ -178,7 +166,7 @@ class CTCLayer(layers.Layer):
 
 class KerasModel:
 
-    def __init__(self, train_data: TrainInfo, hard_mode=False, keras_native=True, verbose=1):
+    def __init__(self, train_data: TrainInfo, verbose=1):
         self.train_data = train_data
         self.char_to_num = layers.StringLookup(
             vocabulary=train_data.characters, mask_token=None, num_oov_indices=0
@@ -186,8 +174,6 @@ class KerasModel:
         self.num_to_char = layers.StringLookup(
             vocabulary=self.char_to_num.get_vocabulary(), mask_token=None, invert=True
         )
-        self.hard_mode = hard_mode
-        self.keras_native = keras_native
         self.predict_model = None
         self.verbose = verbose
 
@@ -224,10 +210,12 @@ class KerasModel:
 
         validation_dataset = tf.data.Dataset.from_tensor_slices((x_valid, y_valid))
         validation_dataset = (
-            validation_dataset.map(
+            validation_dataset
+            .map(
                 self.encode_single_sample,
                 num_parallel_calls=tf.data.AUTOTUNE,
             )
+            .cache()  # Cache validation set
             .batch(batch_size)
             .prefetch(buffer_size=tf.data.AUTOTUNE)
         )
@@ -262,58 +250,23 @@ class KerasModel:
         input_img = layers.Input(shape=(width, height, 1), name="image", dtype="float32")
         labels = layers.Input(name="label", shape=(None,), dtype="float32")
 
-        if self.hard_mode :
-            x = layers.Conv2D(64, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same", name="Conv1")(input_img)
-            x = layers.BatchNormalization()(x)
-            x = layers.Conv2D(64, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same", name="Conv2")(x)
-            x = layers.BatchNormalization()(x)
-            x = layers.MaxPooling2D((2, 2), name="pool1")(x)
+        x = layers.Conv2D(32,(3, 3),activation="relu",kernel_initializer="he_normal",padding="same",name="Conv1")(input_img)
+        x = layers.MaxPooling2D((2, 2), name="pool1")(x)
+        x = layers.Conv2D(64,(3, 3),activation="relu",kernel_initializer="he_normal",padding="same",name="Conv2")(x)
+        x = layers.MaxPooling2D((2, 2), name="pool2")(x)
 
-            x = layers.Conv2D(128, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same", name="Conv3")(x)
-            x = layers.BatchNormalization()(x)
-            x = layers.Conv2D(128, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same", name="Conv4")(x)
-            x = layers.BatchNormalization()(x)
-            x = layers.MaxPooling2D((2, 2), name="pool2")(x)
+        new_shape = (
+            (self.train_data.image_width // 4),
+            (self.train_data.image_height // 4) * 64,
+        )
+        x = layers.Reshape(target_shape=new_shape, name="reshape")(x)
+        x = layers.Dense(64, activation="relu", kernel_initializer="he_normal", name="dense1")(x)
+        x = layers.Dropout(0.2)(x)
 
-            new_shape = (
-                (self.train_data.image_width // 4),
-                (self.train_data.image_height // 4) * 128,
-            )
-            x = layers.Reshape(target_shape=new_shape, name="reshape")(x)
-            x = layers.Dense(128, activation="relu", kernel_initializer="he_normal", name="dense1")(x)
-            x = layers.BatchNormalization()(x)
-            x = layers.Dropout(0.3)(x)
+        x = layers.Bidirectional(layers.LSTM(128, return_sequences=True, dropout=0.25))(x)
+        x = layers.Bidirectional(layers.LSTM(64, return_sequences=True, dropout=0.25))(x)
 
-            x = layers.Bidirectional(layers.LSTM(256, return_sequences=True, dropout=0.25, recurrent_dropout=0.1))(x)
-            x = layers.Bidirectional(layers.LSTM(128, return_sequences=True, dropout=0.25, recurrent_dropout=0.1))(x)
-
-            lr_schedule = keras.optimizers.schedules.ExponentialDecay(
-                initial_learning_rate=0.001,
-                decay_steps=1000,
-                decay_rate=0.9
-            )
-
-            optimizer = keras.optimizers.Adam(learning_rate=lr_schedule)
-
-        else:
-
-            x = layers.Conv2D(32,(3, 3),activation="relu",kernel_initializer="he_normal",padding="same",name="Conv1")(input_img)
-            x = layers.MaxPooling2D((2, 2), name="pool1")(x)
-            x = layers.Conv2D(64,(3, 3),activation="relu",kernel_initializer="he_normal",padding="same",name="Conv2")(x)
-            x = layers.MaxPooling2D((2, 2), name="pool2")(x)
-
-            new_shape = (
-                (self.train_data.image_width // 4),
-                (self.train_data.image_height // 4) * 64,
-            )
-            x = layers.Reshape(target_shape=new_shape, name="reshape")(x)
-            x = layers.Dense(64, activation="relu", kernel_initializer="he_normal", name="dense1")(x)
-            x = layers.Dropout(0.2)(x)
-
-            x = layers.Bidirectional(layers.LSTM(128, return_sequences=True, dropout=0.25))(x)
-            x = layers.Bidirectional(layers.LSTM(64, return_sequences=True, dropout=0.25))(x)
-
-            optimizer = keras.optimizers.Adam()
+        optimizer = keras.optimizers.Adam()
         
         # Output layer
         unit = len(list(self.train_data.characters)) + 1
@@ -348,15 +301,8 @@ class KerasModel:
 
     def load_prediction_model(self, model_path: str = None):
 
-        if model_path is None:
-            model_path = self.train_data.get_model_path(keras_native=self.keras_native)
-
-        if self.keras_native:
-            model:keras.models.Model = keras.models.load_model(
-                model_path, custom_objects={"CTCLayer": CTCLayer}
-            )
-        else:
-            model:keras.models.Model = tf.saved_model.load(model_path)
+        model_path = self.train_data.get_model_path()
+        model:keras.models.Model = tf.saved_model.load(model_path)
 
         input_layer = model.input[0]
         output_layer = model.get_layer(name="dense2").output

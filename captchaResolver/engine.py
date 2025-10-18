@@ -3,15 +3,12 @@ import keras
 import numpy as np
 import tensorflow as tf
 
-from PIL import Image
 from captchaResolver.core import KerasModel
-from captchaResolver.dataclass import CaptchaType
 
 def train_model(
     model: KerasModel,
     epochs=100,
     batch_size=32,
-    hard_mode=False,
     earlystopping=True,
     early_stopping_patience: int = 8
 ):
