@@ -301,14 +301,12 @@ class KerasModel:
 
     def load_prediction_model(self, model_path: str = None):
 
-        model_path = self.train_data.get_model_path()
-        model:keras.models.Model = tf.saved_model.load(model_path)
+        if model_path is None:
+            model_path = self.train_data.get_model_path()
 
-        input_layer = model.input[0]
-        output_layer = model.get_layer(name="dense2").output
-
-        self.predict_model = keras.models.Model(
-            input_layer, output_layer
-        )
+        loaded = keras.models.load_model(model_path)
+        input_layer = loaded.input[0] if isinstance(loaded.input, list) else loaded.input
+        output_layer = loaded.get_layer(name="dense2").output
+        self.predict_model = keras.models.Model(input_layer, output_layer)
 
         return self.predict_model

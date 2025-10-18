@@ -36,13 +36,10 @@ def train_model(
         train_model.fit(
             train_dataset, validation_data=validation_dataset, epochs=epochs, verbose=model.verbose,
         )
-    model_path = train_data.get_model_path(keras_native=model.keras_native)
+    model_path = train_data.get_model_path()
     print("model_path : ", model_path)
 
-    if model.keras_native:
-        train_model.save(model_path)
-    else:
-        tf.saved_model.save(train_model, model_path)
+    train_model.save(model_path)
 
 def batch_predict_model(model: KerasModel, batch_size=32):
     start = time.time()
