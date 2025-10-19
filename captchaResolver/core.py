@@ -166,7 +166,7 @@ class CTCLayer(layers.Layer):
 
 class KerasModel:
 
-    def __init__(self, train_data: TrainInfo, verbose=1):
+    def __init__(self, train_data: TrainInfo, verbose=1, keras_model=True, saved_model=False):
         self.train_data = train_data
         self.char_to_num = layers.StringLookup(
             vocabulary=train_data.characters, mask_token=None, num_oov_indices=0
@@ -176,6 +176,8 @@ class KerasModel:
         )
         self.predict_model = None
         self.verbose = verbose
+        self.keras_model = keras_model
+        self.saved_model = saved_model
 
     def split_dataset(self, batch_size=32, train_size=0.9, shuffle=True):
         # 1. Get the total size of the dataset
@@ -244,15 +246,15 @@ class KerasModel:
 
         return {"image": image, "label": label}
 
-    def build_model(self):
+    def build_model(self, prediction_only=False) -> keras.models.Model:
         # Inputs to the model
         width, height = self.train_data.image_width, self.train_data.image_height
+        # 공통 feature extractor
         input_img = layers.Input(shape=(width, height, 1), name="image", dtype="float32")
-        labels = layers.Input(name="label", shape=(None,), dtype="float32")
 
-        x = layers.Conv2D(32,(3, 3),activation="relu",kernel_initializer="he_normal",padding="same",name="Conv1")(input_img)
+        x = layers.Conv2D(32, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same", name="Conv1")(input_img)
         x = layers.MaxPooling2D((2, 2), name="pool1")(x)
-        x = layers.Conv2D(64,(3, 3),activation="relu",kernel_initializer="he_normal",padding="same",name="Conv2")(x)
+        x = layers.Conv2D(64, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same", name="Conv2")(x)
         x = layers.MaxPooling2D((2, 2), name="pool2")(x)
 
         new_shape = (
@@ -266,21 +268,23 @@ class KerasModel:
         x = layers.Bidirectional(layers.LSTM(128, return_sequences=True, dropout=0.25))(x)
         x = layers.Bidirectional(layers.LSTM(64, return_sequences=True, dropout=0.25))(x)
 
-        optimizer = keras.optimizers.Adam()
-        
-        # Output layer
+        # Output layer (softmax)
         unit = len(list(self.train_data.characters)) + 1
         x = layers.Dense(unit, activation="softmax", name="dense2")(x)
 
-        # Add CTC layer for calculating CTC loss at each step
-        output = CTCLayer(name="ctc_loss")(labels, x)
-
-        # Define the model
-        model = keras.models.Model(inputs=[input_img, labels], outputs=output, name="ocr_model_v1")
-
-        # Compile the model and return
-        model.compile(optimizer=optimizer)
-        return model
+        if prediction_only:
+            # 추론 전용 모델: 이미지 입력 -> softmax 출력
+            pred_model = keras.models.Model(inputs=input_img, outputs=x, name="ocr_prediction_v1")
+            # 예측용 모델은 컴파일 불필요
+            return pred_model
+        else:
+            # 학습용 모델: labels 입력 및 CTCLayer 포함
+            labels = layers.Input(name="label", shape=(None,), dtype="float32")
+            output = CTCLayer(name="ctc_loss")(labels, x)
+            model = keras.models.Model(inputs=[input_img, labels], outputs=output, name="ocr_model_v1")
+            optimizer = keras.optimizers.Adam()
+            model.compile(optimizer=optimizer)
+            return model
 
     def decode_batch_predictions(self, pred):
         input_len = np.ones(pred.shape[0]) * pred.shape[1]

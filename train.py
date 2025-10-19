@@ -14,10 +14,10 @@ batch_size = 32
 early_stopping_patience = 16
 
 model = KerasModel(train_data=train_data)
-train_model(
+model_base_dir = train_model(
     model,
     epochs=epochs,
     batch_size=batch_size,
     early_stopping_patience=early_stopping_patience)
-
+print(f"Model trained and saved at: {model_base_dir}{os.path.sep}weights.keras")
 print("Done!")

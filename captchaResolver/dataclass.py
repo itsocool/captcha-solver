@@ -87,6 +87,15 @@ class TrainInfo:
         model_path = os.path.join(model_path, "weights.keras")
         return model_path
 
+    def get_model_base_dir(self) -> str:
+        model_base_dir = os.path.join(self.base_dir, self.captcha_id, str(self.rev), 'model')
+        model_base_dir = os.path.abspath(model_base_dir)
+
+        if not os.path.exists(model_base_dir):
+            os.makedirs(model_base_dir, exist_ok=True)
+
+        return model_base_dir
+
     def get_pred_image_path(self) -> str:
         image_dir = self.get_image_dir(train=False)
         if isinstance(image_dir, (list, tuple)):

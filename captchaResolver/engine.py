@@ -1,3 +1,4 @@
+import os
 import time
 import keras
 import numpy as np
@@ -36,10 +37,18 @@ def train_model(
         train_model.fit(
             train_dataset, validation_data=validation_dataset, epochs=epochs, verbose=model.verbose,
         )
-    model_path = train_data.get_model_path()
-    print("model_path : ", model_path)
 
-    train_model.save(model_path)
+    # pred_model = model.build_model(prediction_only=True)
+    model_base_dir = train_data.get_model_base_dir()
+    
+    if model.keras_model == True:
+        model_path = os.path.join(model_base_dir, "weights.keras")
+        train_model.save(model_path)
+
+    # if model.saved_model == True:
+    #     tf.saved_model.save(pred_model, model_base_dir)
+
+    return model_base_dir
 
 def batch_predict_model(model: KerasModel, batch_size=32):
     start = time.time()
