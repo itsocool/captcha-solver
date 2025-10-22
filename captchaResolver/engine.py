@@ -1,39 +1,41 @@
 import os
 import time
 import torch
+import torch.nn as nn
 import numpy as np
 from typing import Tuple, Optional, Dict
 from tqdm import tqdm
 
 from captchaResolver.core import PyTorchModel
 from captchaResolver.dataclass import CaptchaType, TrainInfo
+from captchaResolver.keras_core import KerasModel
 
-def get_captcha_type_list(base_dir: str = "./captcha_data"):
+def get_captcha_type_list(base_dir: str = "./captcha_data") -> Dict[str, CaptchaType]:
     default_train_data = TrainInfo(
         captcha_id="default",
-        base_dir=base_dir,
+        captcha_data_base_dir=base_dir,
         label_length=5,
         characters=list('2345678bcdefgmnpwxy')
     )
     default = CaptchaType(id="default", name="기본 캡챠", desc="기본 캡챠", train_data=default_train_data)
     supreme_court_train_data = TrainInfo(
         captcha_id="supreme_court",
-        base_dir=base_dir
+        captcha_data_base_dir=base_dir
     )
     supreme_court = CaptchaType(id="supreme_court", name="대법원", desc="대법원 캡챠", train_data=supreme_court_train_data)
     gov24_train_data = TrainInfo(
         captcha_id="gov24",
-        base_dir=base_dir
+        captcha_data_base_dir=base_dir
     )
     gov24 = CaptchaType(id="gov24", name="gov24", desc="대한민국 정부 24 캡챠", train_data=gov24_train_data)
     wetax_train_data = TrainInfo(
         captcha_id="wetax",
-        base_dir=base_dir
+        captcha_data_base_dir=base_dir
     )
     wetax = CaptchaType(id="wetax", name="wetax", desc="WETAX 캡챠", train_data=wetax_train_data)
     kshop_train_data = TrainInfo(
         captcha_id="kshop",
-        base_dir=base_dir
+        captcha_data_base_dir=base_dir
     )
     kshop = CaptchaType(id="kshop", name="kshop", desc="KT Shopping 캡챠", train_data=kshop_train_data)
 
@@ -45,274 +47,86 @@ def get_captcha_type_list(base_dir: str = "./captcha_data"):
         "kshop": kshop,
     }
 
-
-def train_model(
-    model: PyTorchModel,
-    epochs: int = 100,
-    batch_size: int = 32,
-    earlystopping: bool = True,
-    early_stopping_patience: int = 8,
-    learning_rate: float = 0.001,
-    num_workers: int = 4
-) -> str:
+def get_model(train_data: TrainInfo) -> PyTorchModel | KerasModel:
     """
-    PyTorch 모델 학습 함수
+    주어진 TrainInfo에 따라 적절한 모델 인스턴스 반환
     
     Args:
-        model: PyTorchModel 인스턴스
-        epochs: 학습 에포크 수
-        batch_size: 배치 크기
-        earlystopping: Early stopping 사용 여부
-        early_stopping_patience: Early stopping patience
-        learning_rate: 학습률
-        num_workers: 데이터 로더 워커 수
+        train_data: TrainInfo 인스턴스
         
     Returns:
-        모델 저장 경로
+        PyTorchModel 또는 KerasModel 인스턴스
     """
-    # 데이터셋 분할
-    train_loader, val_loader = model.split_dataset(
-        batch_size=batch_size,
-        train_size=0.9,
-        shuffle=True,
-        num_workers=num_workers
-    )
+    if train_data.backend == 'pytorch':
+        model = PyTorchModel(
+            train_data=train_data,
+            verbose=1
+        )
+    elif train_data.backend == 'keras':
+        model = KerasModel(
+            train_data=train_data,
+            verbose=1
+        )
+    else:
+        raise ValueError(f"Unsupported backend: {train_data.backend}")
     
-    train_data = model.train_data
+    return model
+
+def train_model(
+    model,
+    epochs: int = 100,
+    batch_size: int = 32,
+    earlystopping: bool = False,
+    early_stopping_patience: int = 15,
+    learning_rate: float = 0.001,
+    num_workers: int = 0,
+    warmup_epochs: int = 0
+):
+    """
+    Train model with given parameters (dev.ipynb based + early stopping).
     
-    # 모델 빌드
+    Args:
+        model: PyTorchModel instance
+        epochs: Number of training epochs
+        batch_size: Batch size for training
+        earlystopping: Enable early stopping
+        early_stopping_patience: Patience for early stopping
+        learning_rate: Initial learning rate
+        num_workers: Number of DataLoader workers
+        warmup_epochs: Number of warmup epochs
+        
+    Returns:
+        model_base_dir: Directory where model is saved
+    """
+    # Build model if not already built (dev.ipynb style)
     if model.model is None:
         model.model = model.build_model()
     
-    # Optimizer 및 Scheduler 설정
-    optimizer = torch.optim.AdamW(model.model.parameters(), lr=learning_rate, weight_decay=0.01)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+    # Split dataset (dev.ipynb style)
+    train_loader, val_loader = model.split_dataset(
+        batch_size=batch_size,
+        train_size=0.8,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=False
+    )
     
-    # Loss function
-    from captchaResolver.core import CTCLoss
-    criterion = CTCLoss()
+    # Train model with early stopping
+    patience = early_stopping_patience if earlystopping else 0
     
-    # Mixed precision scaler
-    from torch.cuda.amp import GradScaler
-    scaler = GradScaler() if model.use_amp else None
+    hist = model.train_model(
+        train_loader=train_loader,
+        val_loader=val_loader,
+        epochs=epochs,
+        lr=learning_rate,
+        save_best=True,
+        warmup_epochs=warmup_epochs,
+        early_stopping_patience=patience
+    )
     
-    # Early stopping 변수
-    best_val_loss = float('inf')
-    patience_counter = 0
-    
-    # 학습 히스토리
-    history = {'train_loss': [], 'val_loss': []}
-    
-    # 모델 저장 경로 설정
-    model_base_dir = train_data.get_model_base_dir()
-    os.makedirs(model_base_dir, exist_ok=True)
-    model_path = train_data.get_model_path()
-    
-    if model.verbose > 0:
-        print(f"\nStarting training for {epochs} epochs...")
-        print(f"Training samples: {len(train_loader.dataset)}")
-        print(f"Validation samples: {len(val_loader.dataset)}")
-        print(f"Total batches per epoch: {len(train_loader)} (train) + {len(val_loader)} (val)")
-        print("="*80)
-    
-    # 전체 학습 시간 측정
-    training_start_time = time.time()
-    
-    for epoch in range(epochs):
-        epoch_start_time = time.time()
-        
-        # Training phase
-        model.model.train()
-        train_loss = 0.0
-        train_batch_losses = []
-        
-        # tqdm으로 학습 진행률 표시
-        train_pbar = tqdm(
-            enumerate(train_loader),
-            total=len(train_loader),
-            desc=f"Epoch {epoch+1}/{epochs} [Train]",
-            disable=(model.verbose == 0),
-            ncols=100,
-            leave=False
-        )
-        
-        for batch_idx, batch in train_pbar:
-            images = batch['images'].to(model.device)
-            labels = batch['labels'].to(model.device)
-            label_lengths = batch['label_lengths'].to(model.device)
-            
-            optimizer.zero_grad(set_to_none=True)
-            
-            if model.use_amp:
-                from torch.cuda.amp import autocast
-                with autocast():
-                    log_probs = model.model(images)
-                    input_lengths = torch.full(
-                        (images.size(0),), log_probs.size(0),
-                        dtype=torch.long, device=model.device
-                    )
-                    loss = criterion(log_probs, labels, input_lengths, label_lengths)
-                
-                scaler.scale(loss).backward()
-                scaler.step(optimizer)
-                scaler.update()
-            else:
-                log_probs = model.model(images)
-                input_lengths = torch.full(
-                    (images.size(0),), log_probs.size(0),
-                    dtype=torch.long, device=model.device
-                )
-                loss = criterion(log_probs, labels, input_lengths, label_lengths)
-                loss.backward()
-                optimizer.step()
-            
-            batch_loss = loss.item()
-            train_loss += batch_loss
-            train_batch_losses.append(batch_loss)
-            
-            # 진행률 바에 현재 배치 손실 표시
-            train_pbar.set_postfix({
-                'loss': f'{batch_loss:.4f}',
-                'avg': f'{train_loss/(batch_idx+1):.4f}'
-            })
-        
-        train_pbar.close()
-        train_loss /= len(train_loader)
-        
-        # Validation phase
-        model.model.eval()
-        val_loss = 0.0
-        val_batch_losses = []
-        
-        # tqdm으로 검증 진행률 표시
-        val_pbar = tqdm(
-            val_loader,
-            total=len(val_loader),
-            desc=f"Epoch {epoch+1}/{epochs} [Val]  ",
-            disable=(model.verbose == 0),
-            ncols=100,
-            leave=False
-        )
-        
-        with torch.no_grad():
-            for batch_idx, batch in enumerate(val_pbar):
-                images = batch['images'].to(model.device)
-                labels = batch['labels'].to(model.device)
-                label_lengths = batch['label_lengths'].to(model.device)
-                
-                log_probs = model.model(images)
-                input_lengths = torch.full(
-                    (images.size(0),), log_probs.size(0),
-                    dtype=torch.long, device=model.device
-                )
-                loss = criterion(log_probs, labels, input_lengths, label_lengths)
-                batch_loss = loss.item()
-                val_loss += batch_loss
-                val_batch_losses.append(batch_loss)
-                
-                # 진행률 바에 현재 배치 손실 표시
-                val_pbar.set_postfix({
-                    'loss': f'{batch_loss:.4f}',
-                    'avg': f'{val_loss/(batch_idx+1):.4f}'
-                })
-        
-        val_pbar.close()
-        val_loss /= len(val_loader)
-        
-        epoch_time = time.time() - epoch_start_time
-        
-        history['train_loss'].append(train_loss)
-        history['val_loss'].append(val_loss)
-        
-        # 상세 로깅
-        if model.verbose > 0:
-            # 손실 변화량 계산
-            train_delta = ""
-            val_delta = ""
-            if len(history['train_loss']) > 1:
-                train_diff = train_loss - history['train_loss'][-2]
-                val_diff = val_loss - history['val_loss'][-2]
-                train_delta = f" ({train_diff:+.4f})"
-                val_delta = f" ({val_diff:+.4f})"
-            
-            # 에포크 요약 출력
-            print(f"\nEpoch {epoch+1}/{epochs} Summary:")
-            print(f"  Train Loss: {train_loss:.6f}{train_delta}")
-            print(f"    ├─ Min batch: {min(train_batch_losses):.6f}")
-            print(f"    ├─ Max batch: {max(train_batch_losses):.6f}")
-            print(f"    └─ Std: {np.std(train_batch_losses):.6f}")
-            print(f"  Val Loss:   {val_loss:.6f}{val_delta}")
-            print(f"    ├─ Min batch: {min(val_batch_losses):.6f}")
-            print(f"    ├─ Max batch: {max(val_batch_losses):.6f}")
-            print(f"    └─ Std: {np.std(val_batch_losses):.6f}")
-            print(f"  Learning Rate: {scheduler.get_last_lr()[0]:.8f}")
-            print(f"  Epoch Time: {epoch_time:.2f}s")
-            print(f"  Samples/sec: {len(train_loader.dataset)/epoch_time:.1f} (train)")
-        
-        # Early stopping 체크
-        improved = False
-        if earlystopping:
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                patience_counter = 0
-                improved = True
-                # 최고 성능 모델 저장
-                model.save_model(model_path, epoch, optimizer, scheduler, val_loss)
-                if model.verbose > 0:
-                    print(f"  ✓ Best model saved! (val_loss improved: {val_loss:.6f})")
-            else:
-                patience_counter += 1
-                if model.verbose > 0:
-                    print(f"  ✗ No improvement (patience: {patience_counter}/{early_stopping_patience})")
-                if patience_counter >= early_stopping_patience:
-                    if model.verbose > 0:
-                        print(f"\n{'='*80}")
-                        print(f"Early stopping triggered at epoch {epoch+1}")
-                        print(f"Best validation loss: {best_val_loss:.6f}")
-                        print(f"{'='*80}")
-                    break
-        else:
-            # Early stopping 미사용 시 매 에포크마다 저장
-            model.save_model(model_path, epoch, optimizer, scheduler, val_loss)
-            improved = True
-            if model.verbose > 0:
-                print(f"  ✓ Model saved")
-        
-        if model.verbose > 0:
-            # 전체 진행률 계산
-            total_time = time.time() - training_start_time
-            avg_epoch_time = total_time / (epoch + 1)
-            remaining_epochs = epochs - (epoch + 1)
-            eta = avg_epoch_time * remaining_epochs
-            
-            print(f"  Progress: {(epoch+1)/epochs*100:.1f}% | "
-                  f"Elapsed: {total_time:.0f}s | "
-                  f"ETA: {eta:.0f}s")
-            print("="*80)
-        
-        scheduler.step()
-    
-    # 학습 완료 통계
-    total_training_time = time.time() - training_start_time
-    
-    if model.verbose > 0:
-        print(f"\n{'='*80}")
-        print(f"Training Completed Successfully!")
-        print(f"{'='*80}")
-        print(f"Training Statistics:")
-        print(f"  Total Epochs: {len(history['train_loss'])}")
-        print(f"  Best Validation Loss: {best_val_loss:.6f}")
-        print(f"  Final Train Loss: {history['train_loss'][-1]:.6f}")
-        print(f"  Final Val Loss: {history['val_loss'][-1]:.6f}")
-        print(f"  Total Training Time: {total_training_time:.2f}s ({total_training_time/60:.1f}m)")
-        print(f"  Average Time per Epoch: {total_training_time/len(history['train_loss']):.2f}s")
-        print(f"\nLoss History:")
-        print(f"  Train Loss Range: [{min(history['train_loss']):.6f}, {max(history['train_loss']):.6f}]")
-        print(f"  Val Loss Range: [{min(history['val_loss']):.6f}, {max(history['val_loss']):.6f}]")
-        print(f"  Train Loss Improvement: {history['train_loss'][0] - history['train_loss'][-1]:.6f}")
-        print(f"  Val Loss Improvement: {history['val_loss'][0] - history['val_loss'][-1]:.6f}")
-        print(f"\nModel saved to: {model_path}")
-        print(f"{'='*80}\n")
+    # Return model directory
+    model_path = model.train_data.get_model_path()
+    model_base_dir = os.path.dirname(model_path)
     
     return model_base_dir
 

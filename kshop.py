@@ -17,7 +17,7 @@ else:
 
 import tensorflow as tf
 tf.get_logger().setLevel('ERROR')
-from captchaResolver import consts, dataclass, keras_engine
+from captchaResolver import dataclass, keras_engine
 from PIL import Image
 from captchaResolver.keras_core import KerasModel
 
@@ -25,10 +25,10 @@ def execute(captcha_type: str, image_path: str) -> str:
 
     train_data = dataclass.TrainInfo(
         captcha_id=captcha_type,
-        base_dir=base_dir,
+        captcha_data_base_dir=base_dir,
         init=False,
         label_length=6,
-        characters=list(consts.DIGITS))
+        characters=list(dataclass.DIGITS))
     model = KerasModel(train_data=train_data, verbose=0)
     temp_dir = os.path.abspath(base_dir)
     temp_image_path = os.path.join(temp_dir, f"{time.time()}.png")

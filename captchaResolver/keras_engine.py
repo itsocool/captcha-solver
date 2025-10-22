@@ -39,16 +39,8 @@ def train_model(
         )
 
     model_base_dir = train_data.get_model_base_dir()
-
-    train_model.save(model_base_dir, save_format="tf")
-    
-    if model.keras_model == True:
-        model_path = os.path.join(model_base_dir, "weights.keras")
-        train_model.save(model_path)
-
-    # if model.saved_model == True:
-    #     tf.saved_model.save(pred_model, model_base_dir)
-
+    full_model_path = os.path.join(model_base_dir, "weights.keras")
+    train_model.save(full_model_path)
     return model_base_dir
 
 def batch_predict_model(model: KerasModel, batch_size=32):

@@ -1,6 +1,11 @@
 import numpy as np
 
-from captchaResolver.dataclass import CaptchaType, TrainInfo
+# TensorFlow / Keras imports (ensure keras symbol is available for decorators)
+import tensorflow as tf
+from tensorflow import keras
+from keras import layers
+
+from captchaResolver.dataclass import TrainInfo
 
 def ctc_label_dense_to_sparse(labels, label_lengths):
     """Convert dense labels to sparse format for CTC.
@@ -8,14 +13,14 @@ def ctc_label_dense_to_sparse(labels, label_lengths):
     Improved version using vectorized operations instead of tf.scan()
     for better memory efficiency and performance.
     """
-    label_shape = ops.shape(labels)
+    label_shape = tf.shape(labels)
     batch_size = label_shape[0]
     max_label_len = label_shape[1]
 
     # Vectorized mask generation using broadcasting
     # Shape: (batch_size, max_label_len)
-    label_positions = ops.arange(max_label_len)  # [0, 1, 2, ..., max_label_len-1]
-    label_lengths_expanded = ops.expand_dims(label_lengths, axis=1)  # (batch_size, 1)
+    label_positions = tf.range(max_label_len)  # [0, 1, 2, ..., max_label_len-1]
+    label_lengths_expanded = tf.expand_dims(label_lengths, axis=1)  # (batch_size, 1)
     
     # Broadcasting comparison: (batch_size, 1) vs (max_label_len,) -> (batch_size, max_label_len)
     dense_mask = label_positions < label_lengths_expanded
@@ -28,9 +33,9 @@ def ctc_label_dense_to_sparse(labels, label_lengths):
     vals_sparse = tf.gather_nd(labels, indices)
 
     return tf.SparseTensor(
-        ops.cast(indices, dtype="int64"), 
+        tf.cast(indices, dtype="int64"), 
         vals_sparse, 
-        ops.cast(label_shape, dtype="int64")
+        tf.cast(label_shape, dtype="int64")
     )
 
 def ctc_decode(y_pred, input_length, greedy=True, beam_width=100, top_paths=1):
@@ -46,10 +51,10 @@ def ctc_decode(y_pred, input_length, greedy=True, beam_width=100, top_paths=1):
     Returns:
         Tuple of (decoded_sequences, log_probabilities)
     """
-    input_shape = ops.shape(y_pred)
+    input_shape = tf.shape(y_pred)
     num_samples, num_steps = input_shape[0], input_shape[1]
-    y_pred = ops.log(ops.transpose(y_pred, axes=[1, 0, 2]) + keras.backend.epsilon())
-    input_length = ops.cast(input_length, dtype="int32")
+    y_pred = tf.math.log(tf.transpose(y_pred, perm=[1, 0, 2]) + tf.keras.backend.epsilon())
+    input_length = tf.cast(input_length, dtype="int32")
 
     if greedy:
         (decoded, log_prob) = tf.nn.ctc_greedy_decoder(
@@ -69,7 +74,7 @@ def ctc_decode(y_pred, input_length, greedy=True, beam_width=100, top_paths=1):
         decoded_dense.append(tf.sparse.to_dense(sp_input=st, default_value=-1))
     return (decoded_dense, log_prob)
 
-@keras.saving.register_keras_serializable(package="captchaResolver")
+@tf.keras.utils.register_keras_serializable(package="captchaResolver")
 class CTCLayer(layers.Layer):
     """Custom CTC layer for computing CTC loss.
     
@@ -78,7 +83,8 @@ class CTCLayer(layers.Layer):
     """
     def __init__(self, name=None, **kwargs):
         super().__init__(name=name, **kwargs)
-        self.loss_fn = ctc_batch_cost
+        # Use Keras backend CTC batch cost implementation
+        self.loss_fn = tf.keras.backend.ctc_batch_cost
         self.supports_masking = True
 
     def get_config(self):

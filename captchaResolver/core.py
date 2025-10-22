@@ -3,662 +3,649 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-from torch.amp import autocast, GradScaler  # PyTorch 2.0+ unified AMP API
+import torch.optim as optim
 from PIL import Image
+import torchvision.transforms as T
 from typing import List, Tuple, Optional, Dict
+from tqdm import tqdm
+import collections
+import os
+import json
 
 from captchaResolver.dataclass import TrainInfo
 
 
-class CTCLoss(nn.Module):
-    """CTC Loss wrapper for PyTorch with improved configuration."""
+# ============================================================================
+# PyTorch 기반 CRNN 모델 (dev.ipynb 스타일)
+# ============================================================================
+
+class Bidirectional(nn.Module):
+    """양방향 RNN 래퍼 (LSTM 또는 GRU)."""
     
-    def __init__(self, blank: int = 0, reduction: str = 'mean', zero_infinity: bool = True):
-        super().__init__()
-        self.ctc_loss = nn.CTCLoss(blank=blank, reduction=reduction, zero_infinity=zero_infinity)
+    def __init__(self, inp: int, hidden: int, out: int, lstm: bool = True):
+        super(Bidirectional, self).__init__()
+        if lstm:
+            self.rnn = nn.LSTM(inp, hidden, bidirectional=True)
+        else:
+            self.rnn = nn.GRU(inp, hidden, bidirectional=True)
+        self.embedding = nn.Linear(hidden * 2, out)
     
-    def forward(self, log_probs: torch.Tensor, targets: torch.Tensor, 
-                input_lengths: torch.Tensor, target_lengths: torch.Tensor) -> torch.Tensor:
+    def forward(self, X: torch.Tensor) -> torch.Tensor:
+        recurrent, _ = self.rnn(X)
+        out = self.embedding(recurrent)
+        return out
+
+
+class CRNN(nn.Module):
+    """
+    CRNN 아키텍처 (dev.ipynb 기반).
+    
+    특징:
+    - 동적 feature_dim 계산 (최초 forward 시 Linear 레이어 생성)
+    - 고정 입력 크기 전제 (리사이즈로 보장)
+    - CTC Loss 통합
+    """
+    
+    def __init__(self, in_channels: int, output: int):
+        super(CRNN, self).__init__()
+        
+        self.cnn = nn.Sequential(
+            nn.Conv2d(in_channels, 256, 9, stride=1, padding=1),
+            nn.ReLU(),
+            nn.BatchNorm2d(256),
+            nn.MaxPool2d(3, 3),
+            nn.Conv2d(256, 256, (4, 3), stride=1, padding=1),
+            nn.ReLU(),
+            nn.BatchNorm2d(256)
+        )
+        
+        # Linear는 최초 forward에서 feature_dim에 맞춰 동적 생성
+        self.linear = None
+        self.bn1 = nn.BatchNorm1d(256)
+        self.rnn = Bidirectional(256, 1024, output + 1)  # +1 for CTC blank
+    
+    def forward(self, X: torch.Tensor, y: Optional[torch.Tensor] = None,
+                criterion: Optional[nn.Module] = None) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         """
         Args:
-            log_probs: (T, N, C) - log probabilities from model
-            targets: (sum(target_lengths)) - concatenated target sequences
-            input_lengths: (N,) - lengths of input sequences
-            target_lengths: (N,) - lengths of target sequences
+            X: (N, C, H, W) 입력 이미지
+            y: (N, label_length) 타겟 레이블 (선택)
+            criterion: CTC loss 함수 (선택)
+            
+        Returns:
+            out: (T, N, num_classes) log probabilities
+            loss: scalar loss (y와 criterion 제공 시)
         """
-        return self.ctc_loss(log_probs, targets, input_lengths, target_lengths)
-
-
-def ctc_greedy_decode(log_probs: torch.Tensor, input_lengths: torch.Tensor, 
-                      blank: int = 0) -> List[List[int]]:
-    """Optimized greedy CTC decoding.
-    
-    Args:
-        log_probs: (T, N, C) tensor of log probabilities
-        input_lengths: (N,) tensor of sequence lengths
-        blank: blank label index (default: 0)
+        out = self.cnn(X)
+        N, C, w, h = out.size()
         
-    Returns:
-        List of decoded sequences (one per batch item)
-    """
-    # Get argmax predictions: (T, N, C) -> (T, N)
-    max_indices = torch.argmax(log_probs, dim=2)  # More efficient than torch.max
-    max_indices = max_indices.permute(1, 0)  # (N, T)
-    
-    decoded = []
-    for i, length in enumerate(input_lengths):
-        sequence = max_indices[i, :length].tolist()
+        # Reshape: (N, C, w, h) -> (N, C*w, h)
+        out = out.view(N, -1, h)
+        out = out.permute(0, 2, 1)  # (N, h, feature_dim)
         
-        # CTC collapse: remove consecutive duplicates and blanks
-        merged = []
-        prev = None
-        for idx in sequence:
-            if idx != blank and idx != prev:
-                merged.append(idx)
-            prev = idx
-        decoded.append(merged)
-    
-    return decoded
+        # 최초 forward 시 feature_dim에 맞춰 linear 생성
+        feature_dim = out.size(-1)
+        if self.linear is None:
+            self.linear = nn.Linear(feature_dim, 256).to(out.device)
+        
+        out = self.linear(out)
+        out = out.permute(1, 0, 2)  # (h, N, 256) for RNN
+        out = self.rnn(out)  # (h, N, num_classes)
+        
+        if y is not None and criterion is not None:
+            T = out.size(0)
+            N = out.size(1)
+            
+            input_lengths = torch.full(size=(N,), fill_value=T, dtype=torch.long, device=out.device)
+            target_lengths = torch.full(size=(N,), fill_value=y.size(1), dtype=torch.long, device=out.device)
+            
+            out_log = out.log_softmax(2)
+            loss = criterion(out_log, y, input_lengths, target_lengths)
+            
+            return out, loss
+        
+        return out, None
 
 
 class CaptchaDataset(Dataset):
-    """Optimized PyTorch Dataset for CAPTCHA images."""
+    """PyTorch Dataset for CAPTCHA images."""
     
-    def __init__(self, image_paths: np.ndarray, labels: np.ndarray, 
-                 train_data: TrainInfo, char_to_idx: Dict[str, int]):
-        self.image_paths = image_paths
-        self.labels = labels
-        self.train_data = train_data
-        self.char_to_idx = char_to_idx
-        
+    def __init__(self, df, path: str, mapping: Dict[str, int], transform=None):
+        self.df = df
+        self.path = path
+        self.mapping = mapping
+        self.transform = transform
+    
     def __len__(self) -> int:
-        return len(self.image_paths)
+        return len(self.df)
     
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        image_path = self.image_paths[idx]
-        label = self.labels[idx]
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        data = self.df.iloc[idx]
+        image_path = os.path.join(self.path, data['image'])
+        image = Image.open(image_path).convert('L')
+        label = torch.tensor(data['label'], dtype=torch.long)
         
-        # Load and preprocess image
-        try:
-            with Image.open(image_path) as img:
-                # Convert to grayscale and resize
-                image = img.convert('L').resize(
-                    (self.train_data.image_width, self.train_data.image_height), 
-                    Image.Resampling.BILINEAR  # PyTorch 2.0+ uses Image.Resampling
-                )
-                image = np.asarray(image, dtype=np.float32) / 255.0
-        except Exception as e:
-            # Fallback to black image on error
-            print(f"Error loading {image_path}: {e}")
-            image = np.zeros((self.train_data.image_height, self.train_data.image_width), 
-                           dtype=np.float32)
+        if self.transform is not None:
+            image = self.transform(image)
         
-        # Apply threshold if specified
-        threshold = self.train_data.threshold
-        if threshold > 0:
-            threshold_norm = threshold / 255.0
-            image = np.where(image > threshold_norm, 1.0, image)
-        
-        # Transpose: (H, W) -> (W, H) and add channel: (W, H) -> (1, W, H)
-        image = np.transpose(image, (1, 0))  # More explicit
-        image = np.expand_dims(image, axis=0)
-        
-        # Convert label to indices (with error handling)
-        label_indices = []
-        for char in label:
-            if char in self.char_to_idx:
-                label_indices.append(self.char_to_idx[char])
-            else:
-                print(f"Warning: Character '{char}' not in vocabulary (label: {label})")
-        
-        return {
-            'image': torch.from_numpy(image).float(),
-            'label': torch.tensor(label_indices, dtype=torch.long),
-            'label_length': len(label_indices),
-            'image_path': image_path  # For debugging
-        }
+        return image, label
 
 
-def collate_fn(batch: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
-    """Custom collate function for variable-length CTC sequences."""
-    images = torch.stack([item['image'] for item in batch])
-    labels = [item['label'] for item in batch]
-    label_lengths = torch.tensor([item['label_length'] for item in batch], dtype=torch.long)
+class Engine:
+    """학습/평가/예측 엔진 (dev.ipynb 기반)."""
     
-    # Concatenate labels for CTC loss (required format)
-    labels_concat = torch.cat(labels) if labels else torch.tensor([], dtype=torch.long)
+    def __init__(self, model: nn.Module, optimizer: optim.Optimizer,
+                 criterion: nn.Module, epochs: int = 50,
+                 early_stop: bool = False, device: str = 'cpu'):
+        self.model = model
+        self.optimizer = optimizer
+        self.criterion = criterion
+        self.epochs = epochs
+        self.early_stop = early_stop
+        self.device = device
     
-    return {
-        'images': images,
-        'labels': labels_concat,
-        'label_lengths': label_lengths
-    }
+    def fit(self, dataloader: DataLoader) -> List[float]:
+        """학습 실행 및 손실 히스토리 반환."""
+        hist_loss = []
+        for epoch in range(self.epochs):
+            self.model.train()
+            tk = tqdm(dataloader, total=len(dataloader))
+            for data, target in tk:
+                data = data.to(device=self.device)
+                target = target.to(device=self.device)
+                
+                self.optimizer.zero_grad()
+                
+                out, loss = self.model(data, target, criterion=self.criterion)
+                
+                loss.backward()
+                self.optimizer.step()
+                
+                loss_val = loss.item() if isinstance(loss, torch.Tensor) else float(loss)
+                hist_loss.append(loss_val)
+                
+                tk.set_postfix({'Epoch': epoch + 1, 'Loss': loss_val})
+        
+        return hist_loss
+    
+    def evaluate(self, dataloader: DataLoader) -> Tuple[Dict[str, List], List[float]]:
+        """평가 실행 및 출력/손실 반환."""
+        self.model.eval()
+        hist_loss = []
+        outs = collections.defaultdict(list)
+        tk = tqdm(dataloader, total=len(dataloader))
+        
+        with torch.no_grad():
+            for data, target in tk:
+                data = data.to(device=self.device)
+                target = target.to(device=self.device)
+                
+                out, loss = self.model(data, target, criterion=self.criterion)
+                
+                outs['pred'].append(out)
+                outs['target'].append(target)
+                
+                hist_loss.append(loss.item() if isinstance(loss, torch.Tensor) else float(loss))
+                
+                tk.set_postfix({'Loss': loss.item()})
+        
+        return outs, hist_loss
+    
+    def predict(self, image_path: str) -> np.ndarray:
+        """단일 이미지 예측."""
+        image = Image.open(image_path).convert('L')
+        image_tensor = T.ToTensor()(image)
+        image_tensor = image_tensor.unsqueeze(0)
+        
+        self.model.eval()
+        with torch.no_grad():
+            out, _ = self.model(image_tensor.to(device=self.device))
+            out = out.permute(1, 0, 2)
+            out = out.log_softmax(2)
+            out = out.argmax(2)
+            out = out.cpu().detach().numpy()
+        
+        return out
 
 
-class CaptchaCRNN(nn.Module):
+def ctc_decode(pred_array: np.ndarray, mapping_inv: Dict[int, str]) -> str:
     """
-    Modern CRNN architecture for CAPTCHA recognition.
+    CTC greedy decoding (dev.ipynb 기반).
     
-    Architecture:
-    - CNN: 2 conv blocks with BatchNorm + ReLU + MaxPool
-    - Dense: Transition layer with LayerNorm
-    - RNN: 2 bidirectional LSTM layers with dropout
-    - Output: Linear layer with log_softmax for CTC
+    Args:
+        pred_array: (N, T) or (T,) numpy array
+        mapping_inv: {index: character} mapping
+        
+    Returns:
+        decoded string
     """
-    
-    def __init__(self, img_width: int, img_height: int, num_classes: int,
-                 dropout: float = 0.25):
-        super().__init__()
-        
-        self.img_width = img_width
-        self.img_height = img_height
-        self.num_classes = num_classes
-        
-        # CNN Feature Extraction
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, padding=1)
-        self.bn1 = nn.BatchNorm2d(32)
-        self.pool1 = nn.MaxPool2d(2, 2)
-        
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
-        self.bn2 = nn.BatchNorm2d(64)
-        self.pool2 = nn.MaxPool2d(2, 2)
-        
-        # Calculate feature dimensions after pooling
-        self.feature_height = img_height // 4
-        self.feature_width = img_width // 4
-        self.rnn_input_size = 64 * self.feature_height
-        
-        # Transition Dense Layer with LayerNorm
-        self.dense1 = nn.Linear(self.rnn_input_size, 64)
-        self.ln1 = nn.LayerNorm(64)
-        self.dropout1 = nn.Dropout(dropout)
-        
-        # Bidirectional LSTM layers
-        self.lstm1 = nn.LSTM(64, 128, num_layers=1, bidirectional=True, 
-                            batch_first=False, dropout=0.0)  # dropout only for num_layers>1
-        self.dropout_lstm1 = nn.Dropout(dropout)
-        
-        self.lstm2 = nn.LSTM(256, 64, num_layers=1, bidirectional=True, 
-                            batch_first=False, dropout=0.0)
-        self.dropout_lstm2 = nn.Dropout(dropout)
-        
-        # Output projection
-        self.output = nn.Linear(128, num_classes)
-        
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass.
-        
-        Args:
-            x: (N, 1, W, H) input images
-            
-        Returns:
-            (T, N, C) log probabilities for CTC loss
-        """
-        # CNN feature extraction
-        x = self.pool1(F.relu(self.bn1(self.conv1(x)), inplace=True))  # (N, 32, W/2, H/2)
-        x = self.pool2(F.relu(self.bn2(self.conv2(x)), inplace=True))  # (N, 64, W/4, H/4)
-        
-        # Reshape for RNN: (N, C, H, W) -> (N, W, C*H)
-        batch_size = x.size(0)
-        x = x.permute(0, 3, 1, 2)  # (N, W, C, H)
-        x = x.reshape(batch_size, self.feature_width, self.rnn_input_size)  # (N, W, C*H)
-        
-        # Dense transition layer with LayerNorm
-        x = self.dense1(x)  # (N, W, 64)
-        x = self.ln1(x)
-        x = F.relu(x, inplace=True)
-        x = self.dropout1(x)
-        
-        # Prepare for LSTM: (N, W, C) -> (W, N, C)
-        x = x.permute(1, 0, 2)  # (W, N, 64)
-        
-        # LSTM sequence processing
-        x, _ = self.lstm1(x)  # (W, N, 256)
-        x = self.dropout_lstm1(x)
-        
-        x, _ = self.lstm2(x)  # (W, N, 128)
-        x = self.dropout_lstm2(x)
-        
-        # Output projection and log_softmax for CTC
-        x = self.output(x)  # (W, N, num_classes)
-        x = F.log_softmax(x, dim=2)
-        
-        return x
+    seq = pred_array[0] if pred_array.ndim == 2 else pred_array
+    prev = -1
+    chars = []
+    for p in seq:
+        pi = int(p)
+        if pi != prev and pi != 0:  # 0 = blank
+            chars.append(mapping_inv.get(pi, ''))
+        prev = pi
+    return ''.join(chars)
 
+
+# ============================================================================
+# PyTorchModel: TrainInfo 기반 래퍼 클래스
+# ============================================================================
 
 class PyTorchModel:
     """
-    PyTorch 2.9.0+ optimized CAPTCHA recognition model.
+    TrainInfo 기반 CAPTCHA 모델 래퍼 (dev.ipynb 구조 통합).
     
-    Features:
-    - Mixed precision training (AMP)
-    - torch.compile for performance
-    - Modern optimizers (AdamW + CosineAnnealingLR)
-    - Efficient data loading with persistent workers
+    기존 인터페이스 유지하면서 dev.ipynb의 간결한 구조 통합.
     """
     
-    def __init__(self, train_data: TrainInfo, verbose: int = 1, 
-                 device: Optional[torch.device] = None,
-                 use_compile: bool = True,
-                 use_amp: bool = True):
+    def __init__(self, train_data: TrainInfo, verbose: int = 1,
+                 device: Optional[torch.device] = None):
         self.train_data = train_data
         self.verbose = verbose
         
-        # Setup device
         if device is None:
             self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         else:
             self.device = device
         
-        # AMP configuration
-        self.use_amp = use_amp and torch.cuda.is_available()
-        self.dtype = torch.float16 if self.use_amp else torch.float32
-        
         if self.verbose > 0:
             print(f"Device: {self.device}")
-            print(f"Mixed Precision (AMP): {'Enabled' if self.use_amp else 'Disabled'}")
             print(f"PyTorch Version: {torch.__version__}")
-            
-        # Character mappings (blank=0)
+        
+        # Character mappings (1-based, 0 = blank)
         self.characters = list(train_data.characters)
         self.char_to_idx = {char: idx + 1 for idx, char in enumerate(self.characters)}
         self.idx_to_char = {idx: char for char, idx in self.char_to_idx.items()}
-        self.idx_to_char[0] = ''  # blank token
+        self.idx_to_char[0] = ''  # blank
         
-        self.num_classes = len(self.characters) + 1  # +1 for CTC blank
+        self.num_classes = len(self.characters)
         
         self.model = None
-        self.predict_model = None
-        self.use_compile = use_compile and hasattr(torch, 'compile')
+        self.engine = None
+    
+    def split_dataset(self, batch_size: int = 16, train_size: float = 0.8,
+                     shuffle: bool = True, num_workers: int = 0,
+                     pin_memory: bool = False) -> Tuple[DataLoader, DataLoader]:
+        """데이터셋 분할 및 DataLoader 생성 (dev.ipynb 스타일)."""
+        import pandas as pd
+        from sklearn.model_selection import train_test_split
         
-    def split_dataset(self, batch_size: int = 32, train_size: float = 0.9, 
-                     shuffle: bool = True, num_workers: int = 4,
-                     pin_memory: bool = True) -> Tuple[DataLoader, DataLoader]:
-        """Create optimized train/validation DataLoaders."""
-        images = np.array(self.train_data.get_data_files(train=True))
-        labels = np.array(self.train_data.get_labels(train=True))
-        size = len(images)
+        # 이미지 파일 목록 생성
+        image_files = self.train_data.get_data_files(train=True)
+        labels = self.train_data.get_labels(train=True)
         
-        # Split dataset
-        indices = np.arange(size)
-        if shuffle:
-            np.random.shuffle(indices)
+        # DataFrame 생성
+        data = []
+        for img_path, label in zip(image_files, labels):
+            img_name = os.path.basename(img_path)
+            label_indices = [self.char_to_idx[c] for c in label if c in self.char_to_idx]
+            data.append({'image': img_name, 'label': label_indices})
         
-        train_samples = int(size * train_size)
-        x_train, y_train = images[indices[:train_samples]], labels[indices[:train_samples]]
-        x_valid, y_valid = images[indices[train_samples:]], labels[indices[train_samples:]]
+        df = pd.DataFrame(data)
+        df_train, df_test = train_test_split(df, test_size=1 - train_size, shuffle=shuffle)
         
-        # Create datasets
-        train_dataset = CaptchaDataset(x_train, y_train, self.train_data, self.char_to_idx)
-        val_dataset = CaptchaDataset(x_valid, y_valid, self.train_data, self.char_to_idx)
+        # Transform: 고정 크기 리사이즈 (dev.ipynb 기반 - augmentation 없음)
+        transform = T.Compose([
+            T.Resize((self.train_data.image_height, self.train_data.image_width)),
+            T.ToTensor()
+        ])
         
-        # Optimized DataLoader configuration
+        # 데이터셋 경로
+        train_dir = self.train_data.get_image_dir(train=True)
+        
+        train_dataset = CaptchaDataset(df_train, train_dir, self.char_to_idx, transform)
+        test_dataset = CaptchaDataset(df_test, train_dir, self.char_to_idx, transform)
+        
+        # DataLoader 생성
         train_loader = DataLoader(
-            train_dataset,
-            batch_size=batch_size,
+            train_dataset, 
+            batch_size=batch_size, 
             shuffle=True,
             num_workers=num_workers,
-            collate_fn=collate_fn,
-            pin_memory=pin_memory and torch.cuda.is_available(),
-            persistent_workers=num_workers > 0,
-            prefetch_factor=2 if num_workers > 0 else None
+            pin_memory=pin_memory and torch.cuda.is_available()
         )
-        
-        val_loader = DataLoader(
-            val_dataset,
-            batch_size=batch_size,
+        test_loader = DataLoader(
+            test_dataset, 
+            batch_size=batch_size, 
             shuffle=False,
             num_workers=num_workers,
-            collate_fn=collate_fn,
-            pin_memory=pin_memory and torch.cuda.is_available(),
-            persistent_workers=num_workers > 0,
-            prefetch_factor=2 if num_workers > 0 else None
+            pin_memory=pin_memory and torch.cuda.is_available()
         )
         
         if self.verbose > 0:
             print(f"Training samples: {len(train_dataset)}")
-            print(f"Validation samples: {len(val_dataset)}")
+            print(f"Validation samples: {len(test_dataset)}")
         
-        return train_loader, val_loader
+        return train_loader, test_loader
     
-    def build_model(self, dropout: float = 0.25) -> nn.Module:
-        """Build CRNN model with optional torch.compile optimization."""
-        model = CaptchaCRNN(
-            img_width=self.train_data.image_width,
-            img_height=self.train_data.image_height,
-            num_classes=self.num_classes,
-            dropout=dropout
+    def create_prediction_dataset(self, batch_size: int = 32, num_workers: int = 0, 
+                                  pin_memory: bool = False) -> DataLoader:
+        """추론용 데이터셋 생성."""
+        import pandas as pd
+        
+        # 예측 이미지 파일 목록 생성
+        pred_image_files = self.train_data.get_data_files(train=False)
+        pred_labels = self.train_data.get_labels(train=False)
+        
+        # DataFrame 생성
+        data = []
+        for img_path, label in zip(pred_image_files, pred_labels):
+            img_name = os.path.basename(img_path)
+            label_indices = [self.char_to_idx.get(c, 0) for c in label]
+            data.append({'image': img_name, 'label': label_indices})
+        
+        df_pred = pd.DataFrame(data)
+        
+        # Transform: 고정 크기 리사이즈
+        transform = T.Compose([
+            T.Resize((self.train_data.image_height, self.train_data.image_width)),
+            T.ToTensor()
+        ])
+        
+        # 데이터셋 경로
+        pred_dir = self.train_data.get_image_dir(train=False)
+        
+        pred_dataset = CaptchaDataset(df_pred, pred_dir, self.char_to_idx, transform)
+        pred_loader = DataLoader(
+            pred_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=num_workers,
+            pin_memory=pin_memory and torch.cuda.is_available()
         )
+        
+        if self.verbose > 0:
+            print(f"Prediction samples: {len(pred_dataset)}")
+        
+        return pred_loader
+    
+    def build_model(self) -> nn.Module:
+        """CRNN 모델 생성 (dev.ipynb 스타일 - dropout 없음)."""
+        model = CRNN(in_channels=1, output=self.num_classes)
         model.to(self.device)
-        
-        # Use torch.compile for PyTorch 2.0+ (significant speedup)
-        if self.use_compile:
-            if self.verbose > 0:
-                print("Compiling model with torch.compile (may take a few minutes)...")
-            try:
-                model = torch.compile(model, mode='default')
-            except Exception as e:
-                print(f"Warning: torch.compile failed ({e}), using eager mode")
-        
         return model
     
-    def train_model(self, train_loader: DataLoader, val_loader: DataLoader,
-                   epochs: int = 100, lr: float = 0.001,
+    def train_model(self, train_loader: DataLoader, val_loader: DataLoader = None,
+                   epochs: int = 50, lr: float = 1e-4,
                    save_best: bool = True, model_path: Optional[str] = None,
-                   early_stopping_patience: int = 15) -> Dict[str, List[float]]:
-        """
-        Train the model with modern best practices.
-        
-        Features:
-        - AdamW optimizer with weight decay
-        - Cosine annealing learning rate schedule
-        - Mixed precision training (AMP)
-        - Gradient clipping for stability
-        - Early stopping
-        """
+                   warmup_epochs: int = 0, early_stopping_patience: int = 0) -> List[float]:
+        """모델 학습 (dev.ipynb 스타일 + early stopping)."""
         if self.model is None:
             self.model = self.build_model()
         
-        # Optimizer: AdamW with weight decay
-        optimizer = torch.optim.AdamW(
-            self.model.parameters(), 
-            lr=lr, 
-            weight_decay=0.01,
-            betas=(0.9, 0.999)
-        )
+        optimizer = optim.Adam(self.model.parameters(), lr=lr)
+        # dev.ipynb와 동일: PyTorch 기본 CTCLoss 사용
+        criterion = nn.CTCLoss()
         
-        # Learning rate scheduler
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, 
-            T_max=epochs,
-            eta_min=lr * 0.01  # Min LR = 1% of initial LR
-        )
+        # Learning rate scheduler (warmup 지원)
+        scheduler = None
+        if warmup_epochs > 0:
+            def lr_lambda(epoch):
+                if epoch < warmup_epochs:
+                    return (epoch + 1) / warmup_epochs
+                return 1.0
+            scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
         
-        # Loss function
-        criterion = CTCLoss(blank=0, reduction='mean', zero_infinity=True)
-        
-        # AMP scaler for mixed precision
-        scaler = GradScaler('cuda') if self.use_amp else None
-        
-        # Training state
+        # Early stopping 초기화
         best_val_loss = float('inf')
         patience_counter = 0
-        history = {'train_loss': [], 'val_loss': [], 'lr': []}
+        best_epoch = 0
         
         if self.verbose > 0:
             print(f"\nStarting training for {epochs} epochs...")
-            print(f"Optimizer: AdamW (lr={lr}, weight_decay=0.01)")
-            print(f"Scheduler: CosineAnnealingLR")
-            print(f"Early stopping patience: {early_stopping_patience}")
+            print(f"Model Configuration:")
+            print(f"  - Image size: {self.train_data.image_width}x{self.train_data.image_height}")
+            print(f"  - Label length: {self.train_data.label_length}")
+            print(f"  - Characters: {len(self.characters)}")
+            print(f"  - Learning rate: {lr}")
+            if warmup_epochs > 0:
+                print(f"  - Warmup epochs: {warmup_epochs}")
+            if early_stopping_patience > 0:
+                print(f"  - Early stopping patience: {early_stopping_patience}")
             print("=" * 70)
+        
+        # 학습 실행 (dev.ipynb 스타일 + validation + early stopping)
+        train_hist = []
+        val_hist = []
         
         for epoch in range(epochs):
             # === Training Phase ===
             self.model.train()
-            train_loss = 0.0
-            num_batches = 0
+            tk = tqdm(train_loader, total=len(train_loader), desc=f"Epoch {epoch+1}/{epochs} [Train]")
+            epoch_train_loss = []
             
-            for batch_idx, batch in enumerate(train_loader):
-                images = batch['images'].to(self.device, non_blocking=True)
-                labels = batch['labels'].to(self.device, non_blocking=True)
-                label_lengths = batch['label_lengths'].to(self.device, non_blocking=True)
+            for data, target in tk:
+                data = data.to(device=self.device)
+                target = target.to(device=self.device)
                 
-                optimizer.zero_grad(set_to_none=True)  # More efficient
+                optimizer.zero_grad()
                 
-                # Forward pass with AMP
-                if self.use_amp:
-                    with autocast(device_type='cuda', dtype=self.dtype):
-                        log_probs = self.model(images)  # (T, N, C)
-                        input_lengths = torch.full(
-                            (images.size(0),), log_probs.size(0), 
-                            dtype=torch.long, device=self.device
-                        )
-                        loss = criterion(log_probs, labels, input_lengths, label_lengths)
-                    
-                    # Backward pass with gradient scaling
-                    scaler.scale(loss).backward()
-                    
-                    # Gradient clipping for stability
-                    scaler.unscale_(optimizer)
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-                    
-                    scaler.step(optimizer)
-                    scaler.update()
-                else:
-                    log_probs = self.model(images)
-                    input_lengths = torch.full(
-                        (images.size(0),), log_probs.size(0), 
-                        dtype=torch.long, device=self.device
-                    )
-                    loss = criterion(log_probs, labels, input_lengths, label_lengths)
-                    loss.backward()
-                    
-                    # Gradient clipping
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-                    
-                    optimizer.step()
+                # CRNN forward에서 loss 계산 (dev.ipynb 스타일)
+                out, loss = self.model(data, target, criterion=criterion)
                 
-                train_loss += loss.item()
-                num_batches += 1
+                loss.backward()
+                optimizer.step()
+                
+                loss_val = loss.item() if isinstance(loss, torch.Tensor) else float(loss)
+                epoch_train_loss.append(loss_val)
+                train_hist.append(loss_val)
+                
+                tk.set_postfix({'Loss': loss_val})
             
-            train_loss /= num_batches
+            avg_train_loss = sum(epoch_train_loss) / len(epoch_train_loss) if epoch_train_loss else 0.0
             
             # === Validation Phase ===
-            self.model.eval()
-            val_loss = 0.0
-            num_val_batches = 0
+            val_loss = None
+            if val_loader is not None:
+                self.model.eval()
+                epoch_val_loss = []
+                
+                with torch.no_grad():
+                    tk_val = tqdm(val_loader, total=len(val_loader), desc=f"Epoch {epoch+1}/{epochs} [Val]")
+                    for data, target in tk_val:
+                        data = data.to(device=self.device)
+                        target = target.to(device=self.device)
+                        
+                        out, loss = self.model(data, target, criterion=criterion)
+                        
+                        loss_val = loss.item() if isinstance(loss, torch.Tensor) else float(loss)
+                        epoch_val_loss.append(loss_val)
+                        
+                        tk_val.set_postfix({'Val Loss': loss_val})
+                
+                val_loss = sum(epoch_val_loss) / len(epoch_val_loss) if epoch_val_loss else 0.0
+                val_hist.append(val_loss)
             
-            with torch.no_grad():
-                for batch in val_loader:
-                    images = batch['images'].to(self.device, non_blocking=True)
-                    labels = batch['labels'].to(self.device, non_blocking=True)
-                    label_lengths = batch['label_lengths'].to(self.device, non_blocking=True)
-                    
-                    log_probs = self.model(images)
-                    input_lengths = torch.full(
-                        (images.size(0),), log_probs.size(0), 
-                        dtype=torch.long, device=self.device
-                    )
-                    loss = criterion(log_probs, labels, input_lengths, label_lengths)
-                    val_loss += loss.item()
-                    num_val_batches += 1
-            
-            val_loss /= num_val_batches
+            # Scheduler step (warmup)
             current_lr = optimizer.param_groups[0]['lr']
+            if scheduler is not None:
+                scheduler.step()
+                current_lr = optimizer.param_groups[0]['lr']
             
-            # Update history
-            history['train_loss'].append(train_loss)
-            history['val_loss'].append(val_loss)
-            history['lr'].append(current_lr)
-            
-            # Logging
+            # 로깅
             if self.verbose > 0:
-                print(f"Epoch {epoch+1:3d}/{epochs} | "
-                      f"Train Loss: {train_loss:.4f} | "
-                      f"Val Loss: {val_loss:.4f} | "
-                      f"LR: {current_lr:.6f}")
+                log_msg = f"Epoch {epoch + 1}/{epochs} - Train Loss: {avg_train_loss:.4f}"
+                if val_loss is not None:
+                    log_msg += f", Val Loss: {val_loss:.4f}"
+                log_msg += f", LR: {current_lr:.6f}"
+                print(log_msg)
             
-            # Save best model
-            if save_best and val_loss < best_val_loss:
-                best_val_loss = val_loss
-                patience_counter = 0
-                
-                if model_path is None:
-                    model_path = self.train_data.get_model_path()
-                
-                self.save_model(model_path, epoch, optimizer, scheduler, val_loss)
-                
-                if self.verbose > 0:
-                    print(f"  → Best model saved (val_loss: {val_loss:.4f})")
+            # === Early Stopping 및 Best Model 저장 ===
+            if val_loader is not None and val_loss is not None:
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    best_epoch = epoch + 1
+                    patience_counter = 0
+                    
+                    # Best model 저장
+                    if save_best:
+                        if model_path is None:
+                            model_path = self.train_data.get_model_path()
+                        self.save_model(model_path, train_hist)
+                        
+                        if self.verbose > 0:
+                            print(f"  → Best model saved (val_loss: {val_loss:.4f})")
+                else:
+                    patience_counter += 1
+                    
+                    if self.verbose > 0:
+                        print(f"  → No improvement for {patience_counter} epochs (best: {best_val_loss:.4f} at epoch {best_epoch})")
+                    
+                    # Early stopping 체크
+                    if early_stopping_patience > 0 and patience_counter >= early_stopping_patience:
+                        if self.verbose > 0:
+                            print(f"\n[Early Stopping] Triggered after {epoch + 1} epochs")
+                            print(f"Best validation loss: {best_val_loss:.4f} at epoch {best_epoch}")
+                        break
             else:
-                patience_counter += 1
-            
-            # Early stopping
-            if patience_counter >= early_stopping_patience:
-                if self.verbose > 0:
-                    print(f"\nEarly stopping triggered after {epoch+1} epochs")
-                break
-            
-            # Step scheduler
-            scheduler.step()
+                # Validation이 없으면 매 epoch마다 저장
+                if save_best and (epoch + 1) % 10 == 0:
+                    if model_path is None:
+                        model_path = self.train_data.get_model_path()
+                    self.save_model(model_path, train_hist)
+        
+        # 최종 모델 저장 (early stopping으로 종료되지 않은 경우)
+        if save_best:
+            if model_path is None:
+                model_path = self.train_data.get_model_path()
+            self.save_model(model_path, train_hist)
         
         if self.verbose > 0:
             print("=" * 70)
-            print(f"Training completed. Best val_loss: {best_val_loss:.4f}")
+            print("Training completed.")
+            if val_loader is not None:
+                print(f"Best validation loss: {best_val_loss:.4f} at epoch {best_epoch}")
         
-        return history
+        return train_hist
     
-    def save_model(self, path: str, epoch: int, 
-                  optimizer: torch.optim.Optimizer,
-                  scheduler: torch.optim.lr_scheduler._LRScheduler, 
-                  loss: float):
-        """Save complete model checkpoint."""
-        # Extract base model if compiled
-        model_to_save = self.model
-        if hasattr(self.model, '_orig_mod'):
-            model_to_save = self.model._orig_mod
+    def save_model(self, path: str, hist: List[float] = None):
+        """모델 저장 (PyTorch 규약 - dev.ipynb 스타일)."""
+        model_dir = os.path.dirname(path)
+        os.makedirs(model_dir, exist_ok=True)
         
-        checkpoint = {
-            'epoch': epoch,
-            'model_state_dict': model_to_save.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'scheduler_state_dict': scheduler.state_dict(),
-            'loss': loss,
-            'num_classes': self.num_classes,
-            'characters': self.characters,
-            'char_to_idx': self.char_to_idx,
-            'img_width': self.train_data.image_width,
-            'img_height': self.train_data.image_height,
-            'pytorch_version': torch.__version__,
-        }
-        torch.save(checkpoint, path)
-    
+        # # 가중치 저장 (weights.pth)
+        # weights_path = os.path.join(model_dir, 'weights.pth')
+        # torch.save(self.model.state_dict(), weights_path)
+        
+        # 전체 모델 저장
+        full_model_path = os.path.join(model_dir, 'model_full.pth')
+        torch.save(self.model, full_model_path)
+        
+        # # 매핑 저장
+        # mapping_path = os.path.join(model_dir, 'mapping.json')
+        # with open(mapping_path, 'w', encoding='utf-8') as f:
+        #     json.dump(self.char_to_idx, f, ensure_ascii=False)
+        
+        # mapping_inv_str = {str(k): v for k, v in self.idx_to_char.items()}
+        # mapping_inv_path = os.path.join(model_dir, 'mapping_inv.json')
+        # with open(mapping_inv_path, 'w', encoding='utf-8') as f:
+        #     json.dump(mapping_inv_str, f, ensure_ascii=False)
+        
+        # # 학습 히스토리 저장
+        # if hist is not None:
+        #     with open(os.path.join(model_dir, 'train_history.json'), 'w') as f:
+        #         json.dump(hist, f)
+        
+        if self.verbose > 0:
+            print(f"Model saved to {model_dir}")
+            # print(f"  - Weights: {weights_path}")
+            print(f"  - Full model: {full_model_path}")
+            # print(f"  - Mappings: {mapping_path}, {mapping_inv_path}")
+
     def load_prediction_model(self, model_path: Optional[str] = None):
-        """Load trained model for inference."""
+        """모델 로드."""
         if model_path is None:
             model_path = self.train_data.get_model_path()
         
-        # Build model architecture
-        self.predict_model = self.build_model()
+        # 모델 로드 (전체 모델 또는 state_dict)
+        loaded = torch.load(model_path, map_location=self.device, weights_only=False)
         
-        # Load checkpoint
-        checkpoint = torch.load(model_path, map_location=self.device, weights_only=False)
-        
-        if 'model_state_dict' in checkpoint:
-            self.predict_model.load_state_dict(checkpoint['model_state_dict'])
-            
-            # Verify character mappings
-            if 'char_to_idx' in checkpoint:
-                loaded_char_to_idx = checkpoint['char_to_idx']
-                if loaded_char_to_idx != self.char_to_idx:
-                    print("Warning: Character mappings mismatch. Using loaded mappings.")
-                    self.char_to_idx = loaded_char_to_idx
-                    self.idx_to_char = {idx: char for char, idx in self.char_to_idx.items()}
-                    self.idx_to_char[0] = ''
+        if isinstance(loaded, nn.Module):
+            # 전체 모델이 저장된 경우 (model_full.pth)
+            self.model = loaded
+            self.model.to(self.device)
         else:
-            # Legacy format: direct state_dict
-            self.predict_model.load_state_dict(checkpoint)
+            # state_dict가 저장된 경우 (weights.pth)
+            if self.model is None:
+                self.model = self.build_model()
+            
+            # CRNN의 동적 linear 레이어를 초기화하기 위해 dummy forward pass
+            dummy_input = torch.randn(1, 1, self.train_data.image_height, self.train_data.image_width).to(self.device)
+            with torch.no_grad():
+                _ = self.model(dummy_input)
+            
+            self.model.load_state_dict(loaded)
         
-        self.predict_model.eval()
+        self.model.eval()
         
         if self.verbose > 0:
             print(f"Model loaded from {model_path}")
-        
-        return self.predict_model
     
-    def decode_predictions(self, log_probs: torch.Tensor, 
-                          input_lengths: torch.Tensor) -> List[str]:
-        """Decode CTC predictions to text strings."""
-        decoded_indices = ctc_greedy_decode(log_probs, input_lengths, blank=0)
-        
-        output_text = []
-        for indices in decoded_indices:
-            text = ''.join([self.idx_to_char.get(idx, '') for idx in indices])
-            output_text.append(text)
-        
-        return output_text
-    
-    @torch.inference_mode()  # PyTorch 2.0+ more efficient than no_grad
     def predict(self, image_path: str) -> str:
-        """Predict CAPTCHA text from image file."""
-        if self.predict_model is None:
+        """단일 이미지 예측."""
+        if self.model is None:
             raise ValueError("Model not loaded. Call load_prediction_model() first.")
         
-        # Load and preprocess image
-        try:
-            with Image.open(image_path) as img:
-                image = img.convert('L').resize(
-                    (self.train_data.image_width, self.train_data.image_height), 
-                    Image.Resampling.BILINEAR
-                )
-                image = np.asarray(image, dtype=np.float32) / 255.0
-        except Exception as e:
-            raise ValueError(f"Error loading image {image_path}: {e}")
+        if self.engine is None:
+            self.engine = Engine(self.model, None, None, device=self.device)
         
-        # Apply threshold
-        threshold = self.train_data.threshold
-        if threshold > 0:
-            threshold_norm = threshold / 255.0
-            image = np.where(image > threshold_norm, 1.0, image)
+        # Transform 적용
+        transform = T.Compose([
+            T.Resize((self.train_data.image_height, self.train_data.image_width)),
+            T.ToTensor()
+        ])
         
-        # Transpose and add batch + channel dimensions
-        image = np.transpose(image, (1, 0))  # (H, W) -> (W, H)
-        image = image[np.newaxis, np.newaxis, :, :]  # (1, 1, W, H)
+        image = Image.open(image_path).convert('L')
+        image_tensor = transform(image).unsqueeze(0).to(self.device)
         
-        # Convert to tensor
-        image_tensor = torch.from_numpy(image).float().to(self.device)
+        self.model.eval()
+        with torch.no_grad():
+            out, _ = self.model(image_tensor)
+            out = out.permute(1, 0, 2)
+            out = out.log_softmax(2)
+            out = out.argmax(2)
+            out_np = out.cpu().numpy()
         
-        # Inference
-        log_probs = self.predict_model(image_tensor)  # (T, 1, C)
-        input_lengths = torch.tensor([log_probs.size(0)], dtype=torch.long)
+        pred_text = ctc_decode(out_np, self.idx_to_char)
         
-        # Decode
-        predictions = self.decode_predictions(log_probs.cpu(), input_lengths)
-        
-        return predictions[0]
+        return pred_text
     
-    @torch.inference_mode()
     def validate_model(self, val_loader: DataLoader) -> Tuple[float, float]:
-        """Validate model and compute loss and accuracy."""
-        if self.predict_model is None:
+        """모델 평가 (정확도 계산)."""
+        if self.model is None:
             raise ValueError("Model not loaded. Call load_prediction_model() first.")
         
-        self.predict_model.eval()
-        criterion = CTCLoss(blank=0, reduction='mean', zero_infinity=True)
+        criterion = nn.CTCLoss()
+        self.model.eval()
         
         total_loss = 0.0
         correct = 0
         total = 0
         
-        for batch in val_loader:
-            images = batch['images'].to(self.device, non_blocking=True)
-            labels = batch['labels'].to(self.device, non_blocking=True)
-            label_lengths = batch['label_lengths'].to(self.device, non_blocking=True)
-            
-            log_probs = self.predict_model(images)
-            input_lengths = torch.full(
-                (images.size(0),), log_probs.size(0), 
-                dtype=torch.long, device=self.device
-            )
-            
-            loss = criterion(log_probs, labels, input_lengths, label_lengths)
-            total_loss += loss.item()
-            
-            # Decode predictions for accuracy calculation
-            predictions = self.decode_predictions(log_probs.cpu(), input_lengths.cpu())
-            
-            # Convert labels back to strings for comparison
-            label_start = 0
-            for i, length in enumerate(label_lengths):
-                pred_text = predictions[i]
-                true_indices = labels[label_start:label_start + length].cpu().tolist()
-                true_text = ''.join([self.idx_to_char.get(idx, '') for idx in true_indices])
+        with torch.no_grad():
+            for data, target in val_loader:
+                data = data.to(device=self.device)
+                target = target.to(device=self.device)
                 
-                if pred_text == true_text:
-                    correct += 1
-                total += 1
-                label_start += length
+                out, loss = self.model(data, target, criterion=criterion)
+                total_loss += loss.item()
+                
+                # 예측 디코딩
+                out = out.permute(1, 0, 2).log_softmax(2).argmax(2)
+                out_np = out.cpu().numpy()
+                
+                for i in range(out_np.shape[0]):
+                    pred_text = ctc_decode(out_np[i:i+1], self.idx_to_char)
+                    true_indices = target[i].cpu().numpy()
+                    true_text = ''.join([self.idx_to_char.get(int(idx), '')
+                                        for idx in true_indices if idx != 0])
+                    
+                    if pred_text == true_text:
+                        correct += 1
+                    total += 1
         
         avg_loss = total_loss / len(val_loader)
         accuracy = correct / total if total > 0 else 0.0
