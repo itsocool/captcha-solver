@@ -525,14 +525,33 @@ class PyTorchModel:
         """모델 저장 (PyTorch 규약 - dev.ipynb 스타일)."""
         model_dir = os.path.dirname(path)
         os.makedirs(model_dir, exist_ok=True)
-        
-        # # 가중치 저장 (weights.pth)
-        # weights_path = os.path.join(model_dir, 'weights.pth')
-        # torch.save(self.model.state_dict(), weights_path)
-        
-        # 전체 모델 저장
+        # 전체 모델 저장 (먼저 임시 파일에 저장한 뒤 교체)
         full_model_path = os.path.join(model_dir, 'model_full.pth')
-        torch.save(self.model, full_model_path)
+        temp_path = full_model_path + '.tmp'
+
+        try:
+            # 시도 1: 전체 모델을 임시파일로 저장 후 교체(원자적 교체)
+            torch.save(self.model, temp_path)
+            os.replace(temp_path, full_model_path)
+        except Exception as e:
+            # 실패 시 임시파일 정리(있다면) 및 폴백
+            try:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+            except Exception:
+                pass
+
+            # # 폴백: state_dict만 저장 (대부분의 실사용 케이스에서 충분)
+            # try:
+            #     weights_path = os.path.join(model_dir, 'weights.pth')
+            #     torch.save(self.model.state_dict(), weights_path)
+            #     if self.verbose > 0:
+            #         print(f"Warning: failed to save full model ({e}); saved state_dict to {weights_path}")
+            # except Exception as e2:
+            #     # 최종 실패: 에러를 그대로 전달
+            #     if self.verbose > 0:
+            #         print(f"Error: failed to save full model ({e}) and failed to save state_dict ({e2})")
+            #     raise
         
         # # 매핑 저장
         # mapping_path = os.path.join(model_dir, 'mapping.json')

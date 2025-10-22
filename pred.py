@@ -1,18 +1,13 @@
 import os
-import json
-from turtle import back
-from tqdm import tqdm
-
-from captchaResolver import engine
-
 # 환경 변수 설정
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+# os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 os.environ['GLOG_minloglevel'] = '2'
 
-import torch
+import json, torch
+from tqdm import tqdm
+from captchaResolver import engine
 from captchaResolver.engine import get_captcha_type_list
-from captchaResolver.core import PyTorchModel
 
 def ctc_decode(pred_array, mapping_inv, debug=False):
     """CTC 디코딩: blank(0) 제거 및 연속 중복 제거"""

@@ -1,5 +1,4 @@
 import os
-from turtle import back
 # TensorFlow 관련 환경 변수 설정 (로깅 억제)
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # TensorFlow 로깅 완전 억제
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # oneDNN 최적화 비활성화 (경고 제거)

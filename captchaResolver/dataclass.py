@@ -2,8 +2,6 @@ import os, glob, random, struct
 from dataclasses import dataclass, field
 from typing import Optional, Final
 
-from requests import get
-
 DIGITS: Final = "0123456789"
 LOWER_CASE: Final = "abcdefghijklmnopqrstuvwxyz"
 UPPER_CASE: Final = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
