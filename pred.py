@@ -1,26 +1,56 @@
 import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # TensorFlow C++ 로그 레벨 (0=ALL,1=INFO,2=WARNING,3=ERROR)
 os.environ['GLOG_minloglevel'] = '2'  # Google 로깅
 
-import logging
-import warnings
-logging.getLogger('tensorflow').setLevel(logging.ERROR)
-warnings.filterwarnings('ignore', category=FutureWarning)
-warnings.filterwarnings('ignore', category=DeprecationWarning)
+from captchaResolver.torchcore import PyTorchModel
+from captchaResolver.torchengine import batch_predict_model, predict
+from captchaResolver.keras_core import get_captcha_type_list
 
-from captchaResolver.core import KerasModel, get_captcha_type_list
-from captchaResolver.engine import predict, batch_predict_model
-
+# 예측 설정
 captcha_id = 'kshop'
+batch_size = 32
+num_workers = 4
+
+# CAPTCHA 타입 및 학습 데이터 설정
 captcha_type_list = get_captcha_type_list()
 train_data = captcha_type_list[captcha_id].train_data
 train_data.threshold = 60
-model = KerasModel(train_data=train_data)
-batch_predict_model(model=model)
-model_path = train_data.get_model_path()
-image_path = train_data.get_pred_image_path()
-pred, confidence = predict(model=model, image_path=image_path, model_path=model_path)
-print("image_path : ", image_path)
-print("pred : ", pred)
-print("confidence : ", confidence)
-print("Done!")
+
+# PyTorch 모델 초기화
+model = PyTorchModel(
+    train_data=train_data,
+    verbose=1,
+    use_compile=False,
+    use_amp=False  # 추론 시에는 AMP 비활성화 (더 정확한 결과)
+)
+
+print("="*60)
+print(f"Prediction Configuration:")
+print(f"  CAPTCHA ID: {captcha_id}")
+print(f"  Image size: {train_data.image_width}x{train_data.image_height}")
+print(f"  Label length: {train_data.label_length}")
+print(f"  Characters: {train_data.characters}")
+print(f"  Threshold: {train_data.threshold}")
+print(f"  Batch size: {batch_size}")
+print(f"  Number of workers: {num_workers}")
+print("="*60)
+
+# 배치 예측 수행
+results = batch_predict_model(
+    model=model,
+    batch_size=batch_size,
+    num_workers=num_workers
+)
+
+# 단일 이미지 예측 예제 (선택적)
+# 특정 이미지 파일에 대해 예측하고 싶다면 아래 코드 사용
+"""
+image_path = "captcha_data/kshop/0/images/pred/example.png"
+if os.path.exists(image_path):
+    pred_text, confidence = predict(model, image_path)
+    print(f"\nSingle Image Prediction:")
+    print(f"  Image: {image_path}")
+    print(f"  Predicted: {pred_text}")
+    print(f"  Confidence: {confidence:.4f}")
+"""
+
+print("\nPrediction completed!")

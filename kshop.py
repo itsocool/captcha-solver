@@ -17,9 +17,9 @@ else:
 
 import tensorflow as tf
 tf.get_logger().setLevel('ERROR')
-from captchaResolver import consts, engine, dataclass
+from captchaResolver import consts, dataclass, keras_engine
 from PIL import Image
-from captchaResolver.core import KerasModel
+from captchaResolver.keras_core import KerasModel
 
 def execute(captcha_type: str, image_path: str) -> str:
 
@@ -47,7 +47,7 @@ def execute(captcha_type: str, image_path: str) -> str:
     else:
         model_path = train_data.get_model_path(keras_native=model.keras_native)
 
-    pred, confidence = engine.predict(model,temp_image_path, model_path=model_path)
+    pred, confidence = keras_engine.predict(model,temp_image_path, model_path=model_path)
 
     if os.path.exists(temp_image_path):
         os.remove(temp_image_path)
