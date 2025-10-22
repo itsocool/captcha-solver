@@ -4,9 +4,8 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # TensorFlow 로깅 완전 억제
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # oneDNN 최적화 비활성화 (경고 제거)
 os.environ['GLOG_minloglevel'] = '2'  # Google 로깅
 
-from captchaResolver.torchcore import PyTorchModel
-from captchaResolver.torchengine import train_model
-from captchaResolver.keras_core import get_captcha_type_list
+from captchaResolver.core import PyTorchModel
+from captchaResolver.engine import get_captcha_type_list, train_model
 
 if __name__ == '__main__':
     # 학습 설정

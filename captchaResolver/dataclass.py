@@ -1,13 +1,16 @@
+from ast import mod
 import os, glob
 from dataclasses import dataclass, field
 import random
 from typing import Optional
 from PIL import Image
+from traitlets import Instance
 from captchaResolver.consts import DIGITS
 
 @dataclass
 class TrainInfo:
-    captcha_id: str
+    captcha_id: str = 'default'
+    backend: str = 'pytorch'
     rev: int = 0
     desc: str = "기본 학습 데이터"
     base_dir: str = "./captcha_data"
@@ -84,7 +87,13 @@ class TrainInfo:
         if not os.path.exists(model_path):
             os.makedirs(model_path, exist_ok=True)
 
-        model_path = os.path.join(model_path, "weights.keras")
+        model_file_name = "model.pth" 
+        
+        # self.backend에 따라 모델 파일명 결정
+        if self.backend == 'keras':
+            model_file_name = "weights.keras"
+    
+        model_path = os.path.join(model_path, model_file_name)
         return model_path
 
     def get_model_base_dir(self) -> str:

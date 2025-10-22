@@ -1,69 +1,6 @@
 import numpy as np
-import tensorflow as tf
-import keras
-from keras import ops
-from keras import layers
 
 from captchaResolver.dataclass import CaptchaType, TrainInfo
-
-def get_captcha_type_list(base_dir: str = "./captcha_data"):
-    default_train_data = TrainInfo(
-        captcha_id="default",
-        base_dir=base_dir,
-        label_length=5,
-        characters=list('2345678bcdefgmnpwxy')
-    )
-    default = CaptchaType(id="default", name="기본 캡챠", desc="기본 캡챠", train_data=default_train_data)
-    supreme_court_train_data = TrainInfo(
-        captcha_id="supreme_court",
-        base_dir=base_dir
-    )
-    supreme_court = CaptchaType(id="supreme_court", name="대법원", desc="대법원 캡챠", train_data=supreme_court_train_data)
-    gov24_train_data = TrainInfo(
-        captcha_id="gov24",
-        base_dir=base_dir
-    )
-    gov24 = CaptchaType(id="gov24", name="gov24", desc="대한민국 정부 24 캡챠", train_data=gov24_train_data)
-    wetax_train_data = TrainInfo(
-        captcha_id="wetax",
-        base_dir=base_dir
-    )
-    wetax = CaptchaType(id="wetax", name="wetax", desc="WETAX 캡챠", train_data=wetax_train_data)
-    kshop_train_data = TrainInfo(
-        captcha_id="kshop",
-        base_dir=base_dir
-    )
-    kshop = CaptchaType(id="kshop", name="kshop", desc="KT Shopping 캡챠", train_data=kshop_train_data)
-
-    return {
-        "default": default,
-        "supreme_court": supreme_court,
-        "gov24": gov24,
-        "wetax": wetax,
-        "kshop": kshop,
-    }
-
-def ctc_batch_cost(y_true, y_pred, input_length, label_length):
-    """CTC loss function using TF 2.x native API."""
-    label_length = ops.cast(ops.squeeze(label_length, axis=-1), dtype="int32")
-    input_length = ops.cast(ops.squeeze(input_length, axis=-1), dtype="int32")
-    sparse_labels = ops.cast(
-        ctc_label_dense_to_sparse(y_true, label_length), dtype="int32"
-    )
-
-    y_pred = ops.log(ops.transpose(y_pred, axes=[1, 0, 2]) + keras.backend.epsilon())
-
-    # Use TF 2.x native ctc_loss instead of deprecated compat.v1
-    return ops.expand_dims(
-        tf.nn.ctc_loss(
-            labels=sparse_labels, 
-            logits=y_pred, 
-            label_length=None,
-            logit_length=input_length,
-            blank_index=-1
-        ),
-        1,
-    )
 
 def ctc_label_dense_to_sparse(labels, label_lengths):
     """Convert dense labels to sparse format for CTC.
