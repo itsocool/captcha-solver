@@ -1,21 +1,13 @@
-import numpy as np
-import torch
+import os, numpy as np, torch, collections
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
 import torch.optim as optim
-from PIL import Image
 import torchvision.transforms as T
+from torch.utils.data import Dataset, DataLoader
+from PIL import Image
 from typing import List, Tuple, Optional, Dict
 from tqdm import tqdm
-import collections
-import os
 
 from captchaResolver.dataclass import TrainInfo
-
-
-# ============================================================================
-# PyTorch 기반 CRNN 모델 (dev.ipynb 스타일)
-# ============================================================================
 
 class Bidirectional(nn.Module):
     def __init__(self, inp: int, hidden: int, out: int, lstm: bool = True):
@@ -215,10 +207,6 @@ def ctc_decode(pred_array: np.ndarray, mapping_inv: Dict[int, str]) -> str:
         prev = pi
     return ''.join(chars)
 
-
-# ============================================================================
-# PyTorchModel: TrainInfo 기반 래퍼 클래스
-# ============================================================================
 
 class PyTorchModel:
     """

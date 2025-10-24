@@ -10,11 +10,10 @@ ALPHA_NUMERIC: Final = DIGITS + ALPHABET
 
 @dataclass
 class TrainInfo:
-    captcha_id: str = 'default'
+    captcha_id: str
     backend: str = 'pytorch'
     rev: int = 0
-    desc: str = "기본 학습 데이터"
-    captcha_data_base_dir: str = "./captcha_data"
+    train_data_base_dir: str = "./captcha_data"
     image_width: int = 200
     image_height: int = 50
     label_length: int = 6
@@ -35,22 +34,17 @@ class TrainInfo:
                 self.threshold
             ) = self.get_train_info()
 
-    def get_png_size(self,filepath) -> tuple[int, int]:
-        with open(filepath, 'rb') as f:
-            f.read(16)
-            data = f.read(8)
-            if len(data) < 8:
-                raise ValueError("파일이 너무 짧거나 PNG 형식이 아닙니다.")
-            width, height = struct.unpack('!II', data)
-            return width, height
-
     def get_train_info(self) -> tuple[str, str, str, int, int, int, list[str], int]:
         train_image_path = self.get_image_dir(train=True)
         pred_image_path = self.get_image_dir(train=False)
         model_path = self.get_model_path()
         train_data_list = self.get_data_files(train=True)
-        image_width, image_height = self.get_png_size(train_data_list[-1])
-
+        with open(train_data_list[-1], 'rb') as f:
+            f.read(16)
+            data = f.read(8)
+            if len(data) < 8:
+                raise ValueError("파일이 너무 짧거나 PNG 형식이 아닙니다.")
+            image_width, image_height = struct.unpack('!II', data)
         labels = [
             os.path.basename(data_path).split(".")[0] for data_path in train_data_list
         ]
@@ -71,7 +65,7 @@ class TrainInfo:
 
     def get_image_dir(self, train: bool = True) -> str:
         image_dir = os.path.join(
-            self.captcha_data_base_dir, 
+            self.train_data_base_dir, 
             self.captcha_id, 
             str(self.rev), 
             'images',
@@ -88,33 +82,24 @@ class TrainInfo:
             os.path.basename(data_path).split(".")[0] for data_path in self.get_data_files(train)
         ]
 
+    def get_model_base_dir(self) -> str:
+        model_base_dir = os.path.join(self.train_data_base_dir, self.captcha_id, str(self.rev), 'model')
+        model_base_dir = os.path.abspath(model_base_dir)
+        if not os.path.exists(model_base_dir):
+            os.makedirs(model_base_dir, exist_ok=True)
+        return model_base_dir
+
     def get_model_path(self) -> str:
-        model_path = os.path.join(self.captcha_data_base_dir, self.captcha_id, str(self.rev), 'model')
-        model_path = os.path.abspath(model_path)
-
-        if not os.path.exists(model_path):
-            os.makedirs(model_path, exist_ok=True)
-
-        # 모델 파일명 설정, 기본(pytorch): model_full.pth, Keras: weights.keras
-        model_file_name = "model_full.pth" 
-        
-        # self.backend에 따라 모델 파일명 결정
-        if self.backend == 'keras':
+        model_base_dir = self.get_model_base_dir()
+        model_path = os.path.abspath(model_base_dir)
+        if self.backend == 'pytorch':
+            model_file_name = "model_full.pth"
+        elif self.backend == 'keras':
             model_file_name = "weights.keras"
-    
         model_path = os.path.join(model_path, model_file_name)
         return model_path
 
-    def get_model_base_dir(self) -> str:
-        model_base_dir = os.path.join(self.captcha_data_base_dir, self.captcha_id, str(self.rev), 'model')
-        model_base_dir = os.path.abspath(model_base_dir)
-
-        if not os.path.exists(model_base_dir):
-            os.makedirs(model_base_dir, exist_ok=True)
-
-        return model_base_dir
-
-    def get_pred_image_path(self) -> str:
+    def choice_pred_image(self) -> str:
         image_dir = self.get_image_dir(train=False)
         if isinstance(image_dir, (list, tuple)):
             candidates = [p for p in image_dir if os.path.isfile(p)]
@@ -127,15 +112,10 @@ class TrainInfo:
 
 @dataclass
 class CaptchaType:
-    id: str = 'default'
+    captcha_id: str = 'default'
     name: str = '기본캡챠'
     desc: str = '기본 캡챠'
     train_data: Optional[TrainInfo] = None
 
     def __post_init__(self) -> None:
-        """Initialize training data for this captcha type."""
-        self.train_data = TrainInfo(
-            captcha_id=self.id,
-            desc=self.desc + ' 학습 데이타',
-            captcha_data_base_dir="./captcha_data"
-        )
+        self.captcha_id=self.train_data.captcha_id

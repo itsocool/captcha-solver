@@ -7,18 +7,18 @@ logging.getLogger('tensorflow').setLevel(logging.ERROR)
 warnings.filterwarnings('ignore', category=FutureWarning)
 warnings.filterwarnings('ignore', category=DeprecationWarning)
 
-from captchaResolver.keras_core import KerasModel
 from captchaResolver.engine import get_captcha_type_list, batch_predict_model, predict
+from captchaResolver.keras_core import KerasModel
 
 captcha_id = 'default'
-captcha_type_list = get_captcha_type_list()
-train_data = captcha_type_list[captcha_id].train_data
-train_data.backend = 'keras'
+backend = 'keras'
+
+train_data = get_captcha_type_list(backend=backend)[captcha_id].train_data
 train_data.threshold = 60
 model = KerasModel(train_data=train_data)
 batch_predict_model(model=model)
 model_path = train_data.get_model_path()
-image_path = train_data.get_pred_image_path()
+image_path = train_data.choice_pred_image()
 pred, confidence = predict(model=model, image_path=image_path, model_path=model_path)
 print("image_path : ", image_path)
 print("pred : ", pred)

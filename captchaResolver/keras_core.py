@@ -1,10 +1,8 @@
-import numpy as np
 import os
-
-# TensorFlow / Keras imports (ensure keras symbol is available for decorators)
+import keras
+import numpy as np
 import tensorflow as tf
-from tensorflow import keras
-from keras import layers
+from keras import layers, models, backend, callbacks
 
 from captchaResolver.dataclass import TrainInfo
 
@@ -39,7 +37,45 @@ def ctc_label_dense_to_sparse(labels, label_lengths):
         tf.cast(label_shape, dtype="int64")
     )
 
-def ctc_decode(y_pred, input_length, greedy=True, beam_width=100, top_paths=1):
+def ctc_batch_cost(y_true, y_pred, input_length, label_length):
+    """CTC batch cost compatible with TF/Keras 3.
+
+    Args:
+        y_true: dense integer labels tensor, shape (batch, max_label_len)
+        y_pred: prediction probs (softmax) tensor, shape (batch, time, num_classes)
+        input_length: tensor with shape (batch, 1) or (batch,) indicating time steps
+        label_length: tensor with shape (batch, 1) or (batch,) indicating label lengths
+
+    Returns:
+        loss: tensor with shape (batch, 1)
+    """
+    # Ensure proper dtypes and shapes
+    # label_length / input_length may come in as (batch, 1)
+    label_length = tf.cast(tf.squeeze(label_length, axis=-1), dtype="int32")
+    input_length = tf.cast(tf.squeeze(input_length, axis=-1), dtype="int32")
+
+    # Convert dense labels to sparse required by tf.nn.ctc_loss
+    sparse_labels = tf.cast(ctc_label_dense_to_sparse(y_true, label_length), dtype="int32")
+
+    # tf.nn.ctc_loss expects time-major logits: (time, batch, num_classes)
+    # y_pred is expected to be probabilities (softmax). Convert to log-probs to be numerically stable.
+    y_pred_time_major = tf.transpose(y_pred, perm=[1, 0, 2])
+    log_probs = tf.math.log(y_pred_time_major + backend.epsilon())
+
+    # Use TF native ctc_loss
+    loss = tf.nn.ctc_loss(
+        labels=sparse_labels,
+        logits=log_probs,
+        label_length=None,
+        logit_length=input_length,
+        logits_time_major=True,
+        blank_index=-1,
+    )
+
+    # Expand dims to match Keras backend shape (batch, 1)
+    return tf.expand_dims(loss, 1)
+
+def ctc_decode(y_pred, input_length, beam_width=100, top_paths=1):
     """Decode CTC predictions to text.
     
     Args:
@@ -57,18 +93,12 @@ def ctc_decode(y_pred, input_length, greedy=True, beam_width=100, top_paths=1):
     y_pred = tf.math.log(tf.transpose(y_pred, perm=[1, 0, 2]) + tf.keras.backend.epsilon())
     input_length = tf.cast(input_length, dtype="int32")
 
-    if greedy:
-        (decoded, log_prob) = tf.nn.ctc_greedy_decoder(
-            inputs=y_pred, sequence_length=input_length
-        )
-    else:
-        # Use TF 2.x native beam search decoder
-        (decoded, log_prob) = tf.nn.ctc_beam_search_decoder(
-            inputs=y_pred,
-            sequence_length=input_length,
-            beam_width=beam_width,
-            top_paths=top_paths,
-        )
+    (decoded, log_prob) = tf.nn.ctc_beam_search_decoder(
+        inputs=y_pred,
+        sequence_length=input_length,
+        beam_width=beam_width,
+        top_paths=top_paths,
+    )
     decoded_dense = []
     for st in decoded:
         st = tf.SparseTensor(st.indices, st.values, (num_samples, num_steps))
@@ -84,8 +114,8 @@ class CTCLayer(layers.Layer):
     """
     def __init__(self, name=None, **kwargs):
         super().__init__(name=name, **kwargs)
-        # Use Keras backend CTC batch cost implementation
-        self.loss_fn = tf.keras.backend.ctc_batch_cost
+        # Use local Keras3-compatible CTC batch cost implementation
+        self.loss_fn = ctc_batch_cost
         self.supports_masking = True
 
     def get_config(self):
@@ -190,7 +220,7 @@ class KerasModel:
 
         return {"image": image, "label": label}
 
-    def build_model(self, prediction_only=False) -> keras.models.Model:
+    def build_model(self, prediction_only=False) -> models.Model:
         # Inputs to the model
         width, height = self.train_data.image_width, self.train_data.image_height
         # 공통 feature extractor
@@ -233,7 +263,7 @@ class KerasModel:
     def decode_batch_predictions(self, pred):
         input_len = np.ones(pred.shape[0]) * pred.shape[1]
         # Use greedy search. For complex tasks, you can use beam search
-        results = ctc_decode(pred, input_length=input_len, greedy=True)[0][0][
+        results = ctc_decode(pred, input_length=input_len)[0][0][
             :, : self.train_data.label_length
         ]
         # Iterate over the results and get back the text

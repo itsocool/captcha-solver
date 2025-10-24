@@ -11,9 +11,9 @@ from captchaResolver.engine import get_captcha_type_list, train_model
 from captchaResolver.keras_core import KerasModel
 
 captcha_id = 'default'
-captcha_type_list = get_captcha_type_list()
-train_data = captcha_type_list[captcha_id].train_data
-train_data.backend = 'keras'
+backend = 'keras'
+
+train_data = get_captcha_type_list(backend=backend)[captcha_id].train_data
 train_data.threshold = 60
 epochs = 120
 batch_size = 32

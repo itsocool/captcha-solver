@@ -25,7 +25,7 @@ def execute(captcha_type: str, image_path: str) -> str:
 
     train_data = dataclass.TrainInfo(
         captcha_id=captcha_type,
-        captcha_data_base_dir=base_dir,
+        train_data_base_dir=base_dir,
         init=False,
         label_length=6,
         characters=list(dataclass.DIGITS))

@@ -5,39 +5,52 @@ import tensorflow as tf
 import numpy as np
 from typing import Tuple, Optional, Dict
 from tqdm import tqdm
-
 from captchaResolver.core import PyTorchModel
 from captchaResolver.dataclass import CaptchaType, TrainInfo
 from captchaResolver.keras_core import KerasModel
 
-def get_captcha_type_list(base_dir: str = "./captcha_data") -> Dict[str, CaptchaType]:
-    default_train_data = TrainInfo(
+def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: str = "keras") -> Dict[str, CaptchaType]:
+
+    default = CaptchaType(name="기본 캡챠", desc="기본 캡챠", train_data=TrainInfo(
         captcha_id="default",
-        captcha_data_base_dir=base_dir,
+        backend=backend,
+        train_data_base_dir=train_data_base_dir,
         label_length=5,
         characters=list('2345678bcdefgmnpwxy')
-    )
-    default = CaptchaType(id="default", name="기본 캡챠", desc="기본 캡챠", train_data=default_train_data)
-    supreme_court_train_data = TrainInfo(
+    ))
+
+    supreme_court = CaptchaType(name="대법원", desc="대법원 캡챠", train_data=TrainInfo(
         captcha_id="supreme_court",
-        captcha_data_base_dir=base_dir
-    )
-    supreme_court = CaptchaType(id="supreme_court", name="대법원", desc="대법원 캡챠", train_data=supreme_court_train_data)
-    gov24_train_data = TrainInfo(
+        backend=backend,
+        train_data_base_dir=train_data_base_dir,
+        image_width=120,
+        image_height=40
+    ))
+
+    gov24 = CaptchaType(name="정부 24", desc="대한민국 정부 24 캡챠", train_data=TrainInfo(
         captcha_id="gov24",
-        captcha_data_base_dir=base_dir
-    )
-    gov24 = CaptchaType(id="gov24", name="gov24", desc="대한민국 정부 24 캡챠", train_data=gov24_train_data)
-    wetax_train_data = TrainInfo(
+        backend=backend,
+        train_data_base_dir=train_data_base_dir,
+        image_width=138,
+        image_height=51
+    ))
+
+    wetax = CaptchaType(name="WETAX", desc="WETAX 캡챠", train_data=TrainInfo(
         captcha_id="wetax",
-        captcha_data_base_dir=base_dir
-    )
-    wetax = CaptchaType(id="wetax", name="wetax", desc="WETAX 캡챠", train_data=wetax_train_data)
-    kshop_train_data = TrainInfo(
-        captcha_id="kshop",
-        captcha_data_base_dir=base_dir
-    )
-    kshop = CaptchaType(id="kshop", name="kshop", desc="KT Shopping 캡챠", train_data=kshop_train_data)
+        backend=backend,
+        train_data_base_dir=train_data_base_dir,
+        image_width=200,
+        image_height=60
+    ))
+
+    captcha_id = "kshop"
+    kshop = CaptchaType(captcha_id=captcha_id, name="kshop", desc="KT Shopping 캡챠", train_data=TrainInfo(
+        captcha_id=captcha_id,
+        backend=backend,
+        train_data_base_dir=train_data_base_dir,
+        image_width=263,
+        image_height=54
+    ))
 
     return {
         "default": default,
