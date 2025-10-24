@@ -7,9 +7,8 @@ logging.getLogger('tensorflow').setLevel(logging.ERROR)
 warnings.filterwarnings('ignore', category=FutureWarning)
 warnings.filterwarnings('ignore', category=DeprecationWarning)
 
-from captchaResolver.engine import get_captcha_type_list
+from captchaResolver.engine import get_captcha_type_list, train_model
 from captchaResolver.keras_core import KerasModel
-from captchaResolver.keras_engine import train_model
 
 captcha_id = 'default'
 captcha_type_list = get_captcha_type_list()

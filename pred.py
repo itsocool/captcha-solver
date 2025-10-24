@@ -1,30 +1,14 @@
 import os
+
 # 환경 변수 설정
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-# os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 os.environ['GLOG_minloglevel'] = '2'
 
-import json, torch
+import torch
 from tqdm import tqdm
-from captchaResolver import engine
-from captchaResolver.engine import get_captcha_type_list
-
-def ctc_decode(pred_array, mapping_inv, debug=False):
-    """CTC 디코딩: blank(0) 제거 및 연속 중복 제거"""
-    seq = pred_array[0] if pred_array.ndim == 2 else pred_array
-    prev = -1
-    chars = []
-    if debug:
-        print(f"  Raw predictions: {seq[:20]}...")  # 처음 20개만 출력
-    for p in seq:
-        pi = int(p)
-        if pi != prev and pi != 0:  # 0 = blank
-            char = mapping_inv.get(pi, f'[UNK:{pi}]')
-            chars.append(char)
-            if debug:
-                print(f"    Index {pi} -> '{char}'")
-        prev = pi
-    return ''.join(chars)
+from captchaResolver.core import ctc_decode
+from captchaResolver.engine import get_captcha_type_list, get_model
 
 def main():
     """PyTorch 모델을 사용한 배치 추론 및 결과 표시"""
@@ -40,7 +24,7 @@ def main():
     train_data.backend = backend
     train_data.threshold = 60
     
-    model = engine.get_model(train_data=train_data)
+    model = get_model(train_data=train_data)
     
     print("=" * 70)
     print(f"Prediction Configuration:")
@@ -69,28 +53,12 @@ def main():
     mapping_path = os.path.join(model_dir, 'mapping.json')
     
     print(f"\nLoading mapping from: {model_dir}")
-    
-    if os.path.exists(mapping_inv_path):
-        with open(mapping_inv_path, 'r', encoding='utf-8') as f:
-            mapping_inv_str = json.load(f)
-            mapping_inv = {int(k): v for k, v in mapping_inv_str.items()}
-        print(f"  Loaded mapping_inv.json with {len(mapping_inv)} entries")
-        print(f"  Sample mappings: {dict(list(mapping_inv.items())[:10])}")
-    elif os.path.exists(mapping_path):
-        with open(mapping_path, 'r', encoding='utf-8') as f:
-            mapping_str = json.load(f)
-            mapping = {k: int(v) for k, v in mapping_str.items()}
-            mapping_inv = {v: k for k, v in mapping.items()}
-        print(f"  Loaded mapping.json and inverted it with {len(mapping_inv)} entries")
-        print(f"  Sample mappings: {dict(list(mapping_inv.items())[:10])}")
-    else:
-        # 매핑 파일이 없으면 characters로부터 생성
-        print(f"  No mapping file found, creating from train_data.characters")
-        print(f"  Characters: {train_data.characters}")
-        # blank(0) 이후 1부터 시작
-        mapping_inv = {i+1: ch for i, ch in enumerate(train_data.characters)}
-        print(f"  Generated mapping_inv with {len(mapping_inv)} entries")
-        print(f"  Sample mappings: {dict(list(mapping_inv.items())[:10])}")
+    print(f"  No mapping file found, creating from train_data.characters")
+    print(f"  Characters: {train_data.characters}")
+    # blank(0) 이후 1부터 시작
+    mapping_inv = {i+1: ch for i, ch in enumerate(train_data.characters)}
+    print(f"  Generated mapping_inv with {len(mapping_inv)} entries")
+    print(f"  Sample mappings: {dict(list(mapping_inv.items())[:10])}")
     
     # characters와 매핑 길이 비교
     print(f"\n  train_data.characters length: {len(train_data.characters)}")
@@ -138,12 +106,12 @@ def main():
                 image_name = os.path.basename(image_path)
                 expected = os.path.splitext(image_name)[0]
                 
-                # 디버그 모드: 첫 번째 불일치에서만
-                debug = debug_first
-                if debug:
-                    print(f"\n[DEBUG] Processing {image_name}, expected: {expected}")
+                # # 디버그 모드: 첫 번째 불일치에서만
+                # debug = debug_first
+                # if debug:
+                #     print(f"\n[DEBUG] Processing {image_name}, expected: {expected}")
                 
-                pred_text = ctc_decode(out_np[i:i+1], mapping_inv, debug=debug)
+                pred_text = ctc_decode(out_np[i:i+1], mapping_inv)
                 is_match = (pred_text == expected)
                 
                 if not is_match and debug_first:
@@ -170,15 +138,12 @@ def main():
     print(f"  Accuracy: {accuracy:.2f}%")
     print("=" * 70)
     
-    # 샘플 예측 결과 표시 (처음 10개)
-    print("\nSample predictions (first 10):")
     for r in results:
         status = "✓" if r['match'] else "✗"
         print(f"  {status} {r['image']}: {r['expected']} → {r['pred']}")
     
-    # 불일치 샘플 표시 (처음 5개)
     if mismatches:
-        print(f"\nMismatch samples (first 5 out of {len(mismatches)}):")
+        print(f"\nMismatch samples {len(mismatches)}):")
         for m in mismatches:
             print(f"  ✗ {m['image']}: {m['expected']} → {m['pred']}")
     
@@ -207,7 +172,6 @@ def main():
     
     # print(f"✓ Summary saved to: {summary_path}")
     print("\nPrediction completed!")
-
 
 if __name__ == '__main__':
     main()

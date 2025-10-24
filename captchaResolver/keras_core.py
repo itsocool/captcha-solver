@@ -1,4 +1,5 @@
 import numpy as np
+import os
 
 # TensorFlow / Keras imports (ensure keras symbol is available for decorators)
 import tensorflow as tf
@@ -257,3 +258,56 @@ class KerasModel:
         self.predict_model = keras.models.Model(input_layer, output_layer)
 
         return self.predict_model
+
+    def train_model(
+        self,
+        epochs=100,
+        batch_size=32,
+        earlystopping=True,
+        early_stopping_patience: int = 8,
+    ):
+        """Train the model using the same logic previously in keras_engine.train_model.
+
+        Returns:
+            model_base_dir (str): path to the directory where the model was saved
+        """
+        # Prepare datasets
+        train_dataset, validation_dataset = self.split_dataset(
+            batch_size=batch_size, train_size=0.9, shuffle=True
+        )
+
+        train_data = self.train_data
+        train_model = self.build_model()
+        callbacks = []
+
+        if earlystopping:
+            callbacks.append(
+                keras.callbacks.EarlyStopping(
+                    monitor="val_loss",
+                    patience=early_stopping_patience,
+                    restore_best_weights=True,
+                )
+            )
+
+        # Fit
+        if callbacks:
+            train_model.fit(
+                train_dataset,
+                validation_data=validation_dataset,
+                epochs=epochs,
+                callbacks=callbacks,
+                verbose=self.verbose,
+            )
+        else:
+            train_model.fit(
+                train_dataset,
+                validation_data=validation_dataset,
+                epochs=epochs,
+                verbose=self.verbose,
+            )
+
+        # Save trained model
+        model_base_dir = train_data.get_model_base_dir()
+        full_model_path = os.path.join(model_base_dir, "weights.keras")
+        train_model.save(full_model_path)
+        return model_base_dir

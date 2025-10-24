@@ -11,9 +11,9 @@ if __name__ == '__main__':
     # 학습 설정 (dev.ipynb 스타일)
     captcha_id = 'kshop'
     backend = 'pytorch'
-    epochs = 60  # dev.ipynb 기본값
+    epochs = 100  # dev.ipynb 기본값
     batch_size = 32  # dev.ipynb 기본값
-    early_stopping_patience = 8
+    early_stopping_patience = 10
     learning_rate = 1e-4  # dev.ipynb 기본값
     num_workers = 0  # 단순화 (필요시 증가)
     warmup_epochs = 0  # dev.ipynb는 warmup 미사용

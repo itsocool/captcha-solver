@@ -8,8 +8,7 @@ warnings.filterwarnings('ignore', category=FutureWarning)
 warnings.filterwarnings('ignore', category=DeprecationWarning)
 
 from captchaResolver.keras_core import KerasModel
-from captchaResolver.engine import get_captcha_type_list
-from captchaResolver.keras_engine import predict, batch_predict_model
+from captchaResolver.engine import get_captcha_type_list, batch_predict_model, predict
 
 captcha_id = 'default'
 captcha_type_list = get_captcha_type_list()

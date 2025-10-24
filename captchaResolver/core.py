@@ -1,7 +1,6 @@
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 import torch.optim as optim
 from PIL import Image
@@ -10,7 +9,6 @@ from typing import List, Tuple, Optional, Dict
 from tqdm import tqdm
 import collections
 import os
-import json
 
 from captchaResolver.dataclass import TrainInfo
 
@@ -20,8 +18,6 @@ from captchaResolver.dataclass import TrainInfo
 # ============================================================================
 
 class Bidirectional(nn.Module):
-    """양방향 RNN 래퍼 (LSTM 또는 GRU)."""
-    
     def __init__(self, inp: int, hidden: int, out: int, lstm: bool = True):
         super(Bidirectional, self).__init__()
         if lstm:
@@ -34,7 +30,6 @@ class Bidirectional(nn.Module):
         recurrent, _ = self.rnn(X)
         out = self.embedding(recurrent)
         return out
-
 
 class CRNN(nn.Module):
     """
@@ -61,8 +56,9 @@ class CRNN(nn.Module):
         
         # Linear는 최초 forward에서 feature_dim에 맞춰 동적 생성
         self.linear = None
-        self.bn1 = nn.BatchNorm1d(256)
-        self.rnn = Bidirectional(256, 1024, output + 1)  # +1 for CTC blank
+        # Keras 스타일: 두 개의 Bidirectional LSTM 레이어
+        self.rnn1 = Bidirectional(256, 128, 256, lstm=True)  # 입력 차원 256으로 복구
+        self.rnn2 = Bidirectional(256, 64, output + 1, lstm=True)  # 두 번째 LSTM (64 hidden units) -> output
     
     def forward(self, X: torch.Tensor, y: Optional[torch.Tensor] = None,
                 criterion: Optional[nn.Module] = None) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
@@ -79,7 +75,8 @@ class CRNN(nn.Module):
         out = self.cnn(X)
         N, C, w, h = out.size()
         
-        # Reshape: (N, C, w, h) -> (N, C*w, h)
+        # Reshape: (N, C, w, h) -> (N, C*w, h) 
+        # Keras와 동일한 reshape 계산: (width//4, height//4 * channels)
         out = out.view(N, -1, h)
         out = out.permute(0, 2, 1)  # (N, h, feature_dim)
         
@@ -90,7 +87,9 @@ class CRNN(nn.Module):
         
         out = self.linear(out)
         out = out.permute(1, 0, 2)  # (h, N, 256) for RNN
-        out = self.rnn(out)  # (h, N, num_classes)
+        # Keras 스타일: 순차적으로 두 개의 Bidirectional LSTM 통과
+        out = self.rnn1(out)  # (h, N, 256)
+        out = self.rnn2(out)  # (h, N, num_classes)
         
         if y is not None and criterion is not None:
             T = out.size(0)
@@ -105,7 +104,6 @@ class CRNN(nn.Module):
             return out, loss
         
         return out, None
-
 
 class CaptchaDataset(Dataset):
     """PyTorch Dataset for CAPTCHA images."""
@@ -129,7 +127,6 @@ class CaptchaDataset(Dataset):
             image = self.transform(image)
         
         return image, label
-
 
 class Engine:
     """학습/평가/예측 엔진 (dev.ipynb 기반)."""
@@ -207,25 +204,14 @@ class Engine:
         
         return out
 
-
 def ctc_decode(pred_array: np.ndarray, mapping_inv: Dict[int, str]) -> str:
-    """
-    CTC greedy decoding (dev.ipynb 기반).
-    
-    Args:
-        pred_array: (N, T) or (T,) numpy array
-        mapping_inv: {index: character} mapping
-        
-    Returns:
-        decoded string
-    """
     seq = pred_array[0] if pred_array.ndim == 2 else pred_array
     prev = -1
     chars = []
     for p in seq:
         pi = int(p)
         if pi != prev and pi != 0:  # 0 = blank
-            chars.append(mapping_inv.get(pi, ''))
+            chars.append(mapping_inv.get(pi, f'[UNK:{pi}]'))
         prev = pi
     return ''.join(chars)
 

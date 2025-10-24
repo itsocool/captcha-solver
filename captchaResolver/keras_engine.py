@@ -6,42 +6,20 @@ import tensorflow as tf
 
 from captchaResolver.keras_core import KerasModel
 
-def train_model(
-    model: KerasModel,
-    epochs=100,
-    batch_size=32,
-    earlystopping=True,
-    early_stopping_patience: int = 8
-):
-    train_dataset, validation_dataset = model.split_dataset(
-        batch_size=batch_size, train_size=0.9, shuffle=True
-    )
-    train_data = model.train_data
-    train_model = model.build_model()
-    callbacks = []
-    
-    if earlystopping == True:
-        callbacks.append(
-            keras.callbacks.EarlyStopping(
-                monitor="val_loss", patience=early_stopping_patience, restore_best_weights=True
-            )
-        )
-        train_model.fit(
-            train_dataset,
-            validation_data=validation_dataset,
-            epochs=epochs,
-            callbacks=callbacks,
-            verbose=model.verbose,
-        )
-    else:
-        train_model.fit(
-            train_dataset, validation_data=validation_dataset, epochs=epochs, verbose=model.verbose,
-        )
-
-    model_base_dir = train_data.get_model_base_dir()
-    full_model_path = os.path.join(model_base_dir, "weights.keras")
-    train_model.save(full_model_path)
-    return model_base_dir
+# def train_model(
+#     model: KerasModel,
+#     epochs=100,
+#     batch_size=32,
+#     earlystopping=True,
+#     early_stopping_patience: int = 8
+# ):
+#     # Delegate training responsibility to the KerasModel instance
+#     return model.train_model(
+#         epochs=epochs,
+#         batch_size=batch_size,
+#         earlystopping=earlystopping,
+#         early_stopping_patience=early_stopping_patience,
+#     )
 
 def batch_predict_model(model: KerasModel, batch_size=32):
     start = time.time()
