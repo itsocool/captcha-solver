@@ -23,7 +23,7 @@ from captchaResolver.keras_core import KerasModel
 
 def execute(captcha_type: str, image_path: str) -> str:
 
-    train_data = dataclass.TrainInfo(
+    train_data = dataclass.TrainData(
         captcha_id=captcha_type,
         train_data_base_dir=base_dir,
         init=False,

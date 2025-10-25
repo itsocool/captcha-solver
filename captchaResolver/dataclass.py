@@ -1,4 +1,4 @@
-import os, glob, random, struct
+import os, glob, random, struct, shutil
 from dataclasses import dataclass, field
 from typing import Optional, Final
 
@@ -9,7 +9,7 @@ ALPHABET: Final = LOWER_CASE + UPPER_CASE
 ALPHA_NUMERIC: Final = DIGITS + ALPHABET
 
 @dataclass
-class TrainInfo:
+class TrainData:
     captcha_id: str
     backend: str = 'pytorch'
     rev: int = 0
@@ -110,12 +110,62 @@ class TrainInfo:
         image_path = random.choice(candidates)
         return image_path
 
+    def shuffle_train_data(self, train_size=0.9) -> None:
+        """
+        훈련용/추론용 폴더의 모든 PNG 이미지를 수집하여 셔플한 뒤,
+        train_size 비율에 따라 다시 배분합니다.
+        """
+        train_dir = self.get_image_dir(train=True)
+        pred_dir = self.get_image_dir(train=False)
+        
+        # 두 폴더의 모든 PNG 이미지 수집
+        all_images = []
+        all_images.extend(glob.glob(os.path.join(train_dir, '*.png')))
+        all_images.extend(glob.glob(os.path.join(pred_dir, '*.png')))
+        
+        if not all_images:
+            raise RuntimeError("이미지 파일이 없습니다.")
+        
+        # 셔플
+        random.shuffle(all_images)
+        
+        # train_size 비율로 분할
+        split_index = int(len(all_images) * train_size)
+        train_images = all_images[:split_index]
+        pred_images = all_images[split_index:]
+        
+        # 폴더 생성 (존재하지 않는 경우)
+        os.makedirs(train_dir, exist_ok=True)
+        os.makedirs(pred_dir, exist_ok=True)
+        
+        # 임시 폴더로 모든 이미지 이동
+        temp_dir = os.path.join(self.train_data_base_dir, self.captcha_id, str(self.rev), 'images', '_temp')
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        for img_path in all_images:
+            shutil.move(img_path, temp_dir)
+        
+        # 훈련 폴더로 이동
+        for img_path in train_images:
+            filename = os.path.basename(img_path)
+            shutil.move(os.path.join(temp_dir, filename), os.path.join(train_dir, filename))
+        
+        # 추론 폴더로 이동
+        for img_path in pred_images:
+            filename = os.path.basename(img_path)
+            shutil.move(os.path.join(temp_dir, filename), os.path.join(pred_dir, filename))
+        
+        # 임시 폴더 삭제
+        os.rmdir(temp_dir)
+        
+        print(f"셔플 완료: 훈련 {len(train_images)}개, 추론 {len(pred_images)}개")
+
 @dataclass
 class CaptchaType:
     captcha_id: str = 'default'
     name: str = '기본캡챠'
     desc: str = '기본 캡챠'
-    train_data: Optional[TrainInfo] = None
+    train_data: Optional[TrainData] = None
 
     def __post_init__(self) -> None:
         self.captcha_id=self.train_data.captcha_id

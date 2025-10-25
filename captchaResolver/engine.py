@@ -1,17 +1,16 @@
 import os
 import time
 import torch
-import tensorflow as tf
 import numpy as np
 from typing import Tuple, Optional, Dict
 from tqdm import tqdm
 from captchaResolver.core import PyTorchModel
-from captchaResolver.dataclass import CaptchaType, TrainInfo
+from captchaResolver.dataclass import CaptchaType, TrainData
 from captchaResolver.keras_core import KerasModel
 
 def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: str = "keras") -> Dict[str, CaptchaType]:
 
-    default = CaptchaType(name="기본 캡챠", desc="기본 캡챠", train_data=TrainInfo(
+    default = CaptchaType(name="기본 캡챠", desc="기본 캡챠", train_data=TrainData(
         captcha_id="default",
         backend=backend,
         train_data_base_dir=train_data_base_dir,
@@ -19,7 +18,7 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: 
         characters=list('2345678bcdefgmnpwxy')
     ))
 
-    supreme_court = CaptchaType(name="대법원", desc="대법원 캡챠", train_data=TrainInfo(
+    supreme_court = CaptchaType(name="대법원", desc="대법원 캡챠", train_data=TrainData(
         captcha_id="supreme_court",
         backend=backend,
         train_data_base_dir=train_data_base_dir,
@@ -27,7 +26,7 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: 
         image_height=40
     ))
 
-    gov24 = CaptchaType(name="정부 24", desc="대한민국 정부 24 캡챠", train_data=TrainInfo(
+    gov24 = CaptchaType(name="정부 24", desc="대한민국 정부 24 캡챠", train_data=TrainData(
         captcha_id="gov24",
         backend=backend,
         train_data_base_dir=train_data_base_dir,
@@ -35,7 +34,7 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: 
         image_height=51
     ))
 
-    wetax = CaptchaType(name="WETAX", desc="WETAX 캡챠", train_data=TrainInfo(
+    wetax = CaptchaType(name="WETAX", desc="WETAX 캡챠", train_data=TrainData(
         captcha_id="wetax",
         backend=backend,
         train_data_base_dir=train_data_base_dir,
@@ -43,9 +42,8 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: 
         image_height=60
     ))
 
-    captcha_id = "kshop"
-    kshop = CaptchaType(captcha_id=captcha_id, name="kshop", desc="KT Shopping 캡챠", train_data=TrainInfo(
-        captcha_id=captcha_id,
+    kshop = CaptchaType(captcha_id="kshop", name="kshop", desc="KT Shopping 캡챠", train_data=TrainData(
+        captcha_id="kshop",
         backend=backend,
         train_data_base_dir=train_data_base_dir,
         image_width=263,
@@ -60,26 +58,11 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: 
         "kshop": kshop,
     }
 
-def get_model(train_data: TrainInfo) -> PyTorchModel | KerasModel:
-    """
-    주어진 TrainInfo에 따라 적절한 모델 인스턴스 반환
-    
-    Args:
-        train_data: TrainInfo 인스턴스
-        
-    Returns:
-        PyTorchModel 또는 KerasModel 인스턴스
-    """
+def get_model(train_data: TrainData) -> PyTorchModel | KerasModel:
     if train_data.backend == 'pytorch':
-        model = PyTorchModel(
-            train_data=train_data,
-            verbose=1
-        )
+        model = PyTorchModel(train_data=train_data, verbose=1)
     elif train_data.backend == 'keras':
-        model = KerasModel(
-            train_data=train_data,
-            verbose=1
-        )
+        model = KerasModel(train_data=train_data, verbose=1)
     else:
         raise ValueError(f"Unsupported backend: {train_data.backend}")
     
@@ -282,51 +265,19 @@ def batch_predict_model(
             'time': elapsed_time
         }
     else:
+        keras_model: KerasModel = model  # 타입 힌트 충돌 방지
         matched = 0
-        pred_img_path_list = model.train_data.get_data_files(train=False)
-        pred_labels = model.train_data.get_labels(train=False)
-        pred_dataset = tf.data.Dataset.from_tensor_slices((pred_img_path_list, pred_labels))
-        pred_dataset = (
-            pred_dataset
-            .map(model.encode_single_sample, num_parallel_calls=tf.data.AUTOTUNE)
-            .batch(batch_size)
-            .prefetch(buffer_size=tf.data.AUTOTUNE)
-        )
-        
-        # Load prediction model if not loaded
-        model.load_prediction_model()
-        
-        # Batch prediction
-        all_preds = []
-        all_labels = []
-        
-        for batch in pred_dataset:
-            images = batch["image"]
-            labels = batch["label"]
-            
-            # Predict batch
-            pred_vals = model.predict_model.predict(images, verbose=0)
-            preds = model.decode_batch_predictions(pred_vals)
-            
-            # Decode original labels
-            for label in labels:
-                label_text = tf.strings.reduce_join(
-                    model.num_to_char(label + 1)
-                ).numpy().decode("utf-8")
-                all_labels.append(label_text)
-            
-            all_preds.extend(preds)
-        
-        # Compare predictions with original labels
-        for idx, (ori, pred) in enumerate(zip(all_labels, all_preds)):
-            msg = ""
+        all_preds, all_labels, all_confidences, pred_img_path_list = keras_model.batch_predict(batch_size=batch_size)
+
+        for idx, (ori, pred, conf) in enumerate(zip(all_labels, all_preds, all_confidences)):
+            msg = "✅"
             if ori == pred:
                 matched += 1
             else:
-                msg = " Not matched!"
+                msg = "❌ Not matched!"
             
             # Calculate confidence for display (optional)
-            print(f"ori: {ori}, pred: {pred}{msg}")
+            print(f"ori: {ori}, pred: {pred}, confidence: {conf:.4f}% {msg}")
         
         end = time.time()
         total = len(pred_img_path_list)
@@ -390,18 +341,6 @@ def predict(
         
         return pred_text, confidence
     else:
-        image_width = model.train_data.image_width
-        image_height = model.train_data.image_height
-        target_img = model.encode_single_sample(image_path)["image"]
-        target_img = tf.reshape(target_img, shape=[1, image_width, image_height, 1])
-
-        if model.predict_model is None:
-            model.load_prediction_model()
-
-        pred_val = model.predict_model.predict(target_img, verbose=model.verbose)
-        pred = model.decode_batch_predictions(pred_val)[0]
-
-        confidence = float(np.max(pred_val, axis=-1).mean())
-
-        return pred, confidence
+        keras_model: KerasModel = model  # 타입 힌트 충돌 방지
+        return keras_model.predict(image_path, model_path=model_path)
     

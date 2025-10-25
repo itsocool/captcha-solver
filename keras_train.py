@@ -12,14 +12,14 @@ from captchaResolver.keras_core import KerasModel
 
 captcha_id = 'default'
 backend = 'keras'
-
-train_data = get_captcha_type_list(backend=backend)[captcha_id].train_data
+captcha_type = get_captcha_type_list(backend=backend)[captcha_id]
+train_data = captcha_type.train_data
 train_data.threshold = 60
 epochs = 120
 batch_size = 32
-early_stopping_patience = 16
+early_stopping_patience = 8
 
-model = KerasModel(train_data=train_data)
+model = KerasModel(captcha_type=captcha_type)
 model_base_dir = train_model(
     model,
     epochs=epochs,
