@@ -11,7 +11,7 @@ from typing import List, Tuple, Optional, Dict
 from tqdm import tqdm
 from pathlib import Path
 
-from captchaResolver.dataclass import TrainData
+from captchaResolver.dataclass import CaptchaType, TrainData
 
 class Bidirectional(nn.Module):
     """양방향 RNN 레이어 (LSTM 또는 GRU)."""
@@ -295,26 +295,17 @@ def ctc_decode(pred_array: np.ndarray, mapping_inv: Dict[int, str]) -> str:
     return ''.join(chars)
 
 class PyTorchModel:
-    """
-    TrainInfo 기반 CAPTCHA 모델 래퍼 (dev.ipynb 구조 통합).
-    
-    PyTorch 2.9.0 최적화:
-    - torch.compile 지원
-    - 개선된 모델 저장/로딩 (state_dict 권장)
-    - Mixed precision training 지원
-    
-    기존 인터페이스 유지하면서 dev.ipynb의 간결한 구조 통합.
-    """
     
     def __init__(
         self,
-        train_data: TrainData,
+        captcha_type: CaptchaType,
         verbose: int = 1,
         device: Optional[torch.device] = None,
         use_compile: bool = False,
         use_amp: bool = False
     ):
-        self.train_data = train_data
+        self.captcha_type = captcha_type
+        self.train_data = captcha_type.train_data
         self.verbose = verbose
         self.use_compile = use_compile
         self.use_amp = use_amp
@@ -336,6 +327,7 @@ class PyTorchModel:
                 print("Mixed Precision: Enabled")
         
         # Character mappings (1-based, 0 = blank)
+        train_data: TrainData = self.captcha_type.train_data
         self.characters = list(train_data.characters)
         self.char_to_idx = {char: idx + 1 for idx, char in enumerate(self.characters)}
         self.idx_to_char = {idx: char for char, idx in self.char_to_idx.items()}
@@ -344,7 +336,33 @@ class PyTorchModel:
         self.num_classes = len(self.characters)
         
         self.model = None
+        self.predict_model = None
         self.engine = None
+
+    def decode_predictions(self, log_probs: torch.Tensor, input_lengths: torch.Tensor) -> list:
+        """
+        Decode model outputs (CTC greedy) into list of strings.
+
+        Args:
+            log_probs: Tensor of shape (T, N, C) or (N, T, C)
+            input_lengths: Tensor with lengths (unused for greedy decode but kept for API)
+
+        Returns:
+            List[str]: decoded string per batch element
+        """
+        # Ensure shape is (T, N, C)
+        if log_probs.dim() == 3 and log_probs.size(0) != input_lengths.max().item():
+            # might be (N, T, C)
+            if log_probs.size(1) == input_lengths.max().item():
+                log_probs = log_probs.permute(1, 0, 2)
+
+        # Greedy argmax over classes
+        preds = log_probs.argmax(2)  # (T, N)
+        preds = preds.permute(1, 0)  # (N, T)
+
+        preds_np = preds.cpu().numpy()
+        results = [ctc_decode(preds_np[i:i+1], self.idx_to_char) for i in range(preds_np.shape[0])]
+        return results
     
     def split_dataset(
         self,
@@ -465,6 +483,9 @@ class PyTorchModel:
         
         if num_workers > 0:
             dataloader_kwargs['persistent_workers'] = persistent_workers
+
+        # Ensure consistent batch format using our collate_fn
+        dataloader_kwargs['collate_fn'] = collate_fn
         
         pred_loader = DataLoader(pred_dataset, **dataloader_kwargs)
         
@@ -498,16 +519,9 @@ class PyTorchModel:
         model_path: Optional[str] = None,
         warmup_epochs: int = 0,
         early_stopping_patience: int = 0,
-        gradient_clip_val: Optional[float] = None
+        gradient_clip_val: Optional[float] = None,
+        save_model: bool = True
     ) -> List[float]:
-        """
-        모델 학습 (dev.ipynb 스타일 + early stopping).
-        
-        PyTorch 2.9.0 최적화:
-        - Mixed precision training 지원
-        - Gradient clipping
-        - 개선된 optimizer (AdamW)
-        """
         if self.model is None:
             self.model = self.build_model()
         
@@ -644,7 +658,7 @@ class PyTorchModel:
                     patience_counter = 0
                     
                     # Best model 저장
-                    if save_best:
+                    if save_best and save_model:
                         if model_path is None:
                             model_path = self.train_data.get_model_path()
                         self.save_model(model_path, train_hist)
@@ -665,13 +679,13 @@ class PyTorchModel:
                         break
             else:
                 # Validation이 없으면 매 epoch마다 저장
-                if save_best and (epoch + 1) % 10 == 0:
+                if save_best and save_model and (epoch + 1) % 10 == 0:
                     if model_path is None:
                         model_path = self.train_data.get_model_path()
                     self.save_model(model_path, train_hist)
         
         # 최종 모델 저장 (early stopping으로 종료되지 않은 경우)
-        if save_best:
+        if save_best and save_model:
             if model_path is None:
                 model_path = self.train_data.get_model_path()
             self.save_model(model_path, train_hist)
@@ -754,79 +768,74 @@ class PyTorchModel:
         if model_path is None:
             model_path = self.train_data.get_model_path()
         
-        model_dir = Path(model_path).parent
-        state_dict_path = model_dir / 'weights.pth'
-        full_model_path = model_dir / 'model_full.pth'
+        full_model_path = os.path.abspath(model_path)
+        # model_dir = Path(model_path).parent
+        # state_dict_path = model_dir / 'weights.pth'
+        # full_model_path = model_dir / 'model_full.pth'
         
-        # 우선순위 1: state_dict 로드 (권장)
-        if state_dict_path.exists():
-            checkpoint = torch.load(
-                state_dict_path,
-                map_location=self.device,
-                weights_only=False
-            )
+        # # 우선순위 1: state_dict 로드 (권장)
+        # if state_dict_path.exists():
+        #     checkpoint = torch.load(
+        #         state_dict_path,
+        #         map_location=self.device,
+        #         weights_only=False
+        #     )
             
-            # 모델 빌드
-            if self.model is None:
-                self.model = self.build_model()
+        #     # 모델 빌드
+        #     if self.model is None:
+        #         self.model = self.build_model()
             
-            # Dummy forward pass for dynamic layers
-            dummy_input = torch.randn(
-                1, 1,
-                self.train_data.image_height,
-                self.train_data.image_width
-            ).to(self.device)
+        #     # Dummy forward pass for dynamic layers
+        #     dummy_input = torch.randn(
+        #         1, 1,
+        #         self.train_data.image_height,
+        #         self.train_data.image_width
+        #     ).to(self.device)
             
-            with torch.no_grad():
-                _ = self.model(dummy_input)
+        #     with torch.no_grad():
+        #         _ = self.model(dummy_input)
             
-            # state_dict 로드
-            if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-                self.model.load_state_dict(checkpoint['model_state_dict'])
+        #     # state_dict 로드
+        #     if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+        #         self.model.load_state_dict(checkpoint['model_state_dict'])
                 
-                # 메타데이터 로드
-                if 'char_to_idx' in checkpoint:
-                    self.char_to_idx = checkpoint['char_to_idx']
-                if 'idx_to_char' in checkpoint:
-                    self.idx_to_char = checkpoint['idx_to_char']
-            else:
-                self.model.load_state_dict(checkpoint)
+        #         # 메타데이터 로드
+        #         if 'char_to_idx' in checkpoint:
+        #             self.char_to_idx = checkpoint['char_to_idx']
+        #         if 'idx_to_char' in checkpoint:
+        #             self.idx_to_char = checkpoint['idx_to_char']
+        #     else:
+        #         self.model.load_state_dict(checkpoint)
             
-            if self.verbose > 0:
-                print(f"Model loaded from {state_dict_path}")
+        #     if self.verbose > 0:
+        #         print(f"Model loaded from {state_dict_path}")
         
-        # Fallback: 전체 모델 로드
-        elif full_model_path.exists():
-            loaded = torch.load(
-                full_model_path,
-                map_location=self.device,
-                weights_only=False
-            )
-            
-            if isinstance(loaded, nn.Module):
-                self.model = loaded
-                self.model.to(self.device)
-            else:
-                raise ValueError(f"Unexpected model format in {full_model_path}")
-            
-            if self.verbose > 0:
-                print(f"Model loaded from {full_model_path}")
+        # # Fallback: 전체 모델 로드
+        # elif full_model_path.exists():
+        loaded = torch.load(
+            full_model_path,
+            map_location=self.device,
+            weights_only=False
+        )
         
+        if isinstance(loaded, nn.Module):
+            self.predict_model = loaded
+            self.predict_model.to(self.device)
         else:
-            raise FileNotFoundError(
-                f"No model found at {model_dir}. "
-                f"Looking for {state_dict_path.name} or {full_model_path.name}"
-            )
+            raise ValueError(f"Unexpected model format in {full_model_path}")
         
-        self.model.eval()
+        if self.verbose > 0:
+            print(f"Model loaded from {full_model_path}")
+        
+        # else:
+        #     raise FileNotFoundError(
+        #         f"No model found at {model_dir}. "
+        #         f"Looking for {state_dict_path.name} or {full_model_path.name}"
+        #     )
+        
+        self.predict_model.eval()
     
     def predict(self, image_path: str) -> str:
-        """
-        단일 이미지 예측.
-        
-        PyTorch 2.9.0 최적화:
-        - 효율적인 메모리 관리
-        """
         if self.model is None:
             raise ValueError("Model not loaded. Call load_prediction_model() first.")
         
@@ -859,12 +868,6 @@ class PyTorchModel:
         return pred_text
     
     def validate_model(self, val_loader: DataLoader) -> Tuple[float, float]:
-        """
-        모델 평가 (정확도 계산).
-        
-        PyTorch 2.9.0 최적화:
-        - 효율적인 배치 처리
-        """
         if self.model is None:
             raise ValueError("Model not loaded. Call load_prediction_model() first.")
         
@@ -903,3 +906,33 @@ class PyTorchModel:
         accuracy = correct / total if total > 0 else 0.0
         
         return avg_loss, accuracy
+
+def collate_fn(batch: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
+    # Support two item formats:
+    # - dicts with keys: 'image', 'label', 'label_length'
+    # - tuples/lists: (image_tensor, label_tensor)
+    if len(batch) == 0:
+        return {
+            'images': torch.tensor([]),
+            'labels': torch.tensor([], dtype=torch.long),
+            'label_lengths': torch.tensor([], dtype=torch.long)
+        }
+
+    first = batch[0]
+    if isinstance(first, dict):
+        images = torch.stack([item['image'] for item in batch])
+        labels = [item['label'] for item in batch]
+        label_lengths = torch.tensor([item['label_length'] for item in batch], dtype=torch.long)
+        labels_concat = torch.cat(labels) if labels else torch.tensor([], dtype=torch.long)
+    else:
+        # tuple/list case: (image, label)
+        images = torch.stack([item[0] for item in batch])
+        labels_list = [item[1] for item in batch]
+        label_lengths = torch.tensor([int(l.size(0)) for l in labels_list], dtype=torch.long)
+        labels_concat = torch.cat(labels_list) if labels_list else torch.tensor([], dtype=torch.long)
+
+    return {
+        'images': images,
+        'labels': labels_concat,
+        'label_lengths': label_lengths
+    }

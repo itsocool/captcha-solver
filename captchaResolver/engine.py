@@ -1,10 +1,12 @@
 import os
+import shutil
 import time
 import torch
 import numpy as np
-from typing import Tuple, Optional, Dict
+from typing import Tuple, Dict
 from tqdm import tqdm
-from captchaResolver.core import PyTorchModel
+from captchaResolver import core
+from captchaResolver.core import CaptchaDataset, PyTorchModel
 from captchaResolver.dataclass import CaptchaType, TrainData
 from captchaResolver.keras_core import KerasModel
 
@@ -58,14 +60,26 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: 
         "kshop": kshop,
     }
 
-def get_model(train_data: TrainData) -> PyTorchModel | KerasModel:
+def get_model(captcha_type: CaptchaType) -> PyTorchModel | KerasModel:
+    train_data: TrainData = captcha_type.train_data
     if train_data.backend == 'pytorch':
-        model = PyTorchModel(train_data=train_data, verbose=1)
+        model = PyTorchModel(captcha_type=captcha_type, verbose=1)
     elif train_data.backend == 'keras':
-        model = KerasModel(train_data=train_data, verbose=1)
+        model = KerasModel(captcha_type=captcha_type, verbose=1)
     else:
         raise ValueError(f"Unsupported backend: {train_data.backend}")
     
+    return model
+
+def get_captcha_model(captcha_id: str = "default", backend: str = "keras") -> KerasModel | PyTorchModel:
+    captcha_type_list: Dict[str, CaptchaType] = get_captcha_type_list(backend=backend)
+
+    if captcha_id not in captcha_type_list:
+        raise ValueError(f"Unsupported captcha_id: {captcha_id}")
+
+    captcha_type = captcha_type_list[captcha_id]
+    model = get_model(captcha_type=captcha_type)
+
     return model
 
 def train_model(
@@ -76,13 +90,12 @@ def train_model(
     early_stopping_patience: int = 15,
     learning_rate: float = 0.001,
     num_workers: int = 0,
-    warmup_epochs: int = 0
+    warmup_epochs: int = 0,
+    save_model: bool = True,
 ):
     if model.train_data.backend == 'pytorch':
-        model.model = model.build_model()
-    
-        # Split dataset (dev.ipynb style)
-        train_loader, val_loader = model.split_dataset(
+        torch_model: PyTorchModel = model  # 타입 힌트 충돌 방지
+        train_loader, val_loader = torch_model.split_dataset(
             batch_size=batch_size,
             train_size=0.8,
             shuffle=True,
@@ -90,42 +103,62 @@ def train_model(
             pin_memory=False
         )
         
-        # Train model with early stopping
         patience = early_stopping_patience if earlystopping else 0
         
-        hist = model.train_model(
+        torch_model.train_model(
             train_loader=train_loader,
             val_loader=val_loader,
             epochs=epochs,
             lr=learning_rate,
             save_best=True,
             warmup_epochs=warmup_epochs,
-            early_stopping_patience=patience
+            early_stopping_patience=patience,
+            save_model=save_model,
         )
         
         # Return model directory
-        model_path = model.train_data.get_model_path()
+        model_path = torch_model.train_data.get_model_path()
         model_base_dir = os.path.dirname(model_path)
-        
-        return model_base_dir
     
     else:
-        return model.train_model(
+        keras_model: KerasModel = model  # 타입 힌트 충돌 방지
+        train_model = keras_model.train_model(
             epochs=epochs,
             batch_size=batch_size,
             earlystopping=earlystopping,
             early_stopping_patience=early_stopping_patience,
-        )      
+        )
+        
+        if save_model:
+            best_model_path = os.path.join(model_base_dir, "best_weights.keras")
+            final_model_path = os.path.join(model_base_dir, "weights.keras")
+            if os.path.exists(best_model_path):
+            
+                shutil.copy2(best_model_path, final_model_path)
+                try:
+                    os.remove(best_model_path)
+                    print(f"\n✓ 학습 완료:")
+                    print(f"  - 최종 모델: {final_model_path}")
+                    print(f"  - 임시 파일 정리 완료 (best_weights.keras 삭제됨)")
+                except OSError as e:
+                    print(f"\n✓ 학습 완료:")
+                    print(f"  - 최종 모델: {final_model_path}")
+                    print(f"  ⚠ 임시 파일 정리 실패: {e}")
+            else:
+                train_model.save(final_model_path)
+                print(f"\n✓ 학습 완료:")
+                print(f"  - 최종 모델: {final_model_path}")
+                print(f"  ⚠ best model이 생성되지 않았습니다 (현재 모델 저장됨)")
+        else:
+            print(f"\n✓ 학습 완료: 모델 저장 안함")
 
 def batch_predict_model(
-    model: PyTorchModel,
+    model: PyTorchModel | KerasModel,
     batch_size: int = 32,
     num_workers: int = 4
 ) -> Dict[str, float]:
    
     start = time.time()
-    
-    # 예측 데이터 로드
     pred_img_paths = model.train_data.get_data_files(train=False)
     pred_labels = model.train_data.get_labels(train=False)
     
@@ -134,41 +167,23 @@ def batch_predict_model(
         return {'accuracy': 0.0, 'matched': 0, 'total': 0, 'time': 0.0}
     
     if model.train_data.backend == 'pytorch':
-    
-        # 예측용 데이터셋 생성
-        from captchaResolver.core import CaptchaDataset, collate_fn
-        from torch.utils.data import DataLoader
-        
-        pred_dataset = CaptchaDataset(
-            np.array(pred_img_paths),
-            np.array(pred_labels),
-            model.train_data,
-            model.char_to_idx
-        )
-        
-        pred_loader = DataLoader(
-            pred_dataset,
+        torch_model: PyTorchModel = model  # 타입 힌트 충돌 방지
+        # Use the model helper to build a proper prediction DataLoader
+        # (it creates a DataFrame, sets the image directory path and transforms).
+        pred_loader = torch_model.create_prediction_dataset(
             batch_size=batch_size,
-            shuffle=False,
             num_workers=num_workers,
-            collate_fn=collate_fn,
             pin_memory=torch.cuda.is_available()
         )
-        
-        # 모델 로드 (아직 로드되지 않았다면)
-        if model.predict_model is None:
-            if model.verbose > 0:
-                print("Loading prediction model...")
-            model.load_prediction_model()
-        
-        model.predict_model.eval()
+          
+        torch_model.load_prediction_model()
         
         # 배치 예측 수행
         all_preds = []
         all_labels = []
         matched = 0
         
-        if model.verbose > 0:
+        if torch_model.verbose > 0:
             print(f"\nStarting batch prediction on {len(pred_img_paths)} images...")
             print(f"Batch size: {batch_size}")
             print(f"Total batches: {len(pred_loader)}")
@@ -179,18 +194,23 @@ def batch_predict_model(
             enumerate(pred_loader),
             total=len(pred_loader),
             desc="Predicting",
-            disable=(model.verbose == 0),
+            disable=(torch_model.verbose == 0),
             ncols=100
         )
         
         with torch.no_grad():
             for batch_idx, batch in pred_pbar:
-                images = batch['images'].to(model.device)
+                images = batch['images'].to(torch_model.device)
                 labels = batch['labels']  # CPU에 유지
                 label_lengths = batch['label_lengths']
                 
-                # 예측
-                log_probs = model.predict_model(images)
+                # 예측 (loaded full model is stored in torch_model.predict_model)
+                res = torch_model.predict_model(images)
+                # Some model implementations return (out, loss) tuple; extract tensor if needed
+                if isinstance(res, (tuple, list)):
+                    log_probs = res[0]
+                else:
+                    log_probs = res
                 input_lengths = torch.full(
                     (images.size(0),), log_probs.size(0),
                     dtype=torch.long
@@ -287,16 +307,15 @@ def batch_predict_model(
         print(f"pred time: {end - start:.2f} sec")        
 
 def predict(
-    model: PyTorchModel,
-    image_path: str,
-    model_path: Optional[str] = None
+    model: PyTorchModel | KerasModel,
+    image_path: str
 ) -> Tuple[str, float]:
     
     if model.train_data.backend == 'pytorch':
 
         # 모델 로드 (아직 로드되지 않았다면)
         if model.predict_model is None:
-            model.load_prediction_model(model_path)
+            model.load_prediction_model()
         
         model.predict_model.eval()
         
@@ -342,5 +361,5 @@ def predict(
         return pred_text, confidence
     else:
         keras_model: KerasModel = model  # 타입 힌트 충돌 방지
-        return keras_model.predict(image_path, model_path=model_path)
+        return keras_model.predict(image_path)
     

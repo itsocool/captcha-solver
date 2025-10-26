@@ -1,29 +1,27 @@
 import os
 
-from captchaResolver import engine
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # TensorFlow 로깅 완전 억제
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # oneDNN 최적화 비활성화 (경고 제거)
+os.environ['GLOG_minloglevel'] = '2'  # Google 로깅
 
-# 환경 변수 설정
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
-os.environ['GLOG_minloglevel'] = '2'
+import captchaResolver.engine as engine
+from captchaResolver.dataclass import TrainData
+from captchaResolver.core import PyTorchModel
 
-from captchaResolver.engine import batch_predict_model, get_captcha_type_list, get_model
-
-def main():
-    """PyTorch 모델을 사용한 배치 추론 및 결과 표시"""
-    # 예측 설정
-    captcha_id = 'kshop'
+if __name__ == '__main__':
+    # 학습 설정 (dev.ipynb 스타일)
+    captcha_id = 'default'
     backend = 'pytorch'
-    batch_size = 32
-    # num_workers = 0 if os.name == 'nt' else 4
+    epochs = 100  # dev.ipynb 기본값
+    batch_size = 32  # dev.ipynb 기본값
+    early_stopping_patience = 10
+    learning_rate = 1e-4  # dev.ipynb 기본값
+    num_workers = 0  # 단순화 (필요시 증가)
+    warmup_epochs = 0  # dev.ipynb는 warmup 미사용
+    save_model = False
     
-    # CAPTCHA 타입 및 학습 데이터 설정
-    captcha_type_list = get_captcha_type_list(backend=backend)
-    train_data = captcha_type_list[captcha_id].train_data
-    train_data.backend = backend
-    train_data.threshold = 60
-    
-    model = get_model(train_data=train_data)
+    model: PyTorchModel = engine.get_captcha_model(captcha_id=captcha_id, backend=backend)
+    train_data: TrainData = model.train_data
     
     print("=" * 70)
     print(f"Prediction Configuration:")
@@ -35,11 +33,8 @@ def main():
     print(f"  Threshold: {train_data.threshold}")
     print(f"  Batch size: {batch_size}")
     print("=" * 70)
-    
-    batch_predict_model(
+
+    engine.batch_predict_model(
         model=model,
         batch_size=batch_size,
     )
-
-if __name__ == '__main__':
-    main()
