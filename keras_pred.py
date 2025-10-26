@@ -1,8 +1,9 @@
 import os
 
 from captchaResolver.dataclass import TrainData
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # TensorFlow C++ 로그 레벨 (0=ALL,1=INFO,2=WARNING,3=ERROR)
-os.environ['GLOG_minloglevel'] = '2'  # Google 로깅
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+os.environ['GLOG_minloglevel'] = '2'
 
 import logging, warnings
 logging.getLogger('tensorflow').setLevel(logging.ERROR)
