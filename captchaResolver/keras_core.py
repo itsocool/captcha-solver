@@ -349,7 +349,7 @@ class KerasModel:
         train_model = self.build_model()
         model_base_dir = train_data.get_model_base_dir()
         os.makedirs(model_base_dir, exist_ok=True)
-        # best_model_path = os.path.join(model_base_dir, "best_weights.keras")
+        best_model_path = os.path.join(model_base_dir, "best_weights.keras")
         callbacks = []
         callbacks.append(
             keras.callbacks.ModelCheckpoint(
@@ -407,31 +407,38 @@ class KerasModel:
             verbose=self.verbose,
         )
 
-        # if save_model:
-        #     final_model_path = os.path.join(model_base_dir, "weights.keras")
-        #     if os.path.exists(best_model_path):
-            
-        #         shutil.copy2(best_model_path, final_model_path)
-        #         try:
-        #             os.remove(best_model_path)
-        #             if self.verbose:
-        #                 print(f"\n✓ 학습 완료:")
-        #                 print(f"  - 최종 모델: {final_model_path}")
-        #                 print(f"  - 임시 파일 정리 완료 (best_weights.keras 삭제됨)")
-        #         except OSError as e:
-        #             if self.verbose:
-        #                 print(f"\n✓ 학습 완료:")
-        #                 print(f"  - 최종 모델: {final_model_path}")
-        #                 print(f"  ⚠ 임시 파일 정리 실패: {e}")
-        #     else:
-        #         train_model.save(final_model_path)
-        #         if self.verbose:
-        #             print(f"\n✓ 학습 완료:")
-        #             print(f"  - 최종 모델: {final_model_path}")
-        #             print(f"  ⚠ best model이 생성되지 않았습니다 (현재 모델 저장됨)")
-        # else:
-        #     if self.verbose:
-        #         print(f"\n✓ 학습 완료: 모델 저장 안함")
+        # Save best_weights -> final weights.keras (복사 또는 현재 모델 저장)
+        final_model_path = os.path.join(model_base_dir, "weights.keras")
+        try:
+            if os.path.exists(best_model_path):
+                # best가 있으면 복사해서 final로 만듦
+                shutil.copy2(best_model_path, final_model_path)
+                # 복사 성공 시 임시 파일 제거
+                try:
+                    os.remove(best_model_path)
+                except OSError:
+                    # 삭제 실패해도 진행
+                    pass
+                if self.verbose:
+                    print(f"\n✓ 학습 완료:")
+                    print(f"  - 최종 모델: {final_model_path}")
+                    print(f"  - 임시 best 파일(best_weights.keras)을 final로 복사하고 정리함.")
+            else:
+                # best가 없으면 현재(학습중) 모델을 저장
+                train_model.save(final_model_path)
+                if self.verbose:
+                    print(f"\n✓ 학습 완료: best model이 없어 현재 모델을 저장합니다.")
+                    print(f"  - 최종 모델: {final_model_path}")
+        except Exception as e:
+            # 복사/저장 중 에러가 나면 fallback으로 현재 모델 저장 시도
+            try:
+                train_model.save(final_model_path)
+                if self.verbose:
+                    print(f"\n✓ 학습 완료: 복사 실패했으나 현재 모델을 저장했습니다. ({e})")
+                    print(f"  - 최종 모델: {final_model_path}")
+            except Exception as e2:
+                if self.verbose:
+                    print(f"\n⚠ 모델 저장 실패: {e2}")
         
         return train_model
 
@@ -488,4 +495,3 @@ class KerasModel:
         decoded_preds = self.decode_batch_predictions(pred, use_greedy=use_greedy)
         confidence = np.max(pred)
         return decoded_preds[0], confidence
-    

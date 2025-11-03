@@ -35,7 +35,7 @@ class TrainData:
     label_length: int = 6
     characters: List[str] = field(default_factory=lambda: list(ALPHA_NUMERIC))
     init: bool = True
-    threshold: int = 0
+    threshold: int = 60
 
     def __post_init__(self) -> None:
         if self.init:

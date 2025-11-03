@@ -1,6 +1,5 @@
 import os
 
-from captchaResolver.dataclass import TrainData
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 os.environ['GLOG_minloglevel'] = '2'
@@ -10,10 +9,11 @@ logging.getLogger('tensorflow').setLevel(logging.ERROR)
 warnings.filterwarnings('ignore', category=FutureWarning)
 warnings.filterwarnings('ignore', category=DeprecationWarning)
 
+from captchaResolver.dataclass import TrainData
 import captchaResolver.engine as engine
 from captchaResolver.keras_core import KerasModel
 
-captcha_id = 'default'
+captcha_id = 'gov24'
 backend = 'keras'
 
 model: KerasModel = engine.get_captcha_model(captcha_id=captcha_id, backend=backend)

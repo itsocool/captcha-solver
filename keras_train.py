@@ -12,7 +12,7 @@ warnings.filterwarnings('ignore', category=DeprecationWarning)
 import captchaResolver.engine as engine
 from captchaResolver.keras_core import KerasModel
 
-captcha_id = 'default'
+captcha_id = 'gov24'
 backend = 'keras'
 epochs = 120
 batch_size = 32
@@ -22,11 +22,10 @@ save_model = False
 model: KerasModel = engine.get_captcha_model(captcha_id=captcha_id, backend=backend)
 train_data: TrainData = model.train_data
 model_base_dir = engine.train_model(
-    model,
+    model=model,
     epochs=epochs,
     batch_size=batch_size,
     early_stopping_patience=early_stopping_patience,
-    save_model=save_model,
 )
 print(f"Model trained and saved at: {model_base_dir}{os.path.sep}weights.keras")
 print("Done!")

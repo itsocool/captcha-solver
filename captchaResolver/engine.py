@@ -35,8 +35,9 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: 
         captcha_id="gov24",
         backend=backend,
         train_data_base_dir=train_data_base_dir,
-        image_width=138,
-        image_height=51
+        image_width=200,
+        image_height=72,
+        threshold=60
     ))
 
     wetax = CaptchaType(name="WETAX", desc="WETAX 캡챠", train_data=TrainData(
@@ -280,19 +281,20 @@ def batch_predict_model(
 
         print("\nPrediction completed!")
     else:
+        keras_model: KerasModel = model
         matched = 0
-        pred_img_path_list = model.train_data.get_data_files(train=False)
+        pred_img_path_list = keras_model.train_data.get_data_files(train=False)
         pred_labels = model.train_data.get_labels(train=False)
         pred_dataset = tf.data.Dataset.from_tensor_slices((pred_img_path_list, pred_labels))
         pred_dataset = (
             pred_dataset
-            .map(model.encode_single_sample, num_parallel_calls=tf.data.AUTOTUNE)
+            .map(keras_model.encode_single_sample, num_parallel_calls=tf.data.AUTOTUNE)
             .batch(batch_size)
             .prefetch(buffer_size=tf.data.AUTOTUNE)
         )
         
         # Load prediction model if not loaded
-        model.load_prediction_model()
+        keras_model.load_prediction_model()
         
         # Batch prediction
         all_preds = []
@@ -303,13 +305,13 @@ def batch_predict_model(
             labels = batch["label"]
             
             # Predict batch
-            pred_vals = model.predict_model.predict(images, verbose=0)
-            preds = model.decode_batch_predictions(pred_vals)
+            pred_vals = keras_model.predict_model.predict(images, verbose=0)
+            preds = keras_model.decode_batch_predictions(pred_vals)
             
             # Decode original labels
             for label in labels:
                 label_text = tf.strings.reduce_join(
-                    model.num_to_char(label + 1)
+                    keras_model.num_to_char(label + 1)
                 ).numpy().decode("utf-8")
                 all_labels.append(label_text)
             
@@ -334,7 +336,7 @@ def batch_predict_model(
         print(f"pred time: {end - start:.2f} sec")        
 
 def predict(
-    model: PyTorchModel,
+    model: PyTorchModel | KerasModel,
     image_path: str,
     model_path: Optional[str] = None
 ) -> Tuple[str, float]:
