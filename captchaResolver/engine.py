@@ -338,7 +338,8 @@ def batch_predict_model(
 def predict(
     model: PyTorchModel | KerasModel,
     image_path: str,
-    model_path: Optional[str] = None
+    model_path: Optional[str] = None,
+    verbose: int = 1
 ) -> Tuple[str, float]:
     
     if model.train_data.backend == 'pytorch':
@@ -463,6 +464,7 @@ def predict(
         if keras_model.predict_model is None:
             keras_model.load_prediction_model()
 
+        keras_model.verbose = verbose
         pred_val = keras_model.predict_model.predict(target_img, verbose=keras_model.verbose)
         pred = keras_model.decode_batch_predictions(pred_val)[0]
 
