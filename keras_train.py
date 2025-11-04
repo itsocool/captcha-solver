@@ -14,6 +14,9 @@ from captchaResolver.keras_core import KerasModel
 
 captcha_id = 'gov24'
 backend = 'keras'
+rev = 1
+image_width = 200
+image_height = 50
 epochs = 120
 batch_size = 32
 early_stopping_patience = 8
@@ -21,6 +24,9 @@ save_model = False
 
 model: KerasModel = engine.get_captcha_model(captcha_id=captcha_id, backend=backend)
 train_data: TrainData = model.train_data
+model.train_data.rev = rev
+model.train_data.image_width = image_width
+model.train_data.image_height = image_height
 model_base_dir = engine.train_model(
     model=model,
     epochs=epochs,

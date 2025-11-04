@@ -1,6 +1,5 @@
 import os
 import time
-from turtle import back
 import keras
 import torch
 import tensorflow as tf
@@ -8,8 +7,7 @@ import numpy as np
 from PIL import Image
 from typing import Tuple, Optional, Dict
 from tqdm import tqdm
-from captchaResolver import core
-from captchaResolver.core import PyTorchModel
+from captchaResolver.core import PyTorchModel, ctc_decode
 from captchaResolver.dataclass import CaptchaType, TrainData
 from captchaResolver.keras_core import KerasModel
 
@@ -36,7 +34,7 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: 
         backend=backend,
         train_data_base_dir=train_data_base_dir,
         image_width=200,
-        image_height=72,
+        image_height=50,
         threshold=60
     ))
 
@@ -143,13 +141,13 @@ def batch_predict_model(
    
     start = time.time()
     
-    # 예측 데이터 로드
-    pred_img_paths = model.train_data.get_data_files(train=False)
-    pred_labels = model.train_data.get_labels(train=False)
+    # # 예측 데이터 로드
+    # pred_img_paths = model.train_data.get_data_files(train=False)
+    # pred_labels = model.train_data.get_labels(train=False)
     
-    if len(pred_img_paths) == 0:
-        print("No prediction data found!")
-        return {'accuracy': 0.0, 'matched': 0, 'total': 0, 'time': 0.0}
+    # if len(pred_img_paths) == 0:
+    #     print("No prediction data found!")
+    #     return {'accuracy': 0.0, 'matched': 0, 'total': 0, 'time': 0.0}
     
     if model.train_data.backend == 'pytorch':
     
@@ -243,7 +241,7 @@ def batch_predict_model(
                     # if debug:
                     #     print(f"\n[DEBUG] Processing {image_name}, expected: {expected}")
                     
-                    pred_text = core.ctc_decode(out_np[i:i+1], mapping_inv)
+                    pred_text = ctc_decode(out_np[i:i+1], mapping_inv)
                     is_match = (pred_text == expected)
                     
                     if not is_match and debug_first:

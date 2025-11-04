@@ -1,0 +1,5 @@
+ori: 754723, pred: 764723 Not matched!
+ori: 870734, pred: 870834 Not matched!
+ori: 895823, pred: 898523 Not matched!
+Matched: 182, Total: 185, Accuracy: 98.38%
+pred time: 2.65 sec

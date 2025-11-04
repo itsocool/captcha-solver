@@ -112,10 +112,13 @@ class TrainData:
         return os.path.abspath(image_dir)
 
     def get_data_files(self, train: bool = True) -> List[str]:
+        label_length = self.label_length
         image_dir = self.get_image_dir(train)
         if not os.path.exists(image_dir):
             return []
-        return sorted(glob.glob(os.path.join(image_dir, "*.png")))
+        all_files = sorted(glob.glob(os.path.join(image_dir, "*.png")))
+        # 파일명(확장자 제외) 길이가 label_length와 일치하는 것만 반환
+        return [f for f in all_files if len(os.path.basename(f).split(".")[0]) == label_length]
 
     def get_labels(self, train: bool = True) -> List[str]:
         return [os.path.basename(p).split(".")[0] for p in self.get_data_files(train)]
