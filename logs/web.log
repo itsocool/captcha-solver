@@ -1,0 +1,12 @@
+2025-11-04 21:16:25.610293: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1762258589.194704  462633 gpu_device.cc:2020] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 3449 MB memory:  -> device: 0, name: NVIDIA GeForce RTX 2080, pci bus id: 0000:01:00.0, compute capability: 7.5
+ * Serving Flask app 'web'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.50.98:5000
+[33mPress CTRL+C to quit[0m
+192.168.20.52 - - [04/Nov/2025 21:16:30] "GET / HTTP/1.1" 200 -
