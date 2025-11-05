@@ -1,3 +1,4 @@
+from calendar import c
 import os
 import shutil
 import numpy as np
@@ -323,12 +324,42 @@ class KerasModel:
             output_text.append(res)
         return output_text
 
-    def load_prediction_model(self, model_path: str = None):
+    def load_prediction_model(self, model_path: str = None, cpu_only: bool = False) -> models.Model:
+        """Load a prediction-only Keras model.
 
+        Resolves a default model path from TrainData if model_path is None,
+        validates the path, and then loads the model. If `cpu_only` is True,
+        the model load is executed inside a CPU device context. Note that
+        TensorFlow may already have initialized GPUs when it was imported;
+        to fully prevent GPU discovery set `CUDA_VISIBLE_DEVICES=""` before
+        importing TensorFlow.
+        """
+        if cpu_only:
+            os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+        else:
+            if "CUDA_VISIBLE_DEVICES" in os.environ:
+                del os.environ["CUDA_VISIBLE_DEVICES"]            
+
+        # Resolve default model path first
         if model_path is None:
             model_path = self.train_data.get_model_path()
 
-        loaded = keras.models.load_model(model_path)
+        # Defensive checks
+        if model_path is None:
+            raise ValueError("model_path resolved to None. Ensure TrainData.get_model_path() returns a valid path")
+
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(
+                f"Model file not found: {model_path}. Check that the model exists in {self.train_data.get_model_base_dir()}"
+            )
+
+        # Load model, optionally forcing CPU placement for this operation
+        if cpu_only:
+            with tf.device('/CPU:0'):
+                loaded = keras.models.load_model(model_path)
+        else:
+            loaded = keras.models.load_model(model_path)
+
         input_layer = loaded.input[0] if isinstance(loaded.input, list) else loaded.input
         output_layer = loaded.get_layer(name="dense2").output
         self.predict_model = keras.models.Model(input_layer, output_layer)
@@ -445,6 +476,12 @@ class KerasModel:
     def batch_predict(
         self, batch_size=32, use_greedy=False
     ):
+        
+        cpu_only = self.captcha_type.cpu_only
+        if cpu_only:
+            with tf.device('/CPU:0'):
+                print("⚠ CPU 전용 모드: 배치 추론을 CPU에서 수행합니다.")
+        
         model = self
         pred_img_path_list = model.train_data.get_data_files(train=False)
         pred_labels = model.train_data.get_labels(train=False)
@@ -455,7 +492,7 @@ class KerasModel:
             .batch(batch_size)
             .prefetch(buffer_size=tf.data.AUTOTUNE)
         )
-        model.load_prediction_model()
+        model.load_prediction_model(cpu_only=cpu_only)
         
         all_preds = []
         all_labels = []
@@ -488,7 +525,14 @@ class KerasModel:
         image_path: str,
         use_greedy: bool = False,
     ) -> Tuple[str, float]:
-        self.load_prediction_model()
+        
+        cpu_only = self.captcha_type.cpu_only
+        
+        if cpu_only:
+            with tf.device('/CPU:0'):
+                print("⚠ CPU 전용 모드: 배치 추론을 CPU에서 수행합니다.")
+
+        self.load_prediction_model(cpu_only=cpu_only)
         sample = self.encode_single_sample(image_path)
         image = ops.expand_dims(sample["image"], axis=0)
         pred = self.predict_model.predict(image)

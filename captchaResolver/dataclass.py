@@ -195,6 +195,9 @@ class CaptchaType:
     name: str = '기본캡챠'
     desc: str = '기본 캡챠'
     train_data: TrainData = field(default_factory=lambda: TrainData(captcha_id='default'))
+    # If True, load/construct models on CPU only (useful on GPU machines when
+    # you want to force CPU inference or avoid GPU allocation).
+    cpu_only: bool = False
 
     def __post_init__(self) -> None:
         self.captcha_id=self.train_data.captcha_id

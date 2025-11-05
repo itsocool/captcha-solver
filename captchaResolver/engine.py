@@ -1,3 +1,4 @@
+from calendar import c
 import os
 import time
 import keras
@@ -11,9 +12,9 @@ from captchaResolver.core import PyTorchModel, ctc_decode
 from captchaResolver.dataclass import CaptchaType, TrainData
 from captchaResolver.keras_core import KerasModel
 
-def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: str = "keras") -> Dict[str, CaptchaType]:
+def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: str = "keras", cpu_only: bool = False) -> Dict[str, CaptchaType]:
 
-    default = CaptchaType(name="기본 캡챠", desc="기본 캡챠", train_data=TrainData(
+    default = CaptchaType(name="기본 캡챠", desc="기본 캡챠", cpu_only=cpu_only, train_data=TrainData(
         captcha_id="default",
         backend=backend,
         train_data_base_dir=train_data_base_dir,
@@ -21,7 +22,7 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: 
         characters=list('2345678bcdefgmnpwxy')
     ))
 
-    supreme_court = CaptchaType(name="대법원", desc="대법원 캡챠", train_data=TrainData(
+    supreme_court = CaptchaType(name="대법원", desc="대법원 캡챠", cpu_only=cpu_only, train_data=TrainData(
         captcha_id="supreme_court",
         backend=backend,
         train_data_base_dir=train_data_base_dir,
@@ -29,7 +30,7 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: 
         image_height=40
     ))
 
-    gov24 = CaptchaType(name="정부 24", desc="대한민국 정부 24 캡챠", train_data=TrainData(
+    gov24 = CaptchaType(name="정부 24", desc="대한민국 정부 24 캡챠", cpu_only=cpu_only, train_data=TrainData(
         captcha_id="gov24",
         backend=backend,
         train_data_base_dir=train_data_base_dir,
@@ -38,7 +39,7 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: 
         threshold=60
     ))
 
-    wetax = CaptchaType(name="WETAX", desc="WETAX 캡챠", train_data=TrainData(
+    wetax = CaptchaType(name="WETAX", desc="WETAX 캡챠", cpu_only=cpu_only, train_data=TrainData(
         captcha_id="wetax",
         backend=backend,
         train_data_base_dir=train_data_base_dir,
@@ -46,7 +47,7 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: 
         image_height=60
     ))
 
-    kshop = CaptchaType(captcha_id="kshop", name="kshop", desc="KT Shopping 캡챠", train_data=TrainData(
+    kshop = CaptchaType(captcha_id="kshop", name="kshop", desc="KT Shopping 캡챠", cpu_only=cpu_only, train_data=TrainData(
         captcha_id="kshop",
         backend=backend,
         train_data_base_dir=train_data_base_dir,
@@ -73,8 +74,8 @@ def get_model(captcha_type: CaptchaType) -> PyTorchModel | KerasModel:
     
     return model
 
-def get_captcha_model(captcha_id: str = "default", backend: str = "keras") -> KerasModel | PyTorchModel:
-    captcha_type_list: Dict[str, CaptchaType] = get_captcha_type_list(backend=backend)
+def get_captcha_model(captcha_id: str = "default", backend: str = "keras", cpu_only: bool = False) -> KerasModel | PyTorchModel:
+    captcha_type_list: Dict[str, CaptchaType] = get_captcha_type_list(backend=backend, cpu_only=cpu_only)
 
     if captcha_id not in captcha_type_list:
         raise ValueError(f"Unsupported captcha_id: {captcha_id}")
