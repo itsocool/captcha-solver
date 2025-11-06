@@ -2,9 +2,9 @@
 set -euo pipefail
 
 COMMAND=${1:-start}
+PORT=5001
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VENV_PY="$BASE_DIR/.venv/bin/python"
-PYTHON="$VENV_PY"
+GUNICORN="gunicorn"
 LOG_DIR="$BASE_DIR/logs"
 LOG="$LOG_DIR/web.log"
 PIDFILE="$BASE_DIR/web.pid"
@@ -31,19 +31,27 @@ start)
     exit 0
   fi
 
-  if [ ! -x "$PYTHON" ]; then
-    if command -v python3 >/dev/null 2>&1; then
-      PYTHON=$(command -v python3)
-      echo "Using system python: $PYTHON"
+  # gunicorn 실행 파일 확인
+  if [ ! -x "$GUNICORN" ]; then
+    if command -v gunicorn >/dev/null 2>&1; then
+      GUNICORN=$(command -v gunicorn)
+      echo "Using system gunicorn: $GUNICORN"
     else
-      echo "ERROR: No python found. Please create a virtualenv at $BASE_DIR/.venv or install python3." >&2
+      echo "ERROR: gunicorn not found. Please install: pip install gunicorn" >&2
       exit 1
     fi
   fi
 
-  nohup "$PYTHON" "$BASE_DIR/web.py" > "$LOG" 2>&1 &
-  echo $! > "$PIDFILE"
-  echo "Started web.py with PID $(cat "$PIDFILE"), logs: $LOG"
+  cd "$BASE_DIR"
+  "$GUNICORN" --bind "0.0.0.0:$PORT" \
+    --daemon \
+    --pid "$PIDFILE" \
+    --access-logfile "$LOG" \
+    --error-logfile "$LOG" \
+    web:app
+  
+  echo "Started gunicorn with PID $(cat "$PIDFILE"), logs: $LOG"
+  echo "Listening on http://0.0.0.0:$PORT"
   ;;
 
 stop)

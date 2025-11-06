@@ -1,21 +1,87 @@
-2025-11-05 18:14:40.014071: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+2025-11-06 17:02:40.526629: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
 To enable the following instructions: AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
-2025-11-05 18:14:43.310114: E external/local_xla/xla/stream_executor/cuda/cuda_platform.cc:51] failed call to cuInit: INTERNAL: CUDA error: Failed call to cuInit: CUDA_ERROR_NO_DEVICE: no CUDA-capable device is detected
-2025-11-05 18:14:43.310157: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:160] env: CUDA_VISIBLE_DEVICES="-1"
-2025-11-05 18:14:43.310163: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:163] CUDA_VISIBLE_DEVICES is set to -1 - this hides all GPUs from CUDA
-2025-11-05 18:14:43.310165: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:171] verbose logging is disabled. Rerun with verbose logging (usually --v=1 or --vmodule=cuda_diagnostics=1) to get more diagnostic output from this module
-2025-11-05 18:14:43.310169: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:176] retrieving CUDA diagnostic information for host: ocr
-2025-11-05 18:14:43.310171: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:183] hostname: ocr
-2025-11-05 18:14:43.310223: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:190] libcuda reported version is: 580.95.5
-2025-11-05 18:14:43.310239: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:194] kernel reported version is: 580.95.5
-2025-11-05 18:14:43.310243: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:284] kernel version seems to match DSO: 580.95.5
+2025-11-06 17:02:44.226605: E external/local_xla/xla/stream_executor/cuda/cuda_platform.cc:51] failed call to cuInit: INTERNAL: CUDA error: Failed call to cuInit: CUDA_ERROR_NO_DEVICE: no CUDA-capable device is detected
+2025-11-06 17:02:44.226633: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:160] env: CUDA_VISIBLE_DEVICES="-1"
+2025-11-06 17:02:44.226638: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:163] CUDA_VISIBLE_DEVICES is set to -1 - this hides all GPUs from CUDA
+2025-11-06 17:02:44.226641: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:171] verbose logging is disabled. Rerun with verbose logging (usually --v=1 or --vmodule=cuda_diagnostics=1) to get more diagnostic output from this module
+2025-11-06 17:02:44.226644: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:176] retrieving CUDA diagnostic information for host: ocr
+2025-11-06 17:02:44.226647: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:183] hostname: ocr
+2025-11-06 17:02:44.226723: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:190] libcuda reported version is: 580.95.5
+2025-11-06 17:02:44.226761: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:194] kernel reported version is: 580.95.5
+2025-11-06 17:02:44.226764: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:284] kernel version seems to match DSO: 580.95.5
  * Serving Flask app 'web'
- * Debug mode: off
+ * Debug mode: on
 [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
  * Running on all addresses (0.0.0.0)
  * Running on http://127.0.0.1:5000
  * Running on http://192.168.50.98:5000
 [33mPress CTRL+C to quit[0m
-192.168.20.52 - - [05/Nov/2025 18:14:44] "GET /chat HTTP/1.0" 200 -
-192.168.20.52 - - [05/Nov/2025 18:14:47] "GET /chat HTTP/1.0" 200 -
-192.168.20.52 - - [05/Nov/2025 18:14:49] "GET /chat HTTP/1.0" 200 -
+ * Restarting with stat
+2025-11-06 17:02:45.018520: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+2025-11-06 17:02:48.704451: E external/local_xla/xla/stream_executor/cuda/cuda_platform.cc:51] failed call to cuInit: INTERNAL: CUDA error: Failed call to cuInit: CUDA_ERROR_NO_DEVICE: no CUDA-capable device is detected
+2025-11-06 17:02:48.704495: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:160] env: CUDA_VISIBLE_DEVICES="-1"
+2025-11-06 17:02:48.704500: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:163] CUDA_VISIBLE_DEVICES is set to -1 - this hides all GPUs from CUDA
+2025-11-06 17:02:48.704503: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:171] verbose logging is disabled. Rerun with verbose logging (usually --v=1 or --vmodule=cuda_diagnostics=1) to get more diagnostic output from this module
+2025-11-06 17:02:48.704507: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:176] retrieving CUDA diagnostic information for host: ocr
+2025-11-06 17:02:48.704509: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:183] hostname: ocr
+2025-11-06 17:02:48.704561: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:190] libcuda reported version is: 580.95.5
+2025-11-06 17:02:48.704577: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:194] kernel reported version is: 580.95.5
+2025-11-06 17:02:48.704580: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:284] kernel version seems to match DSO: 580.95.5
+ * Debugger is active!
+ * Debugger PIN: 140-491-389
+192.168.20.52 - - [06/Nov/2025 17:02:48] "GET / HTTP/1.0" 200 -
+ * Detected change in '/home/hyper/project/hyper-captcha-resolver/captchaResolver/engine.py', reloading
+ * Restarting with stat
+2025-11-06 17:03:07.903899: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+2025-11-06 17:03:11.611005: E external/local_xla/xla/stream_executor/cuda/cuda_platform.cc:51] failed call to cuInit: INTERNAL: CUDA error: Failed call to cuInit: CUDA_ERROR_NO_DEVICE: no CUDA-capable device is detected
+2025-11-06 17:03:11.611050: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:160] env: CUDA_VISIBLE_DEVICES="-1"
+2025-11-06 17:03:11.611060: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:163] CUDA_VISIBLE_DEVICES is set to -1 - this hides all GPUs from CUDA
+2025-11-06 17:03:11.611064: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:171] verbose logging is disabled. Rerun with verbose logging (usually --v=1 or --vmodule=cuda_diagnostics=1) to get more diagnostic output from this module
+2025-11-06 17:03:11.611068: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:176] retrieving CUDA diagnostic information for host: ocr
+2025-11-06 17:03:11.611071: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:183] hostname: ocr
+2025-11-06 17:03:11.611128: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:190] libcuda reported version is: 580.95.5
+2025-11-06 17:03:11.611163: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:194] kernel reported version is: 580.95.5
+2025-11-06 17:03:11.611183: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:284] kernel version seems to match DSO: 580.95.5
+ * Debugger is active!
+ * Debugger PIN: 187-111-715
+192.168.20.52 - - [06/Nov/2025 17:03:19] "GET / HTTP/1.0" 200 -
+192.168.20.52 - - [06/Nov/2025 17:06:53] "GET / HTTP/1.0" 200 -
+192.168.20.52 - - [06/Nov/2025 17:06:53] "[33mGET /favicon.ico HTTP/1.0[0m" 404 -
+[1m1/1[0m [32m━━━━━━━━━━━━━━━━━━━━[0m[37m[0m [1m0s[0m 332ms/step[1m1/1[0m [32m━━━━━━━━━━━━━━━━━━━━[0m[37m[0m [1m0s[0m 341ms/step
+192.168.20.52 - - [06/Nov/2025 17:07:12] "POST /api/v1/captcha HTTP/1.0" 200 -
+[1m1/1[0m [32m━━━━━━━━━━━━━━━━━━━━[0m[37m[0m [1m0s[0m 13ms/step[1m1/1[0m [32m━━━━━━━━━━━━━━━━━━━━[0m[37m[0m [1m0s[0m 21ms/step
+192.168.20.52 - - [06/Nov/2025 17:13:26] "POST /api/v1/captcha HTTP/1.0" 200 -
+[1m1/1[0m [32m━━━━━━━━━━━━━━━━━━━━[0m[37m[0m [1m0s[0m 13ms/step[1m1/1[0m [32m━━━━━━━━━━━━━━━━━━━━[0m[37m[0m [1m0s[0m 21ms/step
+192.168.20.52 - - [06/Nov/2025 17:13:31] "POST /api/v1/captcha HTTP/1.0" 200 -
+[1m1/1[0m [32m━━━━━━━━━━━━━━━━━━━━[0m[37m[0m [1m0s[0m 13ms/step[1m1/1[0m [32m━━━━━━━━━━━━━━━━━━━━[0m[37m[0m [1m0s[0m 21ms/step
+192.168.20.52 - - [06/Nov/2025 17:13:36] "POST /api/v1/captcha HTTP/1.0" 200 -
+[1m1/1[0m [32m━━━━━━━━━━━━━━━━━━━━[0m[37m[0m [1m0s[0m 13ms/step[1m1/1[0m [32m━━━━━━━━━━━━━━━━━━━━[0m[37m[0m [1m0s[0m 21ms/step
+192.168.20.52 - - [06/Nov/2025 17:13:41] "POST /api/v1/captcha HTTP/1.0" 200 -
+[1m1/1[0m [32m━━━━━━━━━━━━━━━━━━━━[0m[37m[0m [1m0s[0m 13ms/step[1m1/1[0m [32m━━━━━━━━━━━━━━━━━━━━[0m[37m[0m [1m0s[0m 21ms/step
+192.168.20.52 - - [06/Nov/2025 17:13:46] "POST /api/v1/captcha HTTP/1.0" 200 -
+192.168.20.52 - - [06/Nov/2025 17:22:59] "GET / HTTP/1.0" 200 -
+192.168.20.52 - - [06/Nov/2025 17:26:29] "[33mGET /+CSCOL+/Java.jar HTTP/1.0[0m" 404 -
+192.168.20.52 - - [06/Nov/2025 17:26:30] "[33mGET /+CSCOE+/logon_forms.js HTTP/1.0[0m" 404 -
+192.168.20.52 - - [06/Nov/2025 17:26:32] "[33mGET /+CSCOL+/a1.jar HTTP/1.0[0m" 404 -
+192.168.20.52 - - [06/Nov/2025 17:26:33] "[33mGET /+CSCOE+/transfer.js HTTP/1.0[0m" 404 -
+ * Detected change in '/home/hyper/project/hyper-captcha-resolver/web.py', reloading
+ * Restarting with stat
+Traceback (most recent call last):
+  File "/home/hyper/project/hyper-captcha-resolver/web.py", line 234, in <module>
+  File "/home/hyper/project/hyper-captcha-resolver/.venv/lib/python3.12/site-packages/flask/app.py", line 662, in run
+  File "/home/hyper/project/hyper-captcha-resolver/.venv/lib/python3.12/site-packages/werkzeug/serving.py", line 1115, in run_simple
+  File "/home/hyper/project/hyper-captcha-resolver/.venv/lib/python3.12/site-packages/werkzeug/_reloader.py", line 469, in run_with_reloader
+  File "/home/hyper/project/hyper-captcha-resolver/.venv/lib/python3.12/site-packages/werkzeug/_reloader.py", line 275, in restart_with_reloader
+  File "/home/hyper/.local/share/uv/python/cpython-3.12.10-linux-x86_64-gnu/lib/python3.12/subprocess.py", line 389, in call
+    with Popen(*popenargs, **kwargs) as p:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hyper/.local/share/uv/python/cpython-3.12.10-linux-x86_64-gnu/lib/python3.12/subprocess.py", line 1026, in __init__
+    self._execute_child(args, executable, preexec_fn, close_fds,
+  File "/home/hyper/.local/share/uv/python/cpython-3.12.10-linux-x86_64-gnu/lib/python3.12/subprocess.py", line 1840, in _execute_child
+    self._posix_spawn(args, executable, env, restore_signals,
+  File "/home/hyper/.local/share/uv/python/cpython-3.12.10-linux-x86_64-gnu/lib/python3.12/subprocess.py", line 1784, in _posix_spawn
+    self.pid = os.posix_spawn(executable, args, env, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/hyper/project/hyper-captcha-resolver/.venv/bin/python'

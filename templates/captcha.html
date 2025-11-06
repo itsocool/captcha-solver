@@ -239,7 +239,7 @@
 </head>
 
 <body>
-  <!-- 상단 고정 네비게이션 바: 브랜드 + 메뉴 (Captcha / OCR / Chat) + 테마 토글 버튼 -->
+  <!-- 상단 고정 네비게이션 바: 브랜드 + 메뉴 (Captcha 전용) + 테마 토글 버튼 -->
   <nav class="navbar navbar-expand-lg navbar-light fixed-top shadow-sm">
     <div class="container">
       <a class="navbar-brand d-flex align-items-center gap-2" href="#">
@@ -253,7 +253,7 @@
       <div class="collapse navbar-collapse" id="topNav">
         <ul class="navbar-nav me-auto mb-2 mb-lg-0">
           <li class="nav-item"><a class="nav-link active" aria-current="page" href="#" id="nav-captcha">Captcha</a></li>
-          <li class="nav-item"><a class="nav-link" href="/chat" id="nav-chat">Chat</a></li>
+          <!-- Chat 링크 제거 -->
         </ul>
         <div class="d-flex align-items-center">
           <!-- Theme toggle button moved to navbar (ID 유지) -->
@@ -297,11 +297,7 @@
               <div class="col-12 d-flex gap-2 align-items-center">
                 <button id="submitBtn" type="button" class="btn btn-teal"><i class="bi bi-play-fill me-1"></i>예측 실행</button>
                 <button id="clearBtn" type="button" class="btn btn-outline-secondary"><i class="bi bi-x-circle me-1"></i>초기화</button>
-                <!-- 예측 모드 선택: 캡챠 전용 / OCR (초기화 버튼 뒤로 이동) -->
-                <select id="modeSelect" class="form-select form-select-sm w-auto mode-select" title="예측 방식" aria-label="예측 방식 선택">
-                   <option value="captcha" selected>캡챠 전용</option>
-                   <option value="ocr">OCR</option>
-                 </select>
+                <!-- 단일 예측 모드: 캡챠 전용 -->
                 <div id="spinner" class="spinner-border ms-auto d-none spinner-teal" role="status"><span
                     class="visually-hidden">Loading...</span></div>
               </div>
@@ -357,7 +353,6 @@ $response.Content | ConvertFrom-Json</code></pre>
     const dropzone = document.getElementById('dropzone');
     const dropFilename = document.getElementById('dropFilename');
     const submitBtn = document.getElementById('submitBtn');
-    const modeSelect = document.getElementById('modeSelect');
     const clearBtn = document.getElementById('clearBtn');
     const spinner = document.getElementById('spinner');
     const alerts = document.getElementById('alerts');
@@ -378,7 +373,7 @@ $response.Content | ConvertFrom-Json</code></pre>
     // 초기 상태 반영
     updateSubmitButtonState();
 
-    // 모드 선택은 제출 시 엔드포인트만 제어합니다. 버튼 레이블은 고정되어 있습니다.
+    // 단일 모드(캡챠 전용). 엔드포인트는 고정입니다.
 
     imageInput.addEventListener('change', (ev) => {
       const f = ev.target.files && ev.target.files[0];
@@ -449,8 +444,8 @@ $response.Content | ConvertFrom-Json</code></pre>
       clearBtn.disabled = true;
 
       try {
-        // 선택된 모드에 따라 엔드포인트 변경
-        const endpoint = (modeSelect && modeSelect.value === 'ocr') ? '/api/v1/ocr' : '/api/v1/captcha';
+        // 캡챠 전용 엔드포인트
+        const endpoint = '/api/v1/captcha';
         const resp = await fetch(endpoint, { method: 'POST', body: form });
         const data = await resp.json();
         if (!resp.ok) {

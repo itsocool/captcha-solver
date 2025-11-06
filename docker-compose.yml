@@ -1,0 +1,29 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: hyper-captcha-resolver:latest
+    container_name: hyper-captcha-resolver-web
+    ports:
+      - "5001:5000"
+    environment:
+      - FLASK_ENV=development
+      - PYTHONUNBUFFERED=1
+      - NVIDIA_VISIBLE_DEVICES=none
+      - CUDA_VISIBLE_DEVICES=""
+      - JAX_PLATFORM_NAME=cpu
+      - TF_CPP_MIN_LOG_LEVEL=2
+    volumes:
+      - .:/app
+    restart: unless-stopped
+    tty: true
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  default:
+    name: hyper-captcha-resolver-net
