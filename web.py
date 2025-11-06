@@ -11,6 +11,7 @@ else:
 # from calendar import c
 import time
 import argparse
+import requests
 from flask import Flask, request, jsonify, render_template, send_file, abort
 from PIL import Image
 from werkzeug.utils import secure_filename
@@ -37,6 +38,9 @@ app = Flask(__name__)
 
 model.load_prediction_model(cpu_only=True)
 
+# 현재 서버 포트를 저장할 전역 변수
+current_port = 5000
+
 @app.route("/")
 @app.route("/captcha")
 def index():
@@ -44,13 +48,48 @@ def index():
     return render_template('captcha.html', cpu_only=cpu_only)
 
 @app.route("/health")
-def health():
-    # JSON을 ensure_ascii=False로 직렬화하고 UTF-8 컨텐츠 타입을 명시해 반환합니다.
-    payload = {"status": "ok", "msg": "서비스가 정상적으로 작동하고 있습니다."}
-    body = json.dumps(payload, ensure_ascii=False)
-    response = Response(body, content_type="application/json; charset=utf-8")
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    return response
+@app.route("/health/<int:port>")
+def health(port=None):
+    # 런타임에 현재 포트 가져오기
+    try:
+        # request.host에서 포트 추출 (예: "localhost:5000" -> 5000)
+        host_with_port = request.host
+        if ':' in host_with_port:
+            runtime_port = int(host_with_port.split(':')[1])
+        else:
+            # 포트가 명시되지 않은 경우 (80 또는 443)
+            runtime_port = 443 if request.is_secure else 80
+    except (ValueError, AttributeError):
+        # 포트 추출 실패 시 전역 변수 사용
+        runtime_port = current_port
+    
+    # port가 지정되지 않았거나 현재 포트와 같으면 자신의 상태 반환
+    if port is None or port == runtime_port:
+        payload = {"status": "ok", "msg": "서비스가 정상적으로 작동하고 있습니다.", "port": runtime_port}
+        body = json.dumps(payload, ensure_ascii=False)
+        response = Response(body, content_type="application/json; charset=utf-8")
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        return response
+    
+    # 다른 포트가 요청되면 해당 포트로 프록시 요청
+    try:
+        target_url = f"http://localhost:{port}/health/{port}"
+        proxy_response = requests.get(target_url, timeout=3)
+        
+        response = Response(
+            proxy_response.content,
+            status=proxy_response.status_code,
+            content_type="application/json; charset=utf-8"
+        )
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        return response
+    except requests.exceptions.RequestException as e:
+        # 연결 실패 시 오류 상태 반환
+        payload = {"status": "error", "msg": f"포트 {port} 서버에 연결할 수 없습니다.", "error": str(e)}
+        body = json.dumps(payload, ensure_ascii=False)
+        response = Response(body, status=503, content_type="application/json; charset=utf-8")
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        return response
 
 def image_preprocess(image: Image.Image) -> Image.Image:
     if image.mode != 'RGB' and image.mode != 'L':
@@ -96,6 +135,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Captcha Resolver Web Server')
     parser.add_argument('--port', type=int, default=5000, help='Port to run the server on (default: 5000)')
     args = parser.parse_args()
+    
+    # 전역 변수에 현재 포트 저장
+    current_port = args.port
     
     # When run directly: start Flask development server
     app.run(host='0.0.0.0', port=args.port, debug=True)

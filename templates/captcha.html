@@ -375,16 +375,16 @@
 
                 <h6>curl 예제 (Linux / macOS / WSL)</h6>
                 <pre
-                  class="bg-dark text-white p-2"><code>curl -X POST http://localhost:5000/api/v1/captcha -F "image=@/path/to/captcha.png"</code></pre>
+                  class="bg-dark text-white p-2"><code>curl -X POST https://dev.hyperinfo.co.kr/api/v1/captcha -F "image=@/path/to/captcha.png"</code></pre>
 
                 <h6>PowerShell 예제 (Windows PowerShell)</h6>
                 <pre class="bg-dark text-white p-2"><code>$form = @{ image = Get-Item 'C:\path\to\captcha.png' }
-$response = Invoke-WebRequest -Uri 'http://localhost:5000/api/v1/captcha' -Method POST -Form $form
+$response = Invoke-WebRequest -Uri 'https://dev.hyperinfo.co.kr/api/v1/captcha' -Method POST -Form $form
 $response.Content | ConvertFrom-Json</code></pre>
 
                 <h6>CMD 예제 (Windows CMD)</h6>
                 <pre
-                  class="bg-dark text-white p-2"><code>curl.exe -X POST http://localhost:5000/api/v1/captcha -F "image=@C:\\path\\to\\captcha.png"</code></pre>
+                  class="bg-dark text-white p-2"><code>curl.exe -X POST https://dev.hyperinfo.co.kr/api/v1/captcha -F "image=@C:\\path\\to\\captcha.png"</code></pre>
               </div>
             </div>
           </div>
@@ -613,7 +613,7 @@ $response.Content | ConvertFrom-Json</code></pre>
     async function checkServerHealth(port) {
       const indicator = document.getElementById(`status-${port}`);
       try {
-        const response = await fetch(`http://localhost:${port}/health`, {
+        const response = await fetch(`https://dev.hyperinfo.co.kr/health/${port}`, {
           method: 'GET',
           mode: 'cors',
           cache: 'no-cache',

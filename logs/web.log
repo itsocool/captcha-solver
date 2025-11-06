@@ -1,4 +1,4 @@
-2025-11-06 21:02:19.616285: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+2025-11-06 21:23:28.292748: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
 To enable the following instructions: AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
 No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/0/images/train; using defaults
  * Serving Flask app 'web'
@@ -9,22 +9,62 @@ No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_d
  * Running on http://192.168.50.98:5000
 [33mPress CTRL+C to quit[0m
  * Restarting with stat
-2025-11-06 21:02:21.183923: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+2025-11-06 21:23:29.839070: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
 To enable the following instructions: AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
 No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/0/images/train; using defaults
  * Debugger is active!
- * Debugger PIN: 108-804-385
-127.0.0.1 - - [06/Nov/2025 21:02:22] "GET /health HTTP/1.1" 200 -
-192.168.20.52 - - [06/Nov/2025 21:02:25] "GET / HTTP/1.0" 200 -
-127.0.0.1 - - [06/Nov/2025 21:02:25] "GET /health HTTP/1.1" 200 -
-192.168.20.52 - - [06/Nov/2025 21:02:27] "GET / HTTP/1.0" 200 -
-127.0.0.1 - - [06/Nov/2025 21:02:27] "GET /health HTTP/1.1" 200 -
-127.0.0.1 - - [06/Nov/2025 21:02:32] "GET /health HTTP/1.1" 200 -
-127.0.0.1 - - [06/Nov/2025 21:02:37] "GET /health HTTP/1.1" 200 -
-127.0.0.1 - - [06/Nov/2025 21:02:42] "GET /health HTTP/1.1" 200 -
-127.0.0.1 - - [06/Nov/2025 21:02:48] "GET /health HTTP/1.1" 200 -
-127.0.0.1 - - [06/Nov/2025 21:02:52] "GET /health HTTP/1.1" 200 -
-127.0.0.1 - - [06/Nov/2025 21:02:57] "GET /health HTTP/1.1" 200 -
-127.0.0.1 - - [06/Nov/2025 21:03:02] "GET /health HTTP/1.1" 200 -
-127.0.0.1 - - [06/Nov/2025 21:03:08] "GET /health HTTP/1.1" 200 -
-127.0.0.1 - - [06/Nov/2025 21:03:12] "GET /health HTTP/1.1" 200 -
+ * Debugger PIN: 913-419-623
+192.168.20.52 - - [06/Nov/2025 21:23:32] "GET / HTTP/1.0" 200 -
+192.168.20.52 - - [06/Nov/2025 21:23:32] "[35m[1mGET /health/5001 HTTP/1.0[0m" 503 -
+127.0.0.1 - - [06/Nov/2025 21:23:32] "GET /health/5000 HTTP/1.1" 200 -
+192.168.20.52 - - [06/Nov/2025 21:23:32] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [06/Nov/2025 21:23:37] "[35m[1mGET /health/5001 HTTP/1.0[0m" 503 -
+127.0.0.1 - - [06/Nov/2025 21:23:37] "GET /health/5000 HTTP/1.1" 200 -
+192.168.20.52 - - [06/Nov/2025 21:23:37] "GET /health/5000 HTTP/1.0" 200 -
+127.0.0.1 - - [06/Nov/2025 21:23:43] "GET /health/5000 HTTP/1.1" 200 -
+192.168.20.52 - - [06/Nov/2025 21:23:43] "[35m[1mGET /health/5001 HTTP/1.0[0m" 503 -
+192.168.20.52 - - [06/Nov/2025 21:23:43] "GET /health/5000 HTTP/1.0" 200 -
+127.0.0.1 - - [06/Nov/2025 21:23:47] "GET /health/5000 HTTP/1.1" 200 -
+192.168.20.52 - - [06/Nov/2025 21:23:47] "[35m[1mGET /health/5001 HTTP/1.0[0m" 503 -
+192.168.20.52 - - [06/Nov/2025 21:23:47] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [06/Nov/2025 21:23:49] "GET / HTTP/1.0" 200 -
+127.0.0.1 - - [06/Nov/2025 21:23:49] "GET /health/5000 HTTP/1.1" 200 -
+192.168.20.52 - - [06/Nov/2025 21:23:49] "[35m[1mGET /health/5001 HTTP/1.0[0m" 503 -
+192.168.20.52 - - [06/Nov/2025 21:23:49] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [06/Nov/2025 21:23:54] "[35m[1mGET /health/5001 HTTP/1.0[0m" 503 -
+127.0.0.1 - - [06/Nov/2025 21:23:54] "GET /health/5000 HTTP/1.1" 200 -
+192.168.20.52 - - [06/Nov/2025 21:23:54] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [06/Nov/2025 21:23:59] "[35m[1mGET /health/5001 HTTP/1.0[0m" 503 -
+127.0.0.1 - - [06/Nov/2025 21:23:59] "GET /health/5000 HTTP/1.1" 200 -
+192.168.20.52 - - [06/Nov/2025 21:23:59] "GET /health/5000 HTTP/1.0" 200 -
+127.0.0.1 - - [06/Nov/2025 21:24:04] "GET /health/5000 HTTP/1.1" 200 -
+192.168.20.52 - - [06/Nov/2025 21:24:04] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [06/Nov/2025 21:24:04] "[35m[1mGET /health/5001 HTTP/1.0[0m" 503 -
+127.0.0.1 - - [06/Nov/2025 21:24:09] "GET /health/5000 HTTP/1.1" 200 -
+192.168.20.52 - - [06/Nov/2025 21:24:09] "[35m[1mGET /health/5001 HTTP/1.0[0m" 503 -
+192.168.20.52 - - [06/Nov/2025 21:24:09] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [06/Nov/2025 21:24:14] "[35m[1mGET /health/5001 HTTP/1.0[0m" 503 -
+127.0.0.1 - - [06/Nov/2025 21:24:14] "GET /health/5000 HTTP/1.1" 200 -
+192.168.20.52 - - [06/Nov/2025 21:24:14] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [06/Nov/2025 21:24:19] "[35m[1mGET /health/5001 HTTP/1.0[0m" 503 -
+127.0.0.1 - - [06/Nov/2025 21:24:19] "GET /health/5000 HTTP/1.1" 200 -
+192.168.20.52 - - [06/Nov/2025 21:24:19] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [06/Nov/2025 21:24:19] "GET / HTTP/1.0" 200 -
+127.0.0.1 - - [06/Nov/2025 21:24:20] "GET /health/5000 HTTP/1.1" 200 -
+192.168.20.52 - - [06/Nov/2025 21:24:20] "[35m[1mGET /health/5001 HTTP/1.0[0m" 503 -
+192.168.20.52 - - [06/Nov/2025 21:24:20] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [06/Nov/2025 21:24:25] "[35m[1mGET /health/5001 HTTP/1.0[0m" 503 -
+127.0.0.1 - - [06/Nov/2025 21:24:25] "GET /health/5000 HTTP/1.1" 200 -
+192.168.20.52 - - [06/Nov/2025 21:24:25] "GET /health/5000 HTTP/1.0" 200 -
+127.0.0.1 - - [06/Nov/2025 21:24:30] "GET /health/5000 HTTP/1.1" 200 -
+192.168.20.52 - - [06/Nov/2025 21:24:30] "[35m[1mGET /health/5001 HTTP/1.0[0m" 503 -
+192.168.20.52 - - [06/Nov/2025 21:24:30] "GET /health/5000 HTTP/1.0" 200 -
+127.0.0.1 - - [06/Nov/2025 21:24:35] "GET /health/5000 HTTP/1.1" 200 -
+192.168.20.52 - - [06/Nov/2025 21:24:35] "[35m[1mGET /health/5001 HTTP/1.0[0m" 503 -
+192.168.20.52 - - [06/Nov/2025 21:24:35] "GET /health/5000 HTTP/1.0" 200 -
+127.0.0.1 - - [06/Nov/2025 21:24:40] "GET /health/5000 HTTP/1.1" 200 -
+192.168.20.52 - - [06/Nov/2025 21:24:40] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [06/Nov/2025 21:24:40] "[33mGET /health/5001 HTTP/1.0[0m" 404 -
+127.0.0.1 - - [06/Nov/2025 21:24:45] "GET /health/5000 HTTP/1.1" 200 -
+192.168.20.52 - - [06/Nov/2025 21:24:45] "[33mGET /health/5001 HTTP/1.0[0m" 404 -
+192.168.20.52 - - [06/Nov/2025 21:24:45] "GET /health/5000 HTTP/1.0" 200 -
