@@ -1,4 +1,4 @@
-2025-11-06 20:18:59.350843: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+2025-11-06 21:02:19.616285: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
 To enable the following instructions: AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
 No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/0/images/train; using defaults
  * Serving Flask app 'web'
@@ -9,20 +9,22 @@ No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_d
  * Running on http://192.168.50.98:5000
 [33mPress CTRL+C to quit[0m
  * Restarting with stat
-2025-11-06 20:19:00.902831: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+2025-11-06 21:02:21.183923: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
 To enable the following instructions: AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
 No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/0/images/train; using defaults
  * Debugger is active!
- * Debugger PIN: 106-605-230
-127.0.0.1 - - [06/Nov/2025 20:19:10] "GET / HTTP/1.1" 200 -
-127.0.0.1 - - [06/Nov/2025 20:19:11] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
-192.168.20.52 - - [06/Nov/2025 20:19:18] "GET / HTTP/1.0" 200 -
-192.168.20.52 - - [06/Nov/2025 20:19:18] "[33mGET /favicon.ico HTTP/1.0[0m" 404 -
-192.168.20.52 - - [06/Nov/2025 20:19:20] "GET / HTTP/1.0" 200 -
-192.168.20.52 - - [06/Nov/2025 20:19:21] "GET / HTTP/1.0" 200 -
-127.0.0.1 - - [06/Nov/2025 20:23:41] "GET / HTTP/1.1" 200 -
-127.0.0.1 - - [06/Nov/2025 20:24:54] "GET / HTTP/1.1" 200 -
-127.0.0.1 - - [06/Nov/2025 20:26:19] "GET / HTTP/1.1" 200 -
-127.0.0.1 - - [06/Nov/2025 20:26:21] "GET / HTTP/1.1" 200 -
-127.0.0.1 - - [06/Nov/2025 20:26:22] "GET / HTTP/1.1" 200 -
-127.0.0.1 - - [06/Nov/2025 20:26:26] "GET / HTTP/1.1" 200 -
+ * Debugger PIN: 108-804-385
+127.0.0.1 - - [06/Nov/2025 21:02:22] "GET /health HTTP/1.1" 200 -
+192.168.20.52 - - [06/Nov/2025 21:02:25] "GET / HTTP/1.0" 200 -
+127.0.0.1 - - [06/Nov/2025 21:02:25] "GET /health HTTP/1.1" 200 -
+192.168.20.52 - - [06/Nov/2025 21:02:27] "GET / HTTP/1.0" 200 -
+127.0.0.1 - - [06/Nov/2025 21:02:27] "GET /health HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 21:02:32] "GET /health HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 21:02:37] "GET /health HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 21:02:42] "GET /health HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 21:02:48] "GET /health HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 21:02:52] "GET /health HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 21:02:57] "GET /health HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 21:03:02] "GET /health HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 21:03:08] "GET /health HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 21:03:12] "GET /health HTTP/1.1" 200 -

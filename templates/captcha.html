@@ -235,6 +235,40 @@
       color: var(--drop-text);
       border-color: rgba(20, 184, 166, 0.14);
     }
+
+    .server-status {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      margin-left: auto;
+    }
+
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 14px;
+    }
+
+    .status-indicator {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      transition: background-color 0.3s;
+    }
+
+    .status-online {
+      background-color: #4CAF50;
+      box-shadow: 0 0 8px rgba(76, 175, 80, 0.6);
+    }
+
+    .status-offline {
+      background-color: #f44336;
+    }
+
+    .status-checking {
+      background-color: #FFC107;
+    }
   </style>
 </head>
 
@@ -255,6 +289,18 @@
           <li class="nav-item"><a class="nav-link active" aria-current="page" href="#" id="nav-captcha">Captcha</a></li>
           <!-- Chat 링크 제거 -->
         </ul>
+          <!-- Server status indicators -->
+          <div class="server-status">
+            <div class="status-item">
+              <span class="status-indicator status-checking" id="status-5000"></span>
+              <span>5000</span>
+            </div>
+            <div class="status-item">
+              <span class="status-indicator status-checking" id="status-5001"></span>
+              <span>5001</span>
+            </div>
+          </div>
+
         <div class="d-flex align-items-center">
           <!-- Theme toggle button moved to navbar (ID 유지) -->
           <button id="themeBtn" class="btn btn-sm btn-outline-secondary ms-2" title="Toggle theme">
@@ -562,6 +608,40 @@ $response.Content | ConvertFrom-Json</code></pre>
     updateSubmitButtonState();
 
     themeBtn.addEventListener('click', cycleTheme);
+
+    // Server health check
+    async function checkServerHealth(port) {
+      const indicator = document.getElementById(`status-${port}`);
+      try {
+        const response = await fetch(`http://localhost:${port}/health`, {
+          method: 'GET',
+          mode: 'cors',
+          cache: 'no-cache',
+          signal: AbortSignal.timeout(3000)
+        });
+
+        if (response.ok) {
+          indicator.className = 'status-indicator status-online';
+        } else {
+          indicator.className = 'status-indicator status-offline';
+        }
+      } catch (error) {
+        indicator.className = 'status-indicator status-offline';
+      }
+    }
+
+    // Check both servers every 5 seconds
+    function startHealthChecks() {
+      checkServerHealth(5000);
+      checkServerHealth(5001);
+      setInterval(() => {
+        checkServerHealth(5000);
+        checkServerHealth(5001);
+      }, 5000);
+    }
+
+    // Start health checks when page loads
+    startHealthChecks();
   </script>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>

@@ -43,17 +43,14 @@ def index():
     # Render a small test page that lets users upload an image and see prediction
     return render_template('captcha.html', cpu_only=cpu_only)
 
-@app.route("/chat")
-def chat():
-    # Render a small test page that lets users upload an image and see prediction
-    return render_template('chat.html', cpu_only=cpu_only)
-
 @app.route("/health")
 def health():
     # JSON을 ensure_ascii=False로 직렬화하고 UTF-8 컨텐츠 타입을 명시해 반환합니다.
     payload = {"status": "ok", "msg": "서비스가 정상적으로 작동하고 있습니다."}
     body = json.dumps(payload, ensure_ascii=False)
-    return Response(body, content_type="application/json; charset=utf-8")
+    response = Response(body, content_type="application/json; charset=utf-8")
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    return response
 
 def image_preprocess(image: Image.Image) -> Image.Image:
     if image.mode != 'RGB' and image.mode != 'L':
