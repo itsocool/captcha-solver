@@ -10,6 +10,7 @@ else:
 
 # from calendar import c
 import time
+import argparse
 from flask import Flask, request, jsonify, render_template, send_file, abort
 from PIL import Image
 from werkzeug.utils import secure_filename
@@ -94,6 +95,11 @@ def predict():
     return jsonify({"predicted": pred, "confidence": confidence, "processing_ms": elapsed_ms})
 
 if __name__ == '__main__':
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Captcha Resolver Web Server')
+    parser.add_argument('--port', type=int, default=5000, help='Port to run the server on (default: 5000)')
+    args = parser.parse_args()
+    
     # When run directly: start Flask development server
-    app.run(host='0.0.0.0', port=5001, debug=True)
+    app.run(host='0.0.0.0', port=args.port, debug=True)
 

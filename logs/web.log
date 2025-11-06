@@ -1,102 +1,16 @@
-[2025-11-06 19:05:20 +0900] [117189] [INFO] Handling signal: term
-[2025-11-06 19:05:20 +0900] [117440] [INFO] Worker exiting (pid: 117440)
-[2025-11-06 19:05:20 +0900] [117189] [INFO] Shutting down: Master
-[2025-11-06 19:05:21 +0900] [117560] [INFO] Starting gunicorn 23.0.0
-[2025-11-06 19:05:21 +0900] [117560] [INFO] Listening at: http://0.0.0.0:5000 (117560)
-[2025-11-06 19:05:21 +0900] [117560] [INFO] Using worker: sync
-[2025-11-06 19:05:21 +0900] [117575] [INFO] Booting worker with pid: 117575
-192.168.20.52 - - [06/Nov/2025:19:05:29 +0900] "GET / HTTP/1.0" 200 20310 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Whale/4.34.340.19 Safari/537.36"
-192.168.50.172 - - [06/Nov/2025:19:05:33 +0900] "GET / HTTP/1.1" 200 20310 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Whale/4.34.340.19 Safari/537.36"
-192.168.50.172 - - [06/Nov/2025:19:05:40 +0900] "GET / HTTP/1.1" 200 20310 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Whale/4.34.340.19 Safari/537.36"
-192.168.20.52 - - [06/Nov/2025:19:05:40 +0900] "GET / HTTP/1.0" 200 20310 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Whale/4.34.340.19 Safari/537.36"
-[2025-11-06 19:06:10 +0900] [117560] [CRITICAL] WORKER TIMEOUT (pid:117575)
-[2025-11-06 19:06:10 +0900] [117575] [ERROR] Error handling request (no URI read)
-Traceback (most recent call last):
-  File "/home/hyper/project/hyper-captcha-resolver/.venv/lib/python3.12/site-packages/gunicorn/workers/sync.py", line 133, in handle
-    req = next(parser)
-          ^^^^^^^^^^^^
-  File "/home/hyper/project/hyper-captcha-resolver/.venv/lib/python3.12/site-packages/gunicorn/http/parser.py", line 41, in __next__
-    self.mesg = self.mesg_class(self.cfg, self.unreader, self.source_addr, self.req_count)
-                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/hyper/project/hyper-captcha-resolver/.venv/lib/python3.12/site-packages/gunicorn/http/message.py", line 259, in __init__
-    super().__init__(cfg, unreader, peer_addr)
-  File "/home/hyper/project/hyper-captcha-resolver/.venv/lib/python3.12/site-packages/gunicorn/http/message.py", line 60, in __init__
-    unused = self.parse(self.unreader)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/hyper/project/hyper-captcha-resolver/.venv/lib/python3.12/site-packages/gunicorn/http/message.py", line 271, in parse
-    self.get_data(unreader, buf, stop=True)
-  File "/home/hyper/project/hyper-captcha-resolver/.venv/lib/python3.12/site-packages/gunicorn/http/message.py", line 262, in get_data
-    data = unreader.read()
-           ^^^^^^^^^^^^^^^
-  File "/home/hyper/project/hyper-captcha-resolver/.venv/lib/python3.12/site-packages/gunicorn/http/unreader.py", line 36, in read
-    d = self.chunk()
-        ^^^^^^^^^^^^
-  File "/home/hyper/project/hyper-captcha-resolver/.venv/lib/python3.12/site-packages/gunicorn/http/unreader.py", line 63, in chunk
-    return self.sock.recv(self.mxchunk)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/hyper/project/hyper-captcha-resolver/.venv/lib/python3.12/site-packages/gunicorn/workers/base.py", line 204, in handle_abort
-    sys.exit(1)
-SystemExit: 1
-[2025-11-06 19:06:10 +0900] [117575] [INFO] Worker exiting (pid: 117575)
-[2025-11-06 19:06:10 +0900] [117679] [INFO] Booting worker with pid: 117679
-192.168.20.52 - - [06/Nov/2025:19:06:12 +0900] "POST /api/v1/captcha HTTP/1.0" 200 75 "https://dev.hyperinfo.co.kr/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Whale/4.34.340.19 Safari/537.36"
-[2025-11-06 19:07:02 +0900] [117560] [CRITICAL] WORKER TIMEOUT (pid:117679)
-[2025-11-06 19:07:02 +0900] [117679] [ERROR] Error handling request (no URI read)
-Traceback (most recent call last):
-  File "/home/hyper/project/hyper-captcha-resolver/.venv/lib/python3.12/site-packages/gunicorn/workers/sync.py", line 133, in handle
-    req = next(parser)
-          ^^^^^^^^^^^^
-  File "/home/hyper/project/hyper-captcha-resolver/.venv/lib/python3.12/site-packages/gunicorn/http/parser.py", line 41, in __next__
-    self.mesg = self.mesg_class(self.cfg, self.unreader, self.source_addr, self.req_count)
-                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/hyper/project/hyper-captcha-resolver/.venv/lib/python3.12/site-packages/gunicorn/http/message.py", line 259, in __init__
-    super().__init__(cfg, unreader, peer_addr)
-  File "/home/hyper/project/hyper-captcha-resolver/.venv/lib/python3.12/site-packages/gunicorn/http/message.py", line 60, in __init__
-    unused = self.parse(self.unreader)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/hyper/project/hyper-captcha-resolver/.venv/lib/python3.12/site-packages/gunicorn/http/message.py", line 271, in parse
-    self.get_data(unreader, buf, stop=True)
-  File "/home/hyper/project/hyper-captcha-resolver/.venv/lib/python3.12/site-packages/gunicorn/http/message.py", line 262, in get_data
-    data = unreader.read()
-           ^^^^^^^^^^^^^^^
-  File "/home/hyper/project/hyper-captcha-resolver/.venv/lib/python3.12/site-packages/gunicorn/http/unreader.py", line 36, in read
-    d = self.chunk()
-        ^^^^^^^^^^^^
-  File "/home/hyper/project/hyper-captcha-resolver/.venv/lib/python3.12/site-packages/gunicorn/http/unreader.py", line 63, in chunk
-    return self.sock.recv(self.mxchunk)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/hyper/project/hyper-captcha-resolver/.venv/lib/python3.12/site-packages/gunicorn/workers/base.py", line 204, in handle_abort
-    sys.exit(1)
-SystemExit: 1
-[2025-11-06 19:07:02 +0900] [117679] [INFO] Worker exiting (pid: 117679)
-[2025-11-06 19:07:03 +0900] [118081] [INFO] Booting worker with pid: 118081
-[2025-11-06 19:07:55 +0900] [117560] [INFO] Handling signal: term
-[2025-11-06 19:07:55 +0900] [118081] [INFO] Worker exiting (pid: 118081)
-[2025-11-06 19:07:55 +0900] [117560] [INFO] Shutting down: Master
-[2025-11-06 19:07:56 +0900] [118311] [INFO] Starting gunicorn 23.0.0
-[2025-11-06 19:07:56 +0900] [118311] [ERROR] Connection in use: ('0.0.0.0', 5001)
-[2025-11-06 19:07:56 +0900] [118311] [ERROR] connection to ('0.0.0.0', 5001) failed: [Errno 98] Address already in use
-[2025-11-06 19:07:57 +0900] [118311] [ERROR] Connection in use: ('0.0.0.0', 5001)
-[2025-11-06 19:07:57 +0900] [118311] [ERROR] connection to ('0.0.0.0', 5001) failed: [Errno 98] Address already in use
-[2025-11-06 19:07:58 +0900] [118311] [ERROR] Connection in use: ('0.0.0.0', 5001)
-[2025-11-06 19:07:58 +0900] [118311] [ERROR] connection to ('0.0.0.0', 5001) failed: [Errno 98] Address already in use
-[2025-11-06 19:07:59 +0900] [118311] [ERROR] Connection in use: ('0.0.0.0', 5001)
-[2025-11-06 19:07:59 +0900] [118311] [ERROR] connection to ('0.0.0.0', 5001) failed: [Errno 98] Address already in use
-[2025-11-06 19:08:00 +0900] [118311] [ERROR] Connection in use: ('0.0.0.0', 5001)
-[2025-11-06 19:08:00 +0900] [118311] [ERROR] connection to ('0.0.0.0', 5001) failed: [Errno 98] Address already in use
-[2025-11-06 19:08:01 +0900] [118311] [ERROR] Can't connect to ('0.0.0.0', 5001)
-[2025-11-06 19:08:13 +0900] [118430] [INFO] Starting gunicorn 23.0.0
-[2025-11-06 19:08:13 +0900] [118430] [INFO] Listening at: http://0.0.0.0:5000 (118430)
-[2025-11-06 19:08:13 +0900] [118430] [INFO] Using worker: sync
-[2025-11-06 19:08:13 +0900] [118445] [INFO] Booting worker with pid: 118445
-192.168.50.172 - - [06/Nov/2025:19:08:21 +0900] "GET / HTTP/1.1" 200 20310 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Whale/4.34.340.19 Safari/537.36"
-192.168.50.172 - - [06/Nov/2025:19:08:26 +0900] "POST /api/v1/captcha HTTP/1.1" 200 75 "http://192.168.50.98:5000/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Whale/4.34.340.19 Safari/537.36"
-192.168.20.52 - - [06/Nov/2025:19:13:18 +0900] "POST /api/v1/captcha HTTP/1.0" 200 74 "-" "-"
-192.168.20.52 - - [06/Nov/2025:19:13:22 +0900] "POST /api/v1/captcha HTTP/1.0" 200 74 "-" "-"
-192.168.20.52 - - [06/Nov/2025:19:13:27 +0900] "POST /api/v1/captcha HTTP/1.0" 200 73 "-" "-"
-192.168.20.52 - - [06/Nov/2025:19:13:32 +0900] "POST /api/v1/captcha HTTP/1.0" 200 74 "-" "-"
-192.168.20.52 - - [06/Nov/2025:19:13:36 +0900] "POST /api/v1/captcha HTTP/1.0" 200 74 "-" "-"
-192.168.20.52 - - [06/Nov/2025:19:13:41 +0900] "POST /api/v1/captcha HTTP/1.0" 200 74 "-" "-"
-192.168.20.52 - - [06/Nov/2025:19:13:45 +0900] "POST /api/v1/captcha HTTP/1.0" 200 74 "-" "-"
-192.168.20.52 - - [06/Nov/2025:19:13:50 +0900] "POST /api/v1/captcha HTTP/1.0" 200 73 "-" "-"
-192.168.20.52 - - [06/Nov/2025:19:13:55 +0900] "POST /api/v1/captcha HTTP/1.0" 200 74 "-" "-"
+2025-11-06 19:31:21.748569: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/0/images/train; using defaults
+ * Serving Flask app 'web'
+ * Debug mode: on
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5001
+ * Running on http://192.168.50.98:5001
+[33mPress CTRL+C to quit[0m
+ * Restarting with stat
+2025-11-06 19:31:23.272237: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/0/images/train; using defaults
+ * Debugger is active!
+ * Debugger PIN: 931-363-001
