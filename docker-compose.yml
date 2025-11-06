@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile
     image: hyper-captcha-resolver:latest
     container_name: hyper-captcha-resolver-web
+    command: ["./run_web.sh", "restart"]
     ports:
       - "5001:5000"
     environment:
@@ -14,8 +15,6 @@ services:
       - CUDA_VISIBLE_DEVICES=""
       - JAX_PLATFORM_NAME=cpu
       - TF_CPP_MIN_LOG_LEVEL=2
-    volumes:
-      - .:/app
     restart: unless-stopped
     tty: true
     healthcheck:

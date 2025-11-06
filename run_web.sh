@@ -2,8 +2,8 @@
 set -euo pipefail
 
 COMMAND=${1:-start}
-PORT=5001
-BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PORT=5000
+BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/." && pwd)"
 GUNICORN="gunicorn"
 LOG_DIR="$BASE_DIR/logs"
 LOG="$LOG_DIR/web.log"
