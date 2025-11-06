@@ -38,31 +38,18 @@ app = Flask(__name__)
 
 model.load_prediction_model(cpu_only=True)
 
-# 현재 서버 포트를 저장할 전역 변수
-current_port = 5000
-
 @app.route("/")
 @app.route("/captcha")
 def index():
     # Render a small test page that lets users upload an image and see prediction
     return render_template('captcha.html', cpu_only=cpu_only)
 
-@app.route("/health")
+@app.route("/health/")
 @app.route("/health/<int:port>")
+@app.route("/health/<int:port>/")
 def health(port=None):
-    # 런타임에 현재 포트 가져오기
-    try:
-        # request.host에서 포트 추출 (예: "localhost:5000" -> 5000)
-        host_with_port = request.host
-        if ':' in host_with_port:
-            runtime_port = int(host_with_port.split(':')[1])
-        else:
-            # 포트가 명시되지 않은 경우 (80 또는 443)
-            runtime_port = 443 if request.is_secure else 80
-    except (ValueError, AttributeError):
-        # 포트 추출 실패 시 전역 변수 사용
-        runtime_port = current_port
-    
+    runtime_port = os.getenv('HOST_PORT', '5000')
+    print(f"runtime_port: {runtime_port}, requested port: {port}")
     # port가 지정되지 않았거나 현재 포트와 같으면 자신의 상태 반환
     if port is None or port == runtime_port:
         payload = {"status": "ok", "msg": "서비스가 정상적으로 작동하고 있습니다.", "port": runtime_port}
@@ -73,7 +60,7 @@ def health(port=None):
     
     # 다른 포트가 요청되면 해당 포트로 프록시 요청
     try:
-        target_url = f"http://localhost:{port}/health/{port}"
+        target_url = f"http://192.168.50.98:{port}/health/"
         proxy_response = requests.get(target_url, timeout=3)
         
         response = Response(
@@ -140,5 +127,5 @@ if __name__ == '__main__':
     current_port = args.port
     
     # When run directly: start Flask development server
-    app.run(host='0.0.0.0', port=args.port, debug=True)
+    app.run(host='0.0.0.0', port=args.port)
 
