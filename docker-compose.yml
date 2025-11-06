@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     image: hyper-captcha-resolver:latest
     container_name: hyper-captcha-resolver-web
-    command: ["./run_web.sh", "restart"]
+    command: ["python", "web.py"]
     ports:
       - "5001:5000"
     environment:

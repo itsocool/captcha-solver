@@ -1,16 +1,28 @@
-2025-11-06 19:31:21.748569: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+2025-11-06 20:18:59.350843: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
 To enable the following instructions: AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
 No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/0/images/train; using defaults
  * Serving Flask app 'web'
  * Debug mode: on
 [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
  * Running on all addresses (0.0.0.0)
- * Running on http://127.0.0.1:5001
- * Running on http://192.168.50.98:5001
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.50.98:5000
 [33mPress CTRL+C to quit[0m
  * Restarting with stat
-2025-11-06 19:31:23.272237: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+2025-11-06 20:19:00.902831: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
 To enable the following instructions: AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
 No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/0/images/train; using defaults
  * Debugger is active!
- * Debugger PIN: 931-363-001
+ * Debugger PIN: 106-605-230
+127.0.0.1 - - [06/Nov/2025 20:19:10] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 20:19:11] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+192.168.20.52 - - [06/Nov/2025 20:19:18] "GET / HTTP/1.0" 200 -
+192.168.20.52 - - [06/Nov/2025 20:19:18] "[33mGET /favicon.ico HTTP/1.0[0m" 404 -
+192.168.20.52 - - [06/Nov/2025 20:19:20] "GET / HTTP/1.0" 200 -
+192.168.20.52 - - [06/Nov/2025 20:19:21] "GET / HTTP/1.0" 200 -
+127.0.0.1 - - [06/Nov/2025 20:23:41] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 20:24:54] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 20:26:19] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 20:26:21] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 20:26:22] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [06/Nov/2025 20:26:26] "GET / HTTP/1.1" 200 -
