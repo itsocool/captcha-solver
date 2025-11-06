@@ -13,11 +13,9 @@ else:
     if "CUDA_VISIBLE_DEVICES" in os.environ:
         del os.environ["CUDA_VISIBLE_DEVICES"] 
 
-from calendar import c
 import time
 from flask import Flask, request, jsonify, render_template
 from PIL import Image
-from sympy import true
 from werkzeug.utils import secure_filename
 from captchaResolver import engine
 from captchaResolver.dataclass import TrainData

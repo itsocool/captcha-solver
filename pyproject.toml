@@ -15,8 +15,8 @@ dependencies = [
     "pyinstaller>=6.16.0",
     "scikit-learn>=1.7.2",
     "tensorflow>=2.20.0",
-    "torch>=2.9.0",
-    "torchvision>=0.24.0",
+    "torch==2.5.1",
+    "torchvision==0.20.1",
     "tqdm>=4.66.5",
 ]
 
