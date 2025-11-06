@@ -6,7 +6,7 @@ STD_OUT = sys.stdout
 sys.stdout = NULL_OUT
 
 argv = None
-exec = 'kshop.exe'
+exec = 'gov24.exe'
 base_dir = os.path.abspath(os.path.dirname(__file__))
 meipass = getattr(sys, '_MEIPASS', None)
 
@@ -73,7 +73,7 @@ if("__main__" == __name__):
         print(f'에러 : 이미지 파일을 찾을 수 없습니다. {image_path}')
         sys.exit(-1)
 
-    pred = execute('kshop', image_path=image_path)
+    pred = execute('gov24', image_path=image_path)
     sys.stdout = STD_OUT
     sys.stdout.write(pred)
     sys.exit(0)

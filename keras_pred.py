@@ -1,4 +1,6 @@
 import os
+from pathlib import Path
+
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 os.environ['GLOG_minloglevel'] = '2'
@@ -17,12 +19,19 @@ backend = 'keras'
 rev = 1
 image_width = 200
 image_height = 50
+shuffle = True
+train_ratio = 0.9
 
 model: KerasModel = engine.get_captcha_model(captcha_id=captcha_id, backend=backend)
 train_data: TrainData = model.train_data
 model.train_data.rev = rev
 model.train_data.image_width = image_width
 model.train_data.image_height = image_height
+
+if shuffle:
+    image_dir = Path(train_data.get_image_dir()).parent.as_posix()
+    engine.redistribute_train_pred(image_dir=image_dir, train_ratio=train_ratio)
+
 engine.batch_predict_model(model=model)
 # model_path = train_data.get_model_path()
 # image_path = train_data.choice_pred_image()

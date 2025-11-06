@@ -201,6 +201,40 @@
     body[data-theme="dark"] .result-card {
       box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6);
     }
+
+    /* mode select: Bootstrap 기반, 테마 토큰을 사용하여 라이트/다크 모두에 적절하게 표시 */
+    #modeSelect.mode-select {
+      min-width: 140px;
+      display: inline-block;
+      padding: 0.25rem 0.5rem;
+      font-size: 0.875rem;
+      line-height: 1.5;
+      border-radius: .375rem;
+      background: var(--drop-bg);
+      color: var(--drop-text);
+      border: 1px solid rgba(13, 148, 136, 0.12);
+      transition: background .12s ease, color .12s ease, border-color .12s ease, box-shadow .12s ease;
+    }
+
+    /* focus / active */
+    #modeSelect.mode-select:focus {
+      outline: none;
+      box-shadow: 0 0 0 0.2rem rgba(20, 184, 166, 0.12);
+      border-color: var(--teal-2);
+    }
+
+    /* 옵션 텍스트(브라우저 간 동작 차이 존재) */
+    #modeSelect.mode-select option {
+      background: var(--drop-bg);
+      color: var(--drop-text);
+    }
+
+    /* dark mode overrides inherit token values defined above */
+    body[data-theme="dark"] #modeSelect.mode-select {
+      background: rgba(20, 184, 166, 0.03);
+      color: var(--drop-text);
+      border-color: rgba(20, 184, 166, 0.14);
+    }
   </style>
 </head>
 
@@ -261,12 +295,13 @@
               </div>
 
               <div class="col-12 d-flex gap-2 align-items-center">
-                <button id="submitBtn" type="button" class="btn btn-teal"><i class="bi bi-play-fill me-1"></i>예측
-                  실행</button>
-                <button id="ocrBtn" type="button" class="btn btn-secondary"><i
-                    class="bi bi-play-fill me-1"></i>OCR</button>
-                <button id="clearBtn" type="button" class="btn btn-outline-secondary"><i
-                    class="bi bi-x-circle me-1"></i>초기화</button>
+                <button id="submitBtn" type="button" class="btn btn-teal"><i class="bi bi-play-fill me-1"></i>예측 실행</button>
+                <button id="clearBtn" type="button" class="btn btn-outline-secondary"><i class="bi bi-x-circle me-1"></i>초기화</button>
+                <!-- 예측 모드 선택: 캡챠 전용 / OCR (초기화 버튼 뒤로 이동) -->
+                <select id="modeSelect" class="form-select form-select-sm w-auto mode-select" title="예측 방식" aria-label="예측 방식 선택">
+                   <option value="captcha" selected>캡챠 전용</option>
+                   <option value="ocr">OCR</option>
+                 </select>
                 <div id="spinner" class="spinner-border ms-auto d-none spinner-teal" role="status"><span
                     class="visually-hidden">Loading...</span></div>
               </div>
@@ -322,7 +357,7 @@ $response.Content | ConvertFrom-Json</code></pre>
     const dropzone = document.getElementById('dropzone');
     const dropFilename = document.getElementById('dropFilename');
     const submitBtn = document.getElementById('submitBtn');
-    const ocrBtn = document.getElementById('ocrBtn');
+    const modeSelect = document.getElementById('modeSelect');
     const clearBtn = document.getElementById('clearBtn');
     const spinner = document.getElementById('spinner');
     const alerts = document.getElementById('alerts');
@@ -334,18 +369,31 @@ $response.Content | ConvertFrom-Json</code></pre>
         </div>`;
     }
 
+    // 추가: 이미지 선택 여부에 따라 [예측 실행] 버튼 활성/비활성 처리
+    function updateSubmitButtonState() {
+      const hasFile = imageInput.files && imageInput.files.length > 0;
+      submitBtn.disabled = !hasFile;
+    }
+
+    // 초기 상태 반영
+    updateSubmitButtonState();
+
+    // 모드 선택은 제출 시 엔드포인트만 제어합니다. 버튼 레이블은 고정되어 있습니다.
+
     imageInput.addEventListener('change', (ev) => {
       const f = ev.target.files && ev.target.files[0];
       if (!f) {
         preview.classList.add('d-none');
         preview.src = '';
         dropFilename.textContent = '';
+        updateSubmitButtonState(); // 변경: 선택 해제 시 버튼 비활성화
         return;
       }
       const url = URL.createObjectURL(f);
       preview.src = url;
       preview.classList.remove('d-none');
       dropFilename.textContent = f.name;
+      updateSubmitButtonState(); // 변경: 파일 선택 시 버튼 활성화
     });
 
     // Dropzone handlers
@@ -381,6 +429,7 @@ $response.Content | ConvertFrom-Json</code></pre>
       preview.classList.add('d-none');
       alerts.innerHTML = '';
       if (typeof dropFilename !== 'undefined') dropFilename.textContent = '';
+      updateSubmitButtonState(); // 변경: 초기화 후 버튼 비활성화
     }
 
     clearBtn.addEventListener('click', () => {
@@ -400,13 +449,15 @@ $response.Content | ConvertFrom-Json</code></pre>
       clearBtn.disabled = true;
 
       try {
-        const resp = await fetch('/api/v1/captcha', { method: 'POST', body: form });
+        // 선택된 모드에 따라 엔드포인트 변경
+        const endpoint = (modeSelect && modeSelect.value === 'ocr') ? '/api/v1/ocr' : '/api/v1/captcha';
+        const resp = await fetch(endpoint, { method: 'POST', body: form });
         const data = await resp.json();
         if (!resp.ok) {
           showAlert(`오류: ${data.error || resp.statusText}`, 'danger');
         } else {
           // Add a result card with image, predicted value, confidence and processing time (ms)
-          addResultCard(f, data.predicted, data.confidence, data.processing_ms ?? null);
+          addResultCard(f, data.predicted, data.confidence ?? 'N/A', data.processing_ms ?? null);
           // 자동 초기화: 결과를 리스트에 추가한 뒤 입력폼을 초기화
           clearForm();
         }
@@ -415,38 +466,6 @@ $response.Content | ConvertFrom-Json</code></pre>
       } finally {
         spinner.classList.add('d-none');
         submitBtn.disabled = false;
-        clearBtn.disabled = false;
-      }
-    });
-
-    ocrBtn.addEventListener('click', async () => {
-      alerts.innerHTML = '';
-      const f = imageInput.files && imageInput.files[0];
-      if (!f) { showAlert('이미지를 선택하세요.', 'warning'); return; }
-
-      const form = new FormData();
-      form.append('image', f, f.name);
-
-      spinner.classList.remove('d-none');
-      ocrBtn.disabled = true;
-      clearBtn.disabled = true;
-
-      try {
-        const resp = await fetch('/api/v1/ocr', { method: 'POST', body: form });
-        const data = await resp.json();
-        if (!resp.ok) {
-          showAlert(`오류: ${data.error || resp.statusText}`, 'danger');
-        } else {
-          // Add a result card with image, predicted value, confidence and processing time (ms)
-          addResultCard(f, data.predicted, 'N/A', data.processing_ms ?? null);
-          // 자동 초기화: 결과를 리스트에 추가한 뒤 입력폼을 초기화
-          clearForm();
-        }
-      } catch (err) {
-        showAlert('요청 실패: ' + err.message, 'danger');
-      } finally {
-        spinner.classList.add('d-none');
-        ocrBtn.disabled = false;
         clearBtn.disabled = false;
       }
     });
@@ -543,6 +562,9 @@ $response.Content | ConvertFrom-Json</code></pre>
         });
       }
     })();
+
+    // ensure button state remains correct after theme init
+    updateSubmitButtonState();
 
     themeBtn.addEventListener('click', cycleTheme);
   </script>

@@ -2,10 +2,10 @@
 
 
 a = Analysis(
-    ['kshop.py'],
+    ['gov24.py'],
     pathex=[],
     binaries=[],
-    datas=[('captcha_data/kshop/0/model', 'model')],
+    datas=[('captcha_data/gov24/1/model', 'model')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -21,7 +21,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='kshop',
+    name='gov24',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -40,5 +40,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='kshop',
+    name='gov24',
 )
