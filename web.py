@@ -122,6 +122,7 @@ def predict():
     os.remove(image_path)
     return jsonify({"predicted": pred, "confidence": confidence, "processing_ms": elapsed_ms})
 
+
 if __name__ == '__main__':
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Captcha Resolver Web Server')
