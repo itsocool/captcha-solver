@@ -1,14 +1,19 @@
 import os
 
-cpu_only = True
+cpu_only = os.getenv('CPU_ONLY', '1') == '1'
 
 if cpu_only:
+    os.environ["NVIDIA_VISIBLE_DEVICES"] = "none"
     os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+    os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 else:
+    if "NVIDIA_VISIBLE_DEVICES" in os.environ:
+        del os.environ["NVIDIA_VISIBLE_DEVICES"] 
     if "CUDA_VISIBLE_DEVICES" in os.environ:
         del os.environ["CUDA_VISIBLE_DEVICES"] 
+    if "TF_CPP_MIN_LOG_LEVEL" in os.environ:
+        del os.environ["TF_CPP_MIN_LOG_LEVEL"] 
 
-# from calendar import c
 import time
 import argparse
 import requests
@@ -126,6 +131,9 @@ if __name__ == '__main__':
     # 전역 변수에 현재 포트 저장
     current_port = args.port
     
+    # Check if we're in production environment
+    is_production = os.getenv('FLASK_ENV') == 'production' or os.path.exists('/.dockerenv')
+    
     # When run directly: start Flask development server
-    app.run(host='0.0.0.0', port=args.port)
+    app.run(host='0.0.0.0', port=args.port, debug=not is_production)
 

@@ -3,11 +3,11 @@ name = "hyper-captcha-resolver"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12.10"
+requires-python = ">=3.13.9"
 dependencies = [
     "flask>=3.1.2",
     "gunicorn>=23.0.0",
-    "pillow>=12.0.0",
-    "tensorflow-cpu>=2.20.0",
+    "pyinstaller>=6.16.0",
+    "tensorflow>=2.20.0",
     "tqdm>=4.67.1",
 ]
