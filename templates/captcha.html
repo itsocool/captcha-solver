@@ -382,7 +382,7 @@
 $response = Invoke-WebRequest -Uri 'https://dev.hyperinfo.co.kr/api/v1/captcha' -Method POST -Form $form
 $response.Content | ConvertFrom-Json</code></pre>
 
-                <h6>CMD 예제 (Windows CMD)</h6>
+                <h6>CMD 예제 (Windows CMD) 추후 octet-stream 지원 예정</h6>
                 <pre
                   class="bg-dark text-white p-2"><code>curl.exe -X POST https://dev.hyperinfo.co.kr/api/v1/captcha -F "image=@C:\\path\\to\\captcha.png"</code></pre>
               </div>

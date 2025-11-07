@@ -122,6 +122,51 @@ def predict():
     os.remove(image_path)
     return jsonify({"predicted": pred, "confidence": confidence, "processing_ms": elapsed_ms})
 
+@app.route("/api/v1/captcha/octet-stream", methods=["POST"])
+def predict_octet_stream():
+    """
+    Handles octet-stream binary file upload for captcha prediction
+    Content-Type: application/octet-stream
+    """
+    # Check content type
+    if request.content_type != 'application/octet-stream':
+        return jsonify({"error": "Content-Type must be application/octet-stream"}), 400
+    
+    # Get raw binary data
+    binary_data = request.get_data()
+    
+    if not binary_data:
+        return jsonify({"error": "no binary data received"}), 400
+    
+    try:
+        # Create image from binary data
+        from io import BytesIO
+        image_stream = BytesIO(binary_data)
+        image: Image.Image = Image.open(image_stream)
+        
+        # Preprocess image if needed
+        if image.size != (image_width, image_height):
+            image = image_preprocess(image)
+        
+        # Measure processing time (ms)
+        start = time.perf_counter()
+
+        # Save temporary image for prediction
+        image_path = f"/tmp/{time.time()}.png"
+        image.save(image_path)
+        pred, confidence = engine.predict(model=model, image_path=image_path)
+
+        elapsed_ms = int(round((time.perf_counter() - start) * 1000))
+
+        # Cleanup
+        image.close()
+        image_stream.close()
+        os.remove(image_path)
+        
+        return jsonify({"predicted": pred, "confidence": confidence, "processing_ms": elapsed_ms})
+        
+    except Exception as e:
+        return jsonify({"error": f"Failed to process image: {str(e)}"}), 400
 
 if __name__ == '__main__':
     # Parse command line arguments
