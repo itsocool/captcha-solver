@@ -1,0 +1,24 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: hyper-captcha-resolver:latest
+    container_name: hyper-captcha-resolver-web
+    command: ["./run_web.sh", "start"]
+    ports:
+      - "5001:5000"
+    environment:
+      - HOST_PORT=5001
+      - FLASK_ENV=production
+      - CPU_ONLY=1
+      # - PYTHONUNBUFFERED=1
+      # - NVIDIA_VISIBLE_DEVICES=none
+      # - CUDA_VISIBLE_DEVICES=""
+      # - JAX_PLATFORM_NAME=cpu
+      # - TF_CPP_MIN_LOG_LEVEL=2
+    restart: unless-stopped
+    tty: true
+networks:
+  default:
+    name: hyper-captcha-resolver-net

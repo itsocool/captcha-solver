@@ -235,11 +235,45 @@
       color: var(--drop-text);
       border-color: rgba(20, 184, 166, 0.14);
     }
+
+    .server-status {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      margin-left: auto;
+    }
+
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 14px;
+    }
+
+    .status-indicator {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      transition: background-color 0.3s;
+    }
+
+    .status-online {
+      background-color: #4CAF50;
+      box-shadow: 0 0 8px rgba(76, 175, 80, 0.6);
+    }
+
+    .status-offline {
+      background-color: #f44336;
+    }
+
+    .status-checking {
+      background-color: #FFC107;
+    }
   </style>
 </head>
 
 <body>
-  <!-- 상단 고정 네비게이션 바: 브랜드 + 메뉴 (Captcha / OCR / Chat) + 테마 토글 버튼 -->
+  <!-- 상단 고정 네비게이션 바: 브랜드 + 메뉴 (Captcha 전용) + 테마 토글 버튼 -->
   <nav class="navbar navbar-expand-lg navbar-light fixed-top shadow-sm">
     <div class="container">
       <a class="navbar-brand d-flex align-items-center gap-2" href="#">
@@ -253,8 +287,20 @@
       <div class="collapse navbar-collapse" id="topNav">
         <ul class="navbar-nav me-auto mb-2 mb-lg-0">
           <li class="nav-item"><a class="nav-link active" aria-current="page" href="#" id="nav-captcha">Captcha</a></li>
-          <li class="nav-item"><a class="nav-link" href="/chat" id="nav-chat">Chat</a></li>
+          <!-- Chat 링크 제거 -->
         </ul>
+          <!-- Server status indicators -->
+          <div class="server-status">
+            <div class="status-item">
+              <span class="status-indicator status-checking" id="status-5000"></span>
+              <span>5000</span>
+            </div>
+            <div class="status-item">
+              <span class="status-indicator status-checking" id="status-5001"></span>
+              <span>5001</span>
+            </div>
+          </div>
+
         <div class="d-flex align-items-center">
           <!-- Theme toggle button moved to navbar (ID 유지) -->
           <button id="themeBtn" class="btn btn-sm btn-outline-secondary ms-2" title="Toggle theme">
@@ -297,11 +343,7 @@
               <div class="col-12 d-flex gap-2 align-items-center">
                 <button id="submitBtn" type="button" class="btn btn-teal"><i class="bi bi-play-fill me-1"></i>예측 실행</button>
                 <button id="clearBtn" type="button" class="btn btn-outline-secondary"><i class="bi bi-x-circle me-1"></i>초기화</button>
-                <!-- 예측 모드 선택: 캡챠 전용 / OCR (초기화 버튼 뒤로 이동) -->
-                <select id="modeSelect" class="form-select form-select-sm w-auto mode-select" title="예측 방식" aria-label="예측 방식 선택">
-                   <option value="captcha" selected>캡챠 전용</option>
-                   <option value="ocr">OCR</option>
-                 </select>
+                <!-- 단일 예측 모드: 캡챠 전용 -->
                 <div id="spinner" class="spinner-border ms-auto d-none spinner-teal" role="status"><span
                     class="visually-hidden">Loading...</span></div>
               </div>
@@ -333,16 +375,16 @@
 
                 <h6>curl 예제 (Linux / macOS / WSL)</h6>
                 <pre
-                  class="bg-dark text-white p-2"><code>curl -X POST http://localhost:5000/api/v1/captcha -F "image=@/path/to/captcha.png"</code></pre>
+                  class="bg-dark text-white p-2"><code>curl -X POST https://dev.hyperinfo.co.kr/api/v1/captcha -F "image=@/path/to/captcha.png"</code></pre>
 
                 <h6>PowerShell 예제 (Windows PowerShell)</h6>
                 <pre class="bg-dark text-white p-2"><code>$form = @{ image = Get-Item 'C:\path\to\captcha.png' }
-$response = Invoke-WebRequest -Uri 'http://localhost:5000/api/v1/captcha' -Method POST -Form $form
+$response = Invoke-WebRequest -Uri 'https://dev.hyperinfo.co.kr/api/v1/captcha' -Method POST -Form $form
 $response.Content | ConvertFrom-Json</code></pre>
 
-                <h6>CMD 예제 (Windows CMD)</h6>
+                <h6>CMD 예제 (Windows CMD) 추후 octet-stream 지원 예정</h6>
                 <pre
-                  class="bg-dark text-white p-2"><code>curl.exe -X POST http://localhost:5000/api/v1/captcha -F "image=@C:\\path\\to\\captcha.png"</code></pre>
+                  class="bg-dark text-white p-2"><code>curl.exe -X POST https://dev.hyperinfo.co.kr/api/v1/captcha -F "image=@C:\\path\\to\\captcha.png"</code></pre>
               </div>
             </div>
           </div>
@@ -357,7 +399,6 @@ $response.Content | ConvertFrom-Json</code></pre>
     const dropzone = document.getElementById('dropzone');
     const dropFilename = document.getElementById('dropFilename');
     const submitBtn = document.getElementById('submitBtn');
-    const modeSelect = document.getElementById('modeSelect');
     const clearBtn = document.getElementById('clearBtn');
     const spinner = document.getElementById('spinner');
     const alerts = document.getElementById('alerts');
@@ -378,7 +419,7 @@ $response.Content | ConvertFrom-Json</code></pre>
     // 초기 상태 반영
     updateSubmitButtonState();
 
-    // 모드 선택은 제출 시 엔드포인트만 제어합니다. 버튼 레이블은 고정되어 있습니다.
+    // 단일 모드(캡챠 전용). 엔드포인트는 고정입니다.
 
     imageInput.addEventListener('change', (ev) => {
       const f = ev.target.files && ev.target.files[0];
@@ -449,8 +490,8 @@ $response.Content | ConvertFrom-Json</code></pre>
       clearBtn.disabled = true;
 
       try {
-        // 선택된 모드에 따라 엔드포인트 변경
-        const endpoint = (modeSelect && modeSelect.value === 'ocr') ? '/api/v1/ocr' : '/api/v1/captcha';
+        // 캡챠 전용 엔드포인트
+        const endpoint = '/api/v1/captcha';
         const resp = await fetch(endpoint, { method: 'POST', body: form });
         const data = await resp.json();
         if (!resp.ok) {
@@ -567,6 +608,40 @@ $response.Content | ConvertFrom-Json</code></pre>
     updateSubmitButtonState();
 
     themeBtn.addEventListener('click', cycleTheme);
+
+    // Server health check
+    async function checkServerHealth(port) {
+      const indicator = document.getElementById(`status-${port}`);
+      try {
+        const response = await fetch(`https://dev.hyperinfo.co.kr/health/${port}`, {
+          method: 'GET',
+          mode: 'cors',
+          cache: 'no-cache',
+          signal: AbortSignal.timeout(3000)
+        });
+
+        if (response.ok) {
+          indicator.className = 'status-indicator status-online';
+        } else {
+          indicator.className = 'status-indicator status-offline';
+        }
+      } catch (error) {
+        indicator.className = 'status-indicator status-offline';
+      }
+    }
+
+    // Check both servers every 5 seconds
+    function startHealthChecks() {
+      checkServerHealth(5000);
+      checkServerHealth(5001);
+      setInterval(() => {
+        checkServerHealth(5000);
+        checkServerHealth(5001);
+      }, 5000);
+    }
+
+    // Start health checks when page loads
+    startHealthChecks();
   </script>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>

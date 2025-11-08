@@ -1,21 +1,76 @@
-2025-11-05 18:14:40.014071: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
-To enable the following instructions: AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
-2025-11-05 18:14:43.310114: E external/local_xla/xla/stream_executor/cuda/cuda_platform.cc:51] failed call to cuInit: INTERNAL: CUDA error: Failed call to cuInit: CUDA_ERROR_NO_DEVICE: no CUDA-capable device is detected
-2025-11-05 18:14:43.310157: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:160] env: CUDA_VISIBLE_DEVICES="-1"
-2025-11-05 18:14:43.310163: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:163] CUDA_VISIBLE_DEVICES is set to -1 - this hides all GPUs from CUDA
-2025-11-05 18:14:43.310165: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:171] verbose logging is disabled. Rerun with verbose logging (usually --v=1 or --vmodule=cuda_diagnostics=1) to get more diagnostic output from this module
-2025-11-05 18:14:43.310169: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:176] retrieving CUDA diagnostic information for host: ocr
-2025-11-05 18:14:43.310171: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:183] hostname: ocr
-2025-11-05 18:14:43.310223: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:190] libcuda reported version is: 580.95.5
-2025-11-05 18:14:43.310239: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:194] kernel reported version is: 580.95.5
-2025-11-05 18:14:43.310243: I external/local_xla/xla/stream_executor/cuda/cuda_diagnostics.cc:284] kernel version seems to match DSO: 580.95.5
+No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/0/images/train; using defaults
+2025-11-07 13:29:20.996336: E external/local_xla/xla/stream_executor/cuda/cuda_platform.cc:51] failed call to cuInit: INTERNAL: CUDA error: Failed call to cuInit: CUDA_ERROR_NO_DEVICE: no CUDA-capable device is detected
  * Serving Flask app 'web'
- * Debug mode: off
+ * Debug mode: on
 [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
  * Running on all addresses (0.0.0.0)
  * Running on http://127.0.0.1:5000
  * Running on http://192.168.50.98:5000
 [33mPress CTRL+C to quit[0m
-192.168.20.52 - - [05/Nov/2025 18:14:44] "GET /chat HTTP/1.0" 200 -
-192.168.20.52 - - [05/Nov/2025 18:14:47] "GET /chat HTTP/1.0" 200 -
-192.168.20.52 - - [05/Nov/2025 18:14:49] "GET /chat HTTP/1.0" 200 -
+ * Restarting with stat
+No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/0/images/train; using defaults
+2025-11-07 13:29:22.416101: E external/local_xla/xla/stream_executor/cuda/cuda_platform.cc:51] failed call to cuInit: INTERNAL: CUDA error: Failed call to cuInit: CUDA_ERROR_NO_DEVICE: no CUDA-capable device is detected
+ * Debugger is active!
+ * Debugger PIN: 338-057-190
+172.18.0.2 - - [07/Nov/2025 13:29:30] "GET /health/ HTTP/1.1" 200 -
+ * Detected change in '/home/hyper/project/hyper-captcha-resolver/web.py', reloading
+runtime_port: 5000, requested port: None
+ * Restarting with stat
+2025-11-07 13:29:45.650609: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/0/images/train; using defaults
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1762489786.703213  242403 gpu_device.cc:2020] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 3449 MB memory:  -> device: 0, name: NVIDIA GeForce RTX 2080, pci bus id: 0000:01:00.0, compute capability: 7.5
+ * Debugger is active!
+ * Debugger PIN: 338-057-190
+ * Detected change in '/home/hyper/project/hyper-captcha-resolver/web.py', reloading
+ * Restarting with stat
+No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/0/images/train; using defaults
+2025-11-07 13:29:59.812155: E external/local_xla/xla/stream_executor/cuda/cuda_platform.cc:51] failed call to cuInit: INTERNAL: CUDA error: Failed call to cuInit: CUDA_ERROR_NO_DEVICE: no CUDA-capable device is detected
+ * Debugger is active!
+ * Debugger PIN: 338-057-190
+172.18.0.2 - - [07/Nov/2025 13:30:30] "GET /health/ HTTP/1.1" 200 -
+172.18.0.2 - - [07/Nov/2025 13:31:30] "GET /health/ HTTP/1.1" 200 -
+172.18.0.2 - - [07/Nov/2025 13:32:30] "GET /health/ HTTP/1.1" 200 -
+172.18.0.2 - - [07/Nov/2025 13:33:30] "GET /health/ HTTP/1.1" 200 -
+172.18.0.2 - - [07/Nov/2025 13:34:30] "GET /health/ HTTP/1.1" 200 -
+ * Detected change in '/home/hyper/project/hyper-captcha-resolver/wsgi.py', reloading
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: None
+ * Restarting with stat
+No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/0/images/train; using defaults
+2025-11-07 13:34:36.622109: E external/local_xla/xla/stream_executor/cuda/cuda_platform.cc:51] failed call to cuInit: INTERNAL: CUDA error: Failed call to cuInit: CUDA_ERROR_NO_DEVICE: no CUDA-capable device is detected
+ * Debugger is active!
+ * Debugger PIN: 338-057-190
+ * Detected change in '/home/hyper/project/hyper-captcha-resolver/wsgi.py', reloading
+ * Restarting with stat
+No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/0/images/train; using defaults
+2025-11-07 13:35:01.758084: E external/local_xla/xla/stream_executor/cuda/cuda_platform.cc:51] failed call to cuInit: INTERNAL: CUDA error: Failed call to cuInit: CUDA_ERROR_NO_DEVICE: no CUDA-capable device is detected
+ * Debugger is active!
+ * Debugger PIN: 338-057-190
+172.18.0.2 - - [07/Nov/2025 13:35:30] "GET /health/ HTTP/1.1" 200 -
+ * Detected change in '/home/hyper/project/hyper-captcha-resolver/wsgi.py', reloading
+runtime_port: 5000, requested port: None
+ * Restarting with stat
+No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/0/images/train; using defaults
+2025-11-07 13:35:34.110132: E external/local_xla/xla/stream_executor/cuda/cuda_platform.cc:51] failed call to cuInit: INTERNAL: CUDA error: Failed call to cuInit: CUDA_ERROR_NO_DEVICE: no CUDA-capable device is detected
+ * Debugger is active!
+ * Debugger PIN: 338-057-190
+ * Detected change in '/home/hyper/project/hyper-captcha-resolver/web.py', reloading
+ * Restarting with stat
+2025-11-07 13:35:51.275204: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/0/images/train; using defaults
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1762490152.318035  244622 gpu_device.cc:2020] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 3449 MB memory:  -> device: 0, name: NVIDIA GeForce RTX 2080, pci bus id: 0000:01:00.0, compute capability: 7.5
+ * Debugger is active!
+ * Debugger PIN: 338-057-190
+ * Detected change in '/home/hyper/project/hyper-captcha-resolver/web.py', reloading
+ * Restarting with stat
+No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/0/images/train; using defaults
+2025-11-07 13:35:59.286273: E external/local_xla/xla/stream_executor/cuda/cuda_platform.cc:51] failed call to cuInit: INTERNAL: CUDA error: Failed call to cuInit: CUDA_ERROR_NO_DEVICE: no CUDA-capable device is detected
+ * Debugger is active!
+ * Debugger PIN: 338-057-190

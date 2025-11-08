@@ -2,9 +2,20 @@
 set -euo pipefail
 
 COMMAND=${1:-start}
-BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VENV_PY="$BASE_DIR/.venv/bin/python"
-PYTHON="$VENV_PY"
+PORT=5000
+BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/." && pwd)"
+# FLASK_ENV 기본값 설정
+FLASK_ENV=${FLASK_ENV:-development}
+CPU_ONLY=${CPU_ONLY:-0}
+# python 우선, 없으면 python3 사용
+if command -v python >/dev/null 2>&1; then
+  PYTHON=$(command -v python)
+elif command -v python3 >/dev/null 2>&1; then
+  PYTHON=$(command -v python3)
+else
+  echo "ERROR: Neither python nor python3 found in PATH" >&2
+  exit 1
+fi
 LOG_DIR="$BASE_DIR/logs"
 LOG="$LOG_DIR/web.log"
 PIDFILE="$BASE_DIR/web.pid"
@@ -31,19 +42,27 @@ start)
     exit 0
   fi
 
-  if [ ! -x "$PYTHON" ]; then
-    if command -v python3 >/dev/null 2>&1; then
-      PYTHON=$(command -v python3)
-      echo "Using system python: $PYTHON"
-    else
-      echo "ERROR: No python found. Please create a virtualenv at $BASE_DIR/.venv or install python3." >&2
-      exit 1
-    fi
+  echo "Using python: $PYTHON"
+  
+  # Check if we're in a production environment (Docker)
+  if [ -f "/.dockerenv" ] || [ "$FLASK_ENV" = "production" ]; then
+    # Use Gunicorn for production
+    echo "Starting with Gunicorn (production mode)..."
+    nohup "$PYTHON" -m gunicorn --bind 0.0.0.0:$PORT --workers 4 --timeout 120 --access-logfile - --error-logfile - wsgi:application > "$LOG" 2>&1 &
+  else
+    # Use Flask dev server for development
+    echo "Starting with Flask dev server..."
+    nohup "$PYTHON" "$BASE_DIR/web.py" --port $PORT > "$LOG" 2>&1 &
   fi
-
-  nohup "$PYTHON" "$BASE_DIR/web.py" > "$LOG" 2>&1 &
+  
   echo $! > "$PIDFILE"
-  echo "Started web.py with PID $(cat "$PIDFILE"), logs: $LOG"
+  echo "Started web server with PID $(cat "$PIDFILE"), logs: $LOG"
+  
+  # In Docker, keep the script running to prevent container exit
+  if [ -f "/.dockerenv" ] || [ "$FLASK_ENV" = "production" ]; then
+    echo "Running in container mode, waiting for process to finish..."
+    wait
+  fi
   ;;
 
 stop)

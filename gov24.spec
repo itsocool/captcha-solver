@@ -5,7 +5,7 @@ a = Analysis(
     ['gov24.py'],
     pathex=[],
     binaries=[],
-    datas=[('captcha_data/gov24/1/model', 'model')],
+    datas=[('captcha_data/gov24/1/model', 'captcha_data/gov24/1/model')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

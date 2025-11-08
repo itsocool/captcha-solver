@@ -1,57 +1,83 @@
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-import sys, time
+
+import warnings
+warnings.filterwarnings('ignore', category=DeprecationWarning)
+
+import tensorflow as tf
+tf.get_logger().setLevel('ERROR')
+
+import sys
 NULL_OUT = open(os.devnull, "w")
 STD_OUT = sys.stdout
 sys.stdout = NULL_OUT
 
+cpu_only = os.getenv('CPU_ONLY', '1') == '1'
+backend = 'keras'
 argv = None
 exec = 'gov24.exe'
 base_dir = os.path.abspath(os.path.dirname(__file__))
 meipass = getattr(sys, '_MEIPASS', None)
 
 if meipass:
-    base_dir = os.path.join(meipass, "model")
+    base_dir = os.path.join(meipass, "captcha_data")
 else:
     base_dir = os.path.join(base_dir, "captcha_data")
 
-import tensorflow as tf
-tf.get_logger().setLevel('ERROR')
-from captchaResolver import dataclass, keras_engine
-from PIL import Image
+from captchaResolver import dataclass, engine
 from captchaResolver.keras_core import KerasModel
 
-def execute(captcha_type: str, image_path: str) -> str:
+# def execute(captcha_type: str, image_path: str) -> str:
 
-    train_data = dataclass.TrainData(
-        captcha_id=captcha_type,
-        train_data_base_dir=base_dir,
-        init=False,
-        label_length=6,
-        characters=list(dataclass.DIGITS))
-    model = KerasModel(train_data=train_data, verbose=0)
-    temp_dir = os.path.abspath(base_dir)
-    temp_image_path = os.path.join(temp_dir, f"{time.time()}.png")
-    temp_image_path = os.path.abspath(temp_image_path)
+#     train_data = dataclass.TrainData(
+#         captcha_id=captcha_type,
+#         train_data_base_dir=base_dir,
+#         init=False,
+#         label_length=6,
+#         characters=list(dataclass.DIGITS))
+#     model = KerasModel(train_data=train_data, verbose=0)
+#     temp_dir = os.path.abspath(base_dir)
+#     temp_image_path = os.path.join(temp_dir, f"{time.time()}.png")
+#     temp_image_path = os.path.abspath(temp_image_path)
     
-    with Image.open(image_path) as image:
-        if image.mode in ('RGBA', 'LA'):
-            background = Image.new(image.mode[:-1], image.size, (255, 255, 255))
-            background.paste(image, image.split()[-1]) # omit transparency
-            image = background
-        model.train_data.image_width, model.train_data.image_height = image.size
-        image.save(temp_image_path)
+#     with Image.open(image_path) as image:
+#         if image.mode in ('RGBA', 'LA'):
+#             background = Image.new(image.mode[:-1], image.size, (255, 255, 255))
+#             background.paste(image, image.split()[-1]) # omit transparency
+#             image = background
+#         model.train_data.image_width, model.train_data.image_height = image.size
+#         image.save(temp_image_path)
 
-    if meipass:
-        model_path = os.path.join(base_dir, 'weights.keras')
-    else:
-        model_path = train_data.get_model_path(keras_native=model.keras_native)
+#     if meipass:
+#         model_path = os.path.join(base_dir, 'weights.keras')
+#     else:
+#         model_path = train_data.get_model_path(keras_native=model.keras_native)
 
-    pred, confidence = keras_engine.predict(model,temp_image_path, model_path=model_path)
+#     pred, confidence = keras_engine.predict(model,temp_image_path, model_path=model_path)
 
-    if os.path.exists(temp_image_path):
-        os.remove(temp_image_path)
+#     if os.path.exists(temp_image_path):
+#         os.remove(temp_image_path)
 
+#     return pred
+
+def predict(image_path: str) -> str:
+    train_data: dataclass.TrainData = dataclass.TrainData(
+        init=False,
+        captcha_id="gov24",
+        backend=backend,
+        rev=1,
+        train_data_base_dir=base_dir,
+        image_width=200,
+        image_height=50,
+        threshold=60
+    )
+    captcha_type : dataclass.CaptchaType = dataclass.CaptchaType(
+        name="정부 24",
+        desc="대한민국 정부 24 캡챠",
+        cpu_only=cpu_only,
+        train_data=train_data)
+    model: KerasModel = KerasModel(captcha_type=captcha_type, verbose=0)
+    pred, confidence = engine.predict(model=model, image_path=image_path)
     return pred
 
 if("__main__" == __name__):
@@ -73,7 +99,8 @@ if("__main__" == __name__):
         print(f'에러 : 이미지 파일을 찾을 수 없습니다. {image_path}')
         sys.exit(-1)
 
-    pred = execute('gov24', image_path=image_path)
+    # pred = execute('gov24', image_path=image_path)
+    pred = predict(image_path=image_path)
     sys.stdout = STD_OUT
     sys.stdout.write(pred)
     sys.exit(0)

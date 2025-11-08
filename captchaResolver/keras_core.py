@@ -354,11 +354,14 @@ class KerasModel:
             )
 
         # Load model, optionally forcing CPU placement for this operation
+        # Pass custom_objects to properly deserialize CTCLayer
+        custom_objects = {"CTCLayer": CTCLayer}
+        
         if cpu_only:
             with tf.device('/CPU:0'):
-                loaded = keras.models.load_model(model_path)
+                loaded = keras.models.load_model(model_path, custom_objects=custom_objects)
         else:
-            loaded = keras.models.load_model(model_path)
+            loaded = keras.models.load_model(model_path, custom_objects=custom_objects)
 
         input_layer = loaded.input[0] if isinstance(loaded.input, list) else loaded.input
         output_layer = loaded.get_layer(name="dense2").output
