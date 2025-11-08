@@ -1,6 +1,8 @@
 import os
 
 from torch import device
+
+import ollama_generate
 DEVICE = os.getenv('DEVICE', 'cpu')
 
 if DEVICE == 'cpu':
@@ -113,6 +115,22 @@ def predict(image: Image.Image):
     os.remove(image_path)
     return pred, confidence, elapsed_ms
 
+def ocr(image: Image.Image):
+    if image.size != (image_width, image_height):
+        if image.mode != 'RGB' and image.mode != 'L':
+            image = image.convert('RGB')
+
+        image = image.crop((1, 1, image.width, image.height))
+        image = image.resize((image_width, image_height), Image.Resampling.LANCZOS)
+
+    image_path = f"/tmp/{time.time()}.png"
+    image.save(image_path)
+    result = ollama_generate.ocr_image(image_path=image_path)
+    pred, confidence, elapsed_ms = result.get("text"), result.get("confidence"), result.get("processing_ms")
+    image.close()
+    os.remove(image_path)
+    return pred, confidence, elapsed_ms
+
 @app.route("/api/v1/captcha", methods=["POST"])
 def predict_multi_part():
     if 'image' not in request.files:
@@ -147,6 +165,38 @@ def predict_octet_stream():
         return jsonify({"predicted": pred, "confidence": confidence, "processing_ms": elapsed_ms})     
     except Exception as e:
         return jsonify({"error": f"Failed to process image: {str(e)}"}), 400
+
+@app.route("/api/v1/ocr", methods=["POST"])
+def ocr_multi_part():
+    try:
+        if 'image' not in request.files:
+            error_msg = "no file part 'image' in request"
+            print(f"OCR Error: {error_msg}")
+            return jsonify({"error": error_msg}), 400
+
+        f = request.files['image']
+        if f.filename == '':
+            error_msg = "no selected file"
+            print(f"OCR Error: {error_msg}")
+            return jsonify({"error": error_msg}), 400
+
+        try:
+            stream = f.stream
+            image: Image.Image = Image.open(stream)
+            pred, confidence, elapsed_ms = ocr(image)
+            return jsonify({"predicted": pred, "confidence": confidence, "processing_ms": elapsed_ms})
+        except Exception as e:
+            import traceback
+            error_msg = f"Failed to process image: {str(e)}"
+            print(f"OCR Processing Error: {error_msg}")
+            print(traceback.format_exc())
+            return jsonify({"error": error_msg, "trace": traceback.format_exc()}), 500
+    except Exception as e:
+        import traceback
+        error_msg = f"Unexpected error: {str(e)}"
+        print(f"OCR Unexpected Error: {error_msg}")
+        print(traceback.format_exc())
+        return jsonify({"error": error_msg, "trace": traceback.format_exc()}), 500
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Captcha Resolver Web Server')

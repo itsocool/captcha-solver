@@ -3,6 +3,7 @@ const preview = document.getElementById('preview');
 const dropzone = document.getElementById('dropzone');
 const dropFilename = document.getElementById('dropFilename');
 const submitBtn = document.getElementById('submitBtn');
+const ocrBtn = document.getElementById('ocrBtn');
 const clearBtn = document.getElementById('clearBtn');
 const spinner = document.getElementById('spinner');
 const alerts = document.getElementById('alerts');
@@ -76,6 +77,38 @@ function clearForm() {
   if (typeof dropFilename !== 'undefined') dropFilename.textContent = '';
   updateSubmitButtonState(); // 변경: 초기화 후 버튼 비활성화
 }
+
+ocrBtn.addEventListener('click', async () => {
+      alerts.innerHTML = '';
+      const f = imageInput.files && imageInput.files[0];
+      if (!f) { showAlert('이미지를 선택하세요.', 'warning'); return; }
+
+      const form = new FormData();
+      form.append('image', f, f.name);
+
+      spinner.classList.remove('d-none');
+      ocrBtn.disabled = true;
+      clearBtn.disabled = true;
+
+      try {
+        const resp = await fetch('/api/v1/ocr', { method: 'POST', body: form });
+        const data = await resp.json();
+        if (!resp.ok) {
+          showAlert(`오류: ${data.error || resp.statusText}`, 'danger');
+        } else {
+          // Add a result card with image, predicted value, confidence and processing time (ms)
+          addResultCard(f, data.text, data.confidence ?? 'N/A', data.duration_ms ?? null);
+          // 자동 초기화: 결과를 리스트에 추가한 뒤 입력폼을 초기화
+          clearForm();
+        }
+      } catch (err) {
+        showAlert('요청 실패: ' + err.message, 'danger');
+      } finally {
+        spinner.classList.add('d-none');
+        ocrBtn.disabled = false;
+        clearBtn.disabled = false;
+      }
+    });
 
 clearBtn.addEventListener('click', () => {
   clearForm();
