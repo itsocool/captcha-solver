@@ -26,11 +26,11 @@ from captchaResolver.keras_core import KerasModel
 from flask import Response
 from io import BytesIO
 
-captcha_id = 'gov24'
-backend = 'pytorch'  # 'pytorch' or 'keras'
-rev = 1
-image_width = 200
-image_height = 50
+captcha_id = os.getenv('CAPTCHA_ID', 'gov24')
+backend = os.getenv('BACKEND', 'pytorch')  # 'pytorch' or 'keras'
+rev = int(os.getenv('REV', '1'))
+image_width = int(os.getenv('IMAGE_WIDTH', '200'))
+image_height = int(os.getenv('IMAGE_HEIGHT', '50'))
 
 if backend == 'pytorch':
     model: PyTorchModel = engine.get_captcha_model(captcha_id=captcha_id, backend=backend)
@@ -50,7 +50,7 @@ model.load_prediction_model(cpu_only=True)
 @app.route("/captcha")
 def index():
     # Render a small test page that lets users upload an image and see prediction
-    return render_template('captcha.html', cpu_only=cpu_only)
+    return render_template('captcha.html', cpu_only=cpu_only, backend=backend, captcha_id=captcha_id, rev=rev, image_width=image_width, image_height=image_height)
 
 @app.route("/health/")
 @app.route("/health/<int:port>")

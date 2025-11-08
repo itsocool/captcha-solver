@@ -12,11 +12,11 @@ services:
       - HOST_PORT=5001
       - FLASK_ENV=production
       - CPU_ONLY=1
-      # - PYTHONUNBUFFERED=1
-      # - NVIDIA_VISIBLE_DEVICES=none
-      # - CUDA_VISIBLE_DEVICES=""
-      # - JAX_PLATFORM_NAME=cpu
-      # - TF_CPP_MIN_LOG_LEVEL=2
+      - CAPTCHA_ID=gov24
+      - BACKEND=pytorch
+      - REV=1
+      - IMAGE_WIDTH=200
+      - IMAGE_HEIGHT=50
     restart: unless-stopped
     tty: true
 networks:
