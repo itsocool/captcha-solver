@@ -97,7 +97,7 @@ ocrBtn.addEventListener('click', async () => {
           showAlert(`오류: ${data.error || resp.statusText}`, 'danger');
         } else {
           // Add a result card with image, predicted value, confidence and processing time (ms)
-          addResultCard(f, data.text, data.confidence ?? 'N/A', data.duration_ms ?? null, data.bboxes ?? null);
+          addResultCard(f, data.predicted, data.confidence ?? 'N/A', data.processing_ms ?? null, data.bbox ?? null);
           // 자동 초기화: 결과를 리스트에 추가한 뒤 입력폼을 초기화
           clearForm();
         }

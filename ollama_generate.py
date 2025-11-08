@@ -54,8 +54,15 @@ def ocr_image(
             "bbox": [x, y, width, height]
         }""",
     'images': [image_path]}]
+    
+    from ollama import Client
 
-    response: ChatResponse = chat(
+    client = Client(
+        host="https://ollama.com",
+        headers={'Authorization': 'Bearer ' + os.environ.get('OLLAMA_API_KEY')}
+    )
+
+    response: ChatResponse = client.chat(
         model=model_id,
         messages=messages,
         options={'temperature': 0.0},
