@@ -126,10 +126,10 @@ def ocr(image: Image.Image):
     image_path = f"/tmp/{time.time()}.png"
     image.save(image_path)
     result = ollama_generate.ocr_image(image_path=image_path)
-    pred, confidence, elapsed_ms = result.get("text"), result.get("confidence"), result.get("processing_ms")
+    pred, confidence, elapsed_ms, bbox = result.get("text"), result.get("confidence"), result.get("processing_ms"), result.get("bbox")
     image.close()
     os.remove(image_path)
-    return pred, confidence, elapsed_ms
+    return pred, confidence, elapsed_ms, bbox
 
 @app.route("/api/v1/captcha", methods=["POST"])
 def predict_multi_part():
@@ -144,7 +144,8 @@ def predict_multi_part():
         stream = f.stream
         image: Image.Image = Image.open(stream)
         pred, confidence, elapsed_ms = predict(image)
-        return jsonify({"predicted": pred, "confidence": confidence, "processing_ms": elapsed_ms})
+        bbox = None
+        return jsonify({"predicted": pred, "confidence": confidence, "processing_ms": elapsed_ms, "bbox": bbox})
     except Exception as e:
         return jsonify({"error": f"Failed to process image: {str(e)}"}), 400
 
@@ -183,8 +184,8 @@ def ocr_multi_part():
         try:
             stream = f.stream
             image: Image.Image = Image.open(stream)
-            pred, confidence, elapsed_ms = ocr(image)
-            return jsonify({"predicted": pred, "confidence": confidence, "processing_ms": elapsed_ms})
+            pred, confidence, elapsed_ms, bbox = ocr(image)
+            return jsonify({"predicted": pred, "confidence": confidence, "processing_ms": elapsed_ms, "bbox": bbox})
         except Exception as e:
             import traceback
             error_msg = f"Failed to process image: {str(e)}"
