@@ -1,37 +1,36 @@
 import os
+# os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # TensorFlow C++ 로그 레벨 (0=ALL,1=INFO,2=WARNING,3=ERROR)
+# os.environ['GLOG_minloglevel'] = '2'  # Google 로깅
 
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # TensorFlow 로깅 완전 억제
-os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # oneDNN 최적화 비활성화 (경고 제거)
-os.environ['GLOG_minloglevel'] = '2'  # Google 로깅
+# import logging, warnings
+# logging.getLogger('tensorflow').setLevel(logging.ERROR)
+# warnings.filterwarnings('ignore', category=FutureWarning)
+# warnings.filterwarnings('ignore', category=DeprecationWarning)
 
 import captchaResolver.engine as engine
 from captchaResolver.dataclass import TrainData
 from captchaResolver.core import PyTorchModel
 
-if __name__ == '__main__':
-    # 학습 설정 (dev.ipynb 스타일)
-    captcha_id = 'default'
-    backend = 'pytorch'
-    epochs = 100  # dev.ipynb 기본값
-    batch_size = 32  # dev.ipynb 기본값
-    early_stopping_patience = 10
-    learning_rate = 1e-4  # dev.ipynb 기본값
-    num_workers = 0  # 단순화 (필요시 증가)
-    warmup_epochs = 0  # dev.ipynb는 warmup 미사용
-    save_model = False
+captcha_id = 'gov24'
+backend = 'pytorch'
+rev = 1
+image_width = 200
+image_height = 50
+epochs = 40
+batch_size = 32
+early_stopping_patience = 6
+save_model = False
 
-    model: PyTorchModel = engine.get_captcha_model(captcha_id=captcha_id, backend=backend)
-    train_data: TrainData = model.train_data
-    model_base_dir = engine.train_model(
-        model,
-        epochs=epochs,
-        batch_size=batch_size,
-        early_stopping_patience=early_stopping_patience,
-        learning_rate=learning_rate,
-        num_workers=num_workers,
-        warmup_epochs=warmup_epochs,
-        save_model=save_model,
-    )
-    print(f"Model trained and saved at: {model_base_dir}{os.path.sep}weights.keras")
-    print("Done!")
-
+model: PyTorchModel = engine.get_captcha_model(captcha_id=captcha_id, backend=backend)
+train_data: TrainData = model.train_data
+model.train_data.rev = rev
+model.train_data.image_width = image_width
+model.train_data.image_height = image_height
+model_base_dir = engine.train_model(
+    model=model,
+    epochs=epochs,
+    batch_size=batch_size,
+    early_stopping_patience=early_stopping_patience,
+)
+print(f"Model trained and saved at: {model_base_dir}{os.path.sep}model_full.pth")
+print("Done!")

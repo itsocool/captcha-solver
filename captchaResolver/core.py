@@ -206,7 +206,6 @@ def ctc_decode(pred_array: np.ndarray, mapping_inv: Dict[int, str]) -> str:
         prev = pi
     return ''.join(chars)
 
-
 class PyTorchModel:
     
     def __init__(
@@ -559,7 +558,7 @@ class PyTorchModel:
             print(f"  - Full model: {full_model_path}")
             # print(f"  - Mappings: {mapping_path}, {mapping_inv_path}")
 
-    def load_prediction_model(self, model_path: Optional[str] = None):
+    def load_prediction_model(self, model_path: str = None, cpu_only: bool = False) -> nn.Module:
         """모델 로드."""
         if model_path is None:
             model_path = self.train_data.get_model_path()

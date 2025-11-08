@@ -1,5 +1,6 @@
-No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/0/images/train; using defaults
-2025-11-07 13:29:20.996336: E external/local_xla/xla/stream_executor/cuda/cuda_platform.cc:51] failed call to cuInit: INTERNAL: CUDA error: Failed call to cuInit: CUDA_ERROR_NO_DEVICE: no CUDA-capable device is detected
+Device: cpu
+PyTorch Version: 2.9.0+cu130
+Model loaded from /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/1/model/model_full.pth
  * Serving Flask app 'web'
  * Debug mode: on
 [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
@@ -8,69 +9,889 @@ No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_d
  * Running on http://192.168.50.98:5000
 [33mPress CTRL+C to quit[0m
  * Restarting with stat
-No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/0/images/train; using defaults
-2025-11-07 13:29:22.416101: E external/local_xla/xla/stream_executor/cuda/cuda_platform.cc:51] failed call to cuInit: INTERNAL: CUDA error: Failed call to cuInit: CUDA_ERROR_NO_DEVICE: no CUDA-capable device is detected
  * Debugger is active!
- * Debugger PIN: 338-057-190
-172.18.0.2 - - [07/Nov/2025 13:29:30] "GET /health/ HTTP/1.1" 200 -
- * Detected change in '/home/hyper/project/hyper-captcha-resolver/web.py', reloading
+ * Debugger PIN: 241-084-433
+127.0.0.1 - - [08/Nov/2025 10:38:35] "GET / HTTP/1.1" 200 -
+192.168.50.98 - - [08/Nov/2025 10:38:35] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:38:35] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:38:35] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:38:40] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:38:40] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:38:40] "GET /health/5000 HTTP/1.0" 200 -
+127.0.0.1 - - [08/Nov/2025 10:38:43] "POST /api/v1/captcha HTTP/1.1" 200 -
+192.168.50.98 - - [08/Nov/2025 10:38:45] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:38:45] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:38:45] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:38:50] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:38:50] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:38:50] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:38:55] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:38:55] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:38:55] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:39:01] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:39:01] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:39:01] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:39:06] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:39:06] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:39:06] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:39:11] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:39:11] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:39:11] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:39:15] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:39:15] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:39:15] "GET /health/5000 HTTP/1.0" 200 -
+127.0.0.1 - - [08/Nov/2025 10:39:19] "GET / HTTP/1.1" 200 -
+192.168.50.98 - - [08/Nov/2025 10:39:19] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:39:19] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:39:19] "GET /health/5000 HTTP/1.0" 200 -
+127.0.0.1 - - [08/Nov/2025 10:39:23] "POST /api/v1/captcha HTTP/1.1" 200 -
+192.168.50.98 - - [08/Nov/2025 10:39:24] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:39:24] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:39:24] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:39:29] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:39:29] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:39:29] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:39:34] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:39:34] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:39:34] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:39:39] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:39:39] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:39:39] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:39:44] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:39:44] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:39:44] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:39:49] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:39:49] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:39:49] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:39:54] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:39:54] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:39:54] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:39:59] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:39:59] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:39:59] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:40:04] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:40:04] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:40:04] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:40:09] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:40:09] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:40:09] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:40:14] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:40:14] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:40:14] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:40:19] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:40:19] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:40:19] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:40:24] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:40:24] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:40:24] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:40:29] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:40:29] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:40:29] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:40:34] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:40:34] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:40:34] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:40:39] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:40:39] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:40:39] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:40:44] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:40:44] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:40:44] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:40:49] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:40:49] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:40:49] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:41:05] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:41:05] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:41:05] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:41:26] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:41:26] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:41:26] "GET /health/5000 HTTP/1.0" 200 -
+127.0.0.1 - - [08/Nov/2025 10:41:27] "GET / HTTP/1.1" 200 -
+192.168.50.98 - - [08/Nov/2025 10:41:27] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:41:27] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:41:27] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:41:32] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:41:32] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:41:32] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:41:38] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:41:38] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:41:38] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:41:43] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:41:43] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:41:43] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:41:48] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:41:48] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:41:48] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:41:53] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:41:53] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:41:53] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:41:58] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:41:58] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:41:58] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:42:03] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:42:03] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:42:03] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:42:08] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:42:08] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:42:08] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:42:13] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:42:13] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:42:13] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:42:18] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:42:18] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:42:18] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:42:23] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:42:23] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:42:23] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:42:28] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:42:28] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:42:28] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:42:33] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:42:33] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:42:33] "GET /health/5000 HTTP/1.0" 200 -
+127.0.0.1 - - [08/Nov/2025 10:42:35] "GET / HTTP/1.1" 200 -
+192.168.50.98 - - [08/Nov/2025 10:42:35] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:42:35] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:42:35] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:42:40] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:42:40] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:42:40] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:42:45] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:42:45] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:42:45] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:42:51] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:42:51] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:42:51] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:42:56] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:42:56] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:42:56] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:43:00] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:43:00] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:43:00] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:43:06] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:43:06] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:43:06] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:43:11] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:43:11] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:43:11] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:43:16] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:43:16] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:43:16] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:43:21] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:43:21] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:43:21] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:43:26] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:43:26] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:43:26] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:43:31] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:43:31] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:43:31] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:43:36] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:43:36] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:43:36] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:43:41] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:43:41] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:43:41] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:43:46] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:43:46] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:43:46] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:43:51] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:43:51] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:43:51] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:43:56] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:43:56] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:43:56] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:44:01] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:44:01] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:44:01] "GET /health/5000 HTTP/1.0" 200 -
+Device: cpu
+PyTorch Version: 2.9.0+cu130
+Model loaded from /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/1/model/model_full.pth
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
 runtime_port: 5000, requested port: None
- * Restarting with stat
-2025-11-07 13:29:45.650609: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
-To enable the following instructions: AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
-No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/0/images/train; using defaults
-WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
-I0000 00:00:1762489786.703213  242403 gpu_device.cc:2020] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 3449 MB memory:  -> device: 0, name: NVIDIA GeForce RTX 2080, pci bus id: 0000:01:00.0, compute capability: 7.5
- * Debugger is active!
- * Debugger PIN: 338-057-190
- * Detected change in '/home/hyper/project/hyper-captcha-resolver/web.py', reloading
- * Restarting with stat
-No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/0/images/train; using defaults
-2025-11-07 13:29:59.812155: E external/local_xla/xla/stream_executor/cuda/cuda_platform.cc:51] failed call to cuInit: INTERNAL: CUDA error: Failed call to cuInit: CUDA_ERROR_NO_DEVICE: no CUDA-capable device is detected
- * Debugger is active!
- * Debugger PIN: 338-057-190
-172.18.0.2 - - [07/Nov/2025 13:30:30] "GET /health/ HTTP/1.1" 200 -
-172.18.0.2 - - [07/Nov/2025 13:31:30] "GET /health/ HTTP/1.1" 200 -
-172.18.0.2 - - [07/Nov/2025 13:32:30] "GET /health/ HTTP/1.1" 200 -
-172.18.0.2 - - [07/Nov/2025 13:33:30] "GET /health/ HTTP/1.1" 200 -
-172.18.0.2 - - [07/Nov/2025 13:34:30] "GET /health/ HTTP/1.1" 200 -
- * Detected change in '/home/hyper/project/hyper-captcha-resolver/wsgi.py', reloading
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
 runtime_port: 5000, requested port: None
+Model loaded from /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/1/model/model_full.pth
+Model loaded successfully!
+Prediction: 147089 (confidence: 0.9999)
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
 runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
 runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
 runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
 runtime_port: 5000, requested port: None
- * Restarting with stat
-No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/0/images/train; using defaults
-2025-11-07 13:34:36.622109: E external/local_xla/xla/stream_executor/cuda/cuda_platform.cc:51] failed call to cuInit: INTERNAL: CUDA error: Failed call to cuInit: CUDA_ERROR_NO_DEVICE: no CUDA-capable device is detected
- * Debugger is active!
- * Debugger PIN: 338-057-190
- * Detected change in '/home/hyper/project/hyper-captcha-resolver/wsgi.py', reloading
- * Restarting with stat
-No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/0/images/train; using defaults
-2025-11-07 13:35:01.758084: E external/local_xla/xla/stream_executor/cuda/cuda_platform.cc:51] failed call to cuInit: INTERNAL: CUDA error: Failed call to cuInit: CUDA_ERROR_NO_DEVICE: no CUDA-capable device is detected
- * Debugger is active!
- * Debugger PIN: 338-057-190
-172.18.0.2 - - [07/Nov/2025 13:35:30] "GET /health/ HTTP/1.1" 200 -
- * Detected change in '/home/hyper/project/hyper-captcha-resolver/wsgi.py', reloading
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
 runtime_port: 5000, requested port: None
- * Restarting with stat
-No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/0/images/train; using defaults
-2025-11-07 13:35:34.110132: E external/local_xla/xla/stream_executor/cuda/cuda_platform.cc:51] failed call to cuInit: INTERNAL: CUDA error: Failed call to cuInit: CUDA_ERROR_NO_DEVICE: no CUDA-capable device is detected
- * Debugger is active!
- * Debugger PIN: 338-057-190
- * Detected change in '/home/hyper/project/hyper-captcha-resolver/web.py', reloading
- * Restarting with stat
-2025-11-07 13:35:51.275204: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
-To enable the following instructions: AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
-No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/0/images/train; using defaults
-WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
-I0000 00:00:1762490152.318035  244622 gpu_device.cc:2020] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 3449 MB memory:  -> device: 0, name: NVIDIA GeForce RTX 2080, pci bus id: 0000:01:00.0, compute capability: 7.5
- * Debugger is active!
- * Debugger PIN: 338-057-190
- * Detected change in '/home/hyper/project/hyper-captcha-resolver/web.py', reloading
- * Restarting with stat
-No training images found in /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/0/images/train; using defaults
-2025-11-07 13:35:59.286273: E external/local_xla/xla/stream_executor/cuda/cuda_platform.cc:51] failed call to cuInit: INTERNAL: CUDA error: Failed call to cuInit: CUDA_ERROR_NO_DEVICE: no CUDA-capable device is detected
- * Debugger is active!
- * Debugger PIN: 338-057-190
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+Model loaded from /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/1/model/model_full.pth
+Model loaded successfully!
+Prediction: 021250 (confidence: 0.9999)
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+192.168.50.98 - - [08/Nov/2025 10:44:33] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:44:33] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:44:33] "GET /health/5001 HTTP/1.0" 200 -
+127.0.0.1 - - [08/Nov/2025 10:44:35] "GET / HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:44:35] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:44:35] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:44:35] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:44:35] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:44:35] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:44:35] "GET /health/5001 HTTP/1.0" 200 -
+127.0.0.1 - - [08/Nov/2025 10:44:40] "GET / HTTP/1.1" 200 -
+192.168.50.98 - - [08/Nov/2025 10:44:40] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:44:40] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:44:40] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:44:45] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:44:45] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:44:45] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:44:50] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:44:50] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:44:50] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:44:55] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:44:55] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:44:55] "GET /health/5001 HTTP/1.0" 200 -
+127.0.0.1 - - [08/Nov/2025 10:44:55] "POST /api/v1/captcha HTTP/1.1" 200 -
+192.168.50.98 - - [08/Nov/2025 10:45:00] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:45:00] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:45:00] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:45:05] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:45:05] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:45:05] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:45:10] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:45:10] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:45:10] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:45:15] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:45:15] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:45:15] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:45:20] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:45:20] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:45:20] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:45:25] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:45:25] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:45:25] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:45:30] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:45:30] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:45:30] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:45:35] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:45:35] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:45:35] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:45:40] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:45:40] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:45:40] "GET /health/5001 HTTP/1.0" 200 -
+127.0.0.1 - - [08/Nov/2025 10:45:44] "GET / HTTP/1.1" 200 -
+192.168.50.98 - - [08/Nov/2025 10:45:44] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:45:44] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:45:44] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:45:49] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:45:49] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:45:49] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:45:54] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:45:54] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:45:54] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:46:00] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:46:00] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:46:00] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:46:05] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:46:05] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:46:05] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:46:10] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:46:10] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:46:10] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:46:15] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:46:15] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:46:15] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:46:20] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:46:20] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:46:20] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:46:25] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:46:25] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:46:25] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:46:30] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:46:30] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:46:30] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:46:35] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:46:35] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:46:35] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:46:40] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:46:40] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:46:40] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:46:45] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:46:45] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:46:45] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:46:50] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:46:50] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:46:50] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:46:55] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:46:55] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:46:55] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:47:05] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:47:05] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:47:05] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:48:05] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:48:05] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:48:05] "GET /health/5000 HTTP/1.0" 200 -
+127.0.0.1 - - [08/Nov/2025 10:48:06] "GET / HTTP/1.1" 200 -
+192.168.50.98 - - [08/Nov/2025 10:48:06] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:48:06] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:48:06] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:48:11] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:48:11] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:48:11] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:48:17] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:48:17] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:48:17] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:48:22] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:48:22] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:48:22] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:48:27] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:48:27] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:48:27] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:48:32] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:48:32] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:48:32] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:48:37] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:48:37] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:48:37] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:48:42] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:48:42] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:48:42] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:48:47] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:48:47] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:48:47] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:48:52] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:48:52] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:48:52] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:48:57] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:48:57] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:48:57] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:49:02] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:49:02] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:49:02] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:49:07] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:49:07] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:49:07] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:49:12] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:49:12] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:49:12] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:49:54] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:49:54] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:49:54] "GET /health/5000 HTTP/1.0" 200 -
+127.0.0.1 - - [08/Nov/2025 10:49:56] "GET / HTTP/1.1" 200 -
+192.168.50.98 - - [08/Nov/2025 10:49:56] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:49:56] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:49:56] "GET /health/5001 HTTP/1.0" 200 -
+127.0.0.1 - - [08/Nov/2025 10:49:58] "GET / HTTP/1.1" 200 -
+192.168.50.98 - - [08/Nov/2025 10:49:58] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:49:58] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:49:58] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:50:03] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:50:03] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:50:03] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:50:08] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:50:08] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:50:08] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:50:13] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:50:13] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:50:13] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:50:18] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:50:18] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:50:18] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:50:23] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:50:23] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:50:23] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:50:28] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:50:28] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:50:28] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:50:33] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:50:33] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:50:33] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:50:33] "GET / HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:50:38] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:50:38] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:50:38] "GET /health/5000 HTTP/1.0" 200 -
+127.0.0.1 - - [08/Nov/2025 10:50:40] "GET / HTTP/1.1" 200 -
+192.168.50.98 - - [08/Nov/2025 10:50:40] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:50:40] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:50:40] "GET /health/5001 HTTP/1.0" 200 -
+127.0.0.1 - - [08/Nov/2025 10:50:41] "GET / HTTP/1.1" 200 -
+192.168.50.98 - - [08/Nov/2025 10:50:41] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:50:41] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:50:41] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:50:47] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:50:47] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:50:47] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:50:52] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:50:52] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:50:52] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:50:57] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:50:57] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:50:57] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:51:02] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:51:02] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:51:02] "GET /health/5001 HTTP/1.0" 200 -
+127.0.0.1 - - [08/Nov/2025 10:51:06] "GET / HTTP/1.1" 200 -
+192.168.50.98 - - [08/Nov/2025 10:51:06] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:51:06] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:51:06] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:51:11] "GET /health/5001 HTTP/1.0" 200 -
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+Model loaded from /home/hyper/project/hyper-captcha-resolver/captcha_data/gov24/1/model/model_full.pth
+Model loaded successfully!
+Prediction: 007149 (confidence: 0.9999)
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: None
+runtime_port: 5000, requested port: 5001
+runtime_port: 5000, requested port: 5000
+runtime_port: 5000, requested port: None192.168.50.98 - - [08/Nov/2025 10:51:11] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:51:11] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:51:16] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:51:16] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:51:16] "GET /health/5000 HTTP/1.0" 200 -
+127.0.0.1 - - [08/Nov/2025 10:51:18] "[33mGET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1[0m" 404 -
+192.168.50.98 - - [08/Nov/2025 10:51:21] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:51:21] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:51:21] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:51:26] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:51:26] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:51:26] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:51:31] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:51:31] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:51:31] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:51:36] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:51:36] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:51:36] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:51:41] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:51:41] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:51:41] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:51:46] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:51:46] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:51:46] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:51:51] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:51:51] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:51:51] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:51:56] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:51:56] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:51:56] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:52:01] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:52:01] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:52:01] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:52:06] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:52:06] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:52:06] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:52:11] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:52:11] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:52:11] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:52:16] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:52:16] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:52:16] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:52:21] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:52:21] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:52:21] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:52:26] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:52:26] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:52:26] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:52:31] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:52:31] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:52:31] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:52:36] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:52:36] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:52:36] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:52:41] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:52:41] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:52:41] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:52:46] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:52:46] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:52:46] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:52:51] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:52:51] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:52:51] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:52:56] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:52:56] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:52:56] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:53:01] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:53:01] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:53:01] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:53:06] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:53:06] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:53:06] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:53:11] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:53:11] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:53:11] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:53:16] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:53:16] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:53:16] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:53:21] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:53:21] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:53:21] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:53:26] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:53:26] "GET /health/5001 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:53:26] "GET /health/5000 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:53:31] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:53:31] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:53:31] "GET /health/5001 HTTP/1.0" 200 -
+192.168.50.98 - - [08/Nov/2025 10:53:36] "GET /health/ HTTP/1.1" 200 -
+192.168.20.52 - - [08/Nov/2025 10:53:36] "GET /health/5000 HTTP/1.0" 200 -
+192.168.20.52 - - [08/Nov/2025 10:53:36] "GET /health/5001 HTTP/1.0" 200 -

@@ -30,6 +30,7 @@
     /* fixed-top navbar 사용에 따라 상단 패딩을 증가시킵니다 */
     body {
       padding-top: 80px;
+      padding-bottom: 60px;
       background: linear-gradient(180deg, #fbffff, #f7fffe);
       font-family: 'Noto Sans KR', system-ui, -apple-system, Roboto, 'Helvetica Neue', Arial;
     }
@@ -269,6 +270,22 @@
     .status-checking {
       background-color: #FFC107;
     }
+
+    footer.fixed-bottom {
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--nav-bg);
+      color: var(--nav-text);
+      transition: background .12s ease, color .12s ease;
+    }
+
+    /*
+    .container {
+      height: calc(100vh - 80px - 60px);
+    }
+      */
   </style>
 </head>
 
@@ -392,6 +409,12 @@ $response.Content | ConvertFrom-Json</code></pre>
       </div>
     </div>
   </div>
+
+  <footer class="fixed-bottom shadow-sm">
+    <div class="container text-center">
+      <small>&copy; 2024 HyperInfo Co., Ltd. All rights reserved. Trained by PyTorch</small>
+    </div>
+  </footer>
 
   <script>
     const imageInput = document.getElementById('image');

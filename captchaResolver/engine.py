@@ -1,34 +1,33 @@
-import os
-# import time
-import numpy as np
-import shutil
-import glob
-import random
+import os, time
+import shutil, glob, random
+import torch
+import torchvision.transforms as T
 import tensorflow as tf
-# tf.compat.v1.disable_eager_execution()
-# import keras
+import numpy as np
+from PIL import Image
 from typing import Tuple, Optional, Dict
-# from tqdm import tqdm
+from tqdm import tqdm
+from captchaResolver.core import PyTorchModel, ctc_decode
 from captchaResolver.dataclass import CaptchaType, TrainData
 from captchaResolver.keras_core import KerasModel
 
 def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: str = "keras", cpu_only: bool = False) -> Dict[str, CaptchaType]:
 
-    # default = CaptchaType(name="기본 캡챠", desc="기본 캡챠", cpu_only=cpu_only, train_data=TrainData(
-    #     captcha_id="default",
-    #     backend=backend,
-    #     train_data_base_dir=train_data_base_dir,
-    #     label_length=5,
-    #     characters=list('2345678bcdefgmnpwxy')
-    # ))
+    default = CaptchaType(name="기본 캡챠", desc="기본 캡챠", cpu_only=cpu_only, train_data=TrainData(
+        captcha_id="default",
+        backend=backend,
+        train_data_base_dir=train_data_base_dir,
+        label_length=5,
+        characters=list('2345678bcdefgmnpwxy')
+    ))
 
-    # supreme_court = CaptchaType(name="대법원", desc="대법원 캡챠", cpu_only=cpu_only, train_data=TrainData(
-    #     captcha_id="supreme_court",
-    #     backend=backend,
-    #     train_data_base_dir=train_data_base_dir,
-    #     image_width=120,
-    #     image_height=40
-    # ))
+    supreme_court = CaptchaType(name="대법원", desc="대법원 캡챠", cpu_only=cpu_only, train_data=TrainData(
+        captcha_id="supreme_court",
+        backend=backend,
+        train_data_base_dir=train_data_base_dir,
+        image_width=120,
+        image_height=40
+    ))
 
     gov24 = CaptchaType(name="정부 24", desc="대한민국 정부 24 캡챠", cpu_only=cpu_only, train_data=TrainData(
         captcha_id="gov24",
@@ -39,60 +38,332 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: 
         threshold=60
     ))
 
-    # wetax = CaptchaType(name="WETAX", desc="WETAX 캡챠", cpu_only=cpu_only, train_data=TrainData(
-    #     captcha_id="wetax",
-    #     backend=backend,
-    #     train_data_base_dir=train_data_base_dir,
-    #     image_width=200,
-    #     image_height=60
-    # ))
+    wetax = CaptchaType(name="WETAX", desc="WETAX 캡챠", cpu_only=cpu_only, train_data=TrainData(
+        captcha_id="wetax",
+        backend=backend,
+        train_data_base_dir=train_data_base_dir,
+        image_width=200,
+        image_height=60
+    ))
 
-    # kshop = CaptchaType(captcha_id="kshop", name="kshop", desc="KT Shopping 캡챠", cpu_only=cpu_only, train_data=TrainData(
-    #     captcha_id="kshop",
-    #     backend=backend,
-    #     train_data_base_dir=train_data_base_dir,
-    #     image_width=263,
-    #     image_height=54
-    # ))
+    kshop = CaptchaType(captcha_id="kshop", name="kshop", desc="KT Shopping 캡챠", cpu_only=cpu_only, train_data=TrainData(
+        captcha_id="kshop",
+        backend=backend,
+        train_data_base_dir=train_data_base_dir,
+        image_width=263,
+        image_height=54
+    ))
 
     return {
-        # "default": default,
-        # "supreme_court": supreme_court,
+        "default": default,
+        "supreme_court": supreme_court,
         "gov24": gov24,
-        # "wetax": wetax,
-        # "kshop": kshop,
+        "wetax": wetax,
+        "kshop": kshop,
     }
 
-def get_captcha_model(captcha_id: str, backend: str = 'keras', cpu_only: bool = False) -> KerasModel:
-    captcha_type: CaptchaType = get_captcha_type_list(backend=backend, cpu_only=cpu_only)[captcha_id]
+def get_model(captcha_type: CaptchaType) -> PyTorchModel | KerasModel:
     train_data: TrainData = captcha_type.train_data
-    model = KerasModel(captcha_type=captcha_type, verbose=1)
+    if train_data.backend == 'pytorch':
+        model = PyTorchModel(captcha_type=captcha_type, verbose=1)
+    elif train_data.backend == 'keras':
+        model = KerasModel(captcha_type=captcha_type, verbose=1)
+    else:
+        raise ValueError(f"Unsupported backend: {train_data.backend}")
+    
     return model
 
+def get_captcha_model(captcha_id: str = "default", backend: str = "keras", cpu_only: bool = False) -> KerasModel | PyTorchModel:
+    captcha_type_list: Dict[str, CaptchaType] = get_captcha_type_list(backend=backend, cpu_only=cpu_only)
+
+    if captcha_id not in captcha_type_list:
+        raise ValueError(f"Unsupported captcha_id: {captcha_id}")
+
+    captcha_type = captcha_type_list[captcha_id]
+    model = get_model(captcha_type=captcha_type)
+
+    return model
+
+def train_model(
+    model: PyTorchModel | KerasModel,
+    epochs: int = 100,
+    batch_size: int = 32,
+    earlystopping: bool = False,
+    early_stopping_patience: int = 15,
+    learning_rate: float = 0.001,
+    num_workers: int = 0,
+    warmup_epochs: int = 0
+):
+    if model.train_data.backend == 'pytorch':
+        model.model = model.build_model()
+    
+        # Split dataset (dev.ipynb style)
+        train_loader, val_loader = model.split_dataset(
+            batch_size=batch_size,
+            train_size=0.8,
+            shuffle=True,
+            num_workers=num_workers,
+            pin_memory=False
+        )
+        
+        # Train model with early stopping
+        patience = early_stopping_patience if earlystopping else 0
+        
+        hist = model.train_model(
+            train_loader=train_loader,
+            val_loader=val_loader,
+            epochs=epochs,
+            lr=learning_rate,
+            save_best=True,
+            warmup_epochs=warmup_epochs,
+            early_stopping_patience=patience
+        )
+        
+        # Return model directory
+        model_path = model.train_data.get_model_path()
+        model_base_dir = os.path.dirname(model_path)
+        
+        return model_base_dir
+    
+    else:
+        keras_model: KerasModel = model
+        return model.train_model(
+            epochs=epochs,
+            batch_size=batch_size,
+            earlystopping=earlystopping,
+            early_stopping_patience=early_stopping_patience,
+        )      
+
+def batch_predict_model(
+    model: PyTorchModel | KerasModel,
+    batch_size: int = 32,
+) -> Dict[str, float]:
+   
+    start = time.time()
+    
+    if model.train_data.backend == 'pytorch':
+        torch_model: PyTorchModel = model
+        train_data: TrainData = torch_model.train_data
+        torch_model.load_prediction_model()
+        pred_loader = torch_model.create_prediction_dataset(batch_size=batch_size)
+        mapping_inv = {i+1: ch for i, ch in enumerate(train_data.characters)}
+        pred_image_files = train_data.get_data_files(train=False)
+        results = []
+        mismatches = []
+        total = 0
+        match_count = 0
+        debug_first = True  # 첫 번째 불일치에서만 디버그 출력
+        torch_model.model.eval()
+        device = torch_model.device
+
+        with torch.no_grad():
+            tk = tqdm(pred_loader, total=len(pred_loader), desc="Predicting")
+            batch_idx = 0
+            
+            for images, labels in tk:
+                images = images.to(device)
+                labels = labels.to(device)
+                out, _ = torch_model.model(images)
+                out = out.permute(1, 0, 2)
+                # log_softmax 적용 전에 확률 계산
+                out_log_softmax = out.log_softmax(2)
+                out_probs = torch.exp(out_log_softmax)  # log_softmax를 다시 확률로 변환
+                out_argmax = out_log_softmax.argmax(2)
+                
+                out_np = out_argmax.cpu().numpy()
+                probs_np = out_probs.cpu().numpy()
+                
+                for i in range(out_np.shape[0]):
+                    img_idx = batch_idx * batch_size + i
+                    if img_idx >= len(pred_image_files):
+                        break
+                    
+                    image_path = pred_image_files[img_idx]
+                    image_name = os.path.basename(image_path)
+                    expected = os.path.splitext(image_name)[0]
+                    pred_text = ctc_decode(out_np[i:i+1], mapping_inv)
+                    
+                    # 신뢰도 계산: 각 타임스텝의 최대 확률의 평균
+                    max_probs = np.max(probs_np[:, i, :], axis=1)  # (T,) - 각 타임스텝의 최대 확률
+                    confidence = float(np.mean(max_probs))
+                    
+                    is_match = (pred_text == expected)
+                    
+                    if not is_match and debug_first:
+                        debug_first = False  # 첫 디버그 완료
+                    
+                    if is_match:
+                        match_count += 1
+                    else:
+                        mismatches.append({'image': image_name, 'expected': expected, 'pred': pred_text, 'confidence': confidence})
+                    
+                    results.append({'image': image_name, 'expected': expected, 'pred': pred_text, 'confidence': confidence, 'match': is_match})
+                    total += 1
+                
+                batch_idx += 1
+                tk.set_postfix({'Accuracy': f'{match_count/total*100:.2f}%' if total > 0 else '0.00%'})
+
+        end = time.time()
+        # 결과 출력
+        accuracy = (match_count / total * 100) if total > 0 else 0.0
+
+        for r in results:
+            status = "✅" if r['match'] else "❌"
+            print(f"  {status} {r['image']}: {r['expected']} ➡️ {r['pred']} (conf: {r['confidence']:.4f})")
+
+        if mismatches:
+            print(f"\nMismatch samples {len(mismatches)}):")
+            for m in mismatches:
+                print(f"  ❌ {m['image']}: {m['expected']} ➡️ {m['pred']} (conf: {m['confidence']:.4f})")
+
+        print("\n" + "=" * 70)
+        print(f"Prediction Results:")
+        print(f"  Total: {total}")
+        print(f"  Match: {match_count}")
+        print(f"  Mismatch: {total - match_count}")
+        print(f"  Accuracy: {accuracy:.2f}%")
+        print(f"  pred time: {end - start:.2f} sec")
+        print("=" * 70)
+        print("\nPrediction completed!")
+    else:
+        keras_model: KerasModel = model
+        match_count = 0
+        pred_img_path_list = keras_model.train_data.get_data_files(train=False)
+        pred_labels = model.train_data.get_labels(train=False)
+        pred_dataset = tf.data.Dataset.from_tensor_slices((pred_img_path_list, pred_labels))
+        pred_dataset = (
+            pred_dataset
+            .map(keras_model.encode_single_sample, num_parallel_calls=tf.data.AUTOTUNE)
+            .batch(batch_size)
+            .prefetch(buffer_size=tf.data.AUTOTUNE)
+        )
+        
+        keras_model.load_prediction_model()
+        all_preds = []
+        all_labels = []
+        all_confs = []
+        
+        for batch in pred_dataset:
+            images = batch["image"]
+            labels = batch["label"]
+            pred_vals = keras_model.predict_model.predict(images, verbose=0)
+            # 각 샘플별 신뢰도 계산
+            batch_confs = np.max(pred_vals, axis=-1).mean(axis=1)
+            all_confs.extend(batch_confs.tolist())
+            preds = keras_model.decode_batch_predictions(pred_vals)
+            for label in labels:
+                label_text = tf.strings.reduce_join(
+                    keras_model.num_to_char(label + 1)
+                ).numpy().decode("utf-8")
+                all_labels.append(label_text)
+            
+            all_preds.extend(preds)
+        
+        for idx, (ori, pred) in enumerate(zip(all_labels, all_preds)):
+            msg = ""
+            if ori == pred:
+                msg = "✅ "
+            else:
+                msg = "❌ "
+
+            msg = f"{msg} {ori}.png: {ori}    ➡️    {pred} (conf: {all_confs[idx]:.4f})"
+            # msg = f"{msg} {ori}.png: {ori} ➡️ {pred} (conf: {confs[idx]:.4f})"
+            print(msg)
+        
+        end = time.time()
+        total = len(pred_img_path_list)
+        accuracy = match_count / total * 100 if total > 0 else 0
+        print("\n" + "=" * 70)
+        print(f"Prediction Results:")
+        print(f"  Total: {total}")
+        print(f"  Match: {match_count}")
+        print(f"  Mismatch: {total - match_count}")
+        print(f"  Accuracy: {accuracy:.2f}%")
+        print(f"  pred time: {end - start:.2f} sec")
+        print("=" * 70)
+        print("\nPrediction completed!")    
+
 def predict(
-    model: KerasModel,
+    model: PyTorchModel | KerasModel,
     image_path: str,
     model_path: Optional[str] = None,
     verbose: int = 1
 ) -> Tuple[str, float]:
-    keras_model: KerasModel = model
-    image_width = keras_model.train_data.image_width
-    image_height = keras_model.train_data.image_height
-    target_img = keras_model.encode_single_sample(image_path)["image"]
-    target_img = tf.reshape(target_img, shape=[1, image_width, image_height, 1])
+    
+    if model.train_data.backend == 'pytorch':
+        torch_model: PyTorchModel = model
+        train_data: TrainData = torch_model.train_data
+        
+        # 모델 로드
+        predict_model = torch_model.load_prediction_model(model_path)
+        if verbose:
+            print("Model loaded successfully!")
+        
+        # 매핑 정보
+        mapping_inv = {i+1: ch for i, ch in enumerate(train_data.characters)}
+        
+        # 이미지 전처리 (학습 시와 동일한 방식)
+        with Image.open(image_path) as img:
+            image = img.convert('L')
+        
+        # Transform 적용: Resize + ToTensor (학습 시와 동일)
+        transform = T.Compose([
+            T.Resize((train_data.image_height, train_data.image_width)),
+            T.ToTensor()
+        ])
+        
+        image_tensor = transform(image).unsqueeze(0).to(torch_model.device)  # (1, 1, H, W)
+        
+        # Threshold 적용 (ToTensor 후)
+        threshold = train_data.threshold
+        if threshold > 0:
+            threshold_norm = threshold / 255.0
+            image_tensor = torch.where(image_tensor > threshold_norm, torch.ones_like(image_tensor), image_tensor)
+        
+        # 예측
+        with torch.no_grad():
+            out, _ = predict_model(image_tensor)  # (T, 1, C)
+            out = out.permute(1, 0, 2)  # (1, T, C)
+            # log_softmax 적용 전에 확률 계산
+            out_log_softmax = out.log_softmax(2)
+            out_probs = torch.exp(out_log_softmax)  # log_softmax를 다시 확률로 변환
+            out_argmax = out_log_softmax.argmax(2)
+            
+            out_np = out_argmax.cpu().numpy()
+            probs_np = out_probs.cpu().numpy()
+            
+            # 디코딩
+            pred_text = ctc_decode(out_np, mapping_inv)
+            
+            # 신뢰도 계산: 각 타임스텝의 최대 확률의 평균
+            max_probs = np.max(probs_np[:, 0, :], axis=1)  # (T,) - 각 타임스텝의 최대 확률
+            confidence = float(np.mean(max_probs))
+            
+            if verbose:
+                print(f"Prediction: {pred_text} (confidence: {confidence:.4f})")
+            
+            return pred_text, confidence
+    
+    else:
+        keras_model: KerasModel = model
+        image_width = keras_model.train_data.image_width
+        image_height = keras_model.train_data.image_height
+        target_img = keras_model.encode_single_sample(image_path)["image"]
+        target_img = tf.reshape(target_img, shape=[1, image_width, image_height, 1])
 
-    if keras_model.predict_model is None:
-        keras_model.load_prediction_model()
+        if keras_model.predict_model is None:
+            keras_model.load_prediction_model()
 
-    keras_model.verbose = verbose
-    pred_val = keras_model.predict_model.predict(target_img, verbose=keras_model.verbose)
-    pred = keras_model.decode_batch_predictions(pred_val)[0]
+        keras_model.verbose = verbose
+        pred_val = keras_model.predict_model.predict(target_img, verbose=keras_model.verbose)
+        pred = keras_model.decode_batch_predictions(pred_val)[0]
 
-    confidence = float(np.max(pred_val, axis=-1).mean())
+        confidence = float(np.max(pred_val, axis=-1).mean())
 
-    return pred, confidence
+        return pred, confidence
 
-def shuffle_train_data(
+# 새로 추가: image_dir 내의 png 파일을 train/pred 폴더로 train_ratio 비율만큼 재분배
+def redistribute_train_pred(
     image_dir: str, 
     train_ratio: float = 0.9,
     extension: str = 'png',
@@ -296,34 +567,3 @@ def shuffle_train_data(
         "final_pred": final_pred
     }
 
-def get_pred_image(image_dir: str, ext: str = "png") -> Optional[str]:
-    if not image_dir:
-        return None
-
-    # Normalize extension (remove leading dot)
-    if ext.startswith('.'):
-        ext = ext[1:]
-
-    # Ensure directory exists
-    if not os.path.isdir(image_dir):
-        return None
-
-    # Build glob pattern (non-recursive)
-    pattern = os.path.join(image_dir, f"*.{ext}")
-
-    # Use glob to find matching files (case-insensitive by checking extensions)
-    files = glob.glob(pattern)
-
-    # If no files found, try case-insensitive scan
-    if not files:
-        files = [
-            os.path.join(image_dir, f)
-            for f in os.listdir(image_dir)
-            if os.path.isfile(os.path.join(image_dir, f)) and os.path.splitext(f)[1].lower() == f'.{ext.lower()}'
-        ]
-
-    if not files:
-        return None
-
-    chosen = random.choice(files)
-    return os.path.abspath(chosen)

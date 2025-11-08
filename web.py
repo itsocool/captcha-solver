@@ -1,5 +1,4 @@
 import os
-
 cpu_only = os.getenv('CPU_ONLY', '1') == '1'
 
 if cpu_only:
@@ -17,27 +16,31 @@ else:
 import time
 import argparse
 import requests
-from flask import Flask, request, jsonify, render_template, send_file, abort
-from PIL import Image
-from werkzeug.utils import secure_filename
-from captchaResolver import engine
-from captchaResolver.dataclass import CaptchaType, TrainData
-from captchaResolver.keras_core import KerasModel
 import json
+from flask import Flask, request, jsonify, render_template
+from PIL import Image
+from captchaResolver import engine
+from captchaResolver.dataclass import TrainData
+from captchaResolver.core import PyTorchModel
+from captchaResolver.keras_core import KerasModel
 from flask import Response
+from io import BytesIO
 
 captcha_id = 'gov24'
-backend = 'keras'
+backend = 'pytorch'  # 'pytorch' or 'keras'
 rev = 1
 image_width = 200
 image_height = 50
 
-captcha_type: CaptchaType = engine.get_captcha_type_list(backend=backend, cpu_only=cpu_only)[captcha_id]
-model: KerasModel = KerasModel(captcha_type=captcha_type, verbose=1)
+if backend == 'pytorch':
+    model: PyTorchModel = engine.get_captcha_model(captcha_id=captcha_id, backend=backend)
+elif backend == 'keras':
+    model: KerasModel = engine.get_captcha_model(captcha_id=captcha_id, backend=backend)
+    
 train_data: TrainData = model.train_data
-model.train_data.rev = rev
-model.train_data.image_width = image_width
-model.train_data.image_height = image_height
+train_data.rev = rev
+train_data.image_width = image_width
+train_data.image_height = image_height
 
 app = Flask(__name__)
 
@@ -83,17 +86,25 @@ def health(port=None):
         response.headers['Access-Control-Allow-Origin'] = '*'
         return response
 
-def image_preprocess(image: Image.Image) -> Image.Image:
-    if image.mode != 'RGB' and image.mode != 'L':
-        image = image.convert('RGB')
+def predict(image: Image.Image):
+    if image.size != (image_width, image_height):
+        if image.mode != 'RGB' and image.mode != 'L':
+            image = image.convert('RGB')
 
-    image = image.crop((1, 1, image.width, image.height))
-    image = image.resize((image_width, image_height), Image.Resampling.LANCZOS)
+        image = image.crop((1, 1, image.width, image.height))
+        image = image.resize((image_width, image_height), Image.Resampling.LANCZOS)
 
-    return image
+    start = time.perf_counter()
+    image_path = f"/tmp/{time.time()}.png"
+    image.save(image_path)
+    pred, confidence = engine.predict(model=model, image_path=image_path)
+    elapsed_ms = int(round((time.perf_counter() - start) * 1000))
+    image.close()
+    os.remove(image_path)
+    return pred, confidence, elapsed_ms
 
 @app.route("/api/v1/captcha", methods=["POST"])
-def predict():
+def predict_multi_part():
     if 'image' not in request.files:
         return jsonify({"error": "no file part 'image' in request"}), 400
 
@@ -101,85 +112,36 @@ def predict():
     if f.filename == '':
         return jsonify({"error": "no selected file"}), 400
 
-    filename = secure_filename(f.filename)
-    label_guess = os.path.splitext(filename)[0]
-
-    stream = f.stream
-    image: Image.Image = Image.open(stream)
- 
-    if image.size != (image_width, image_height):
-        image = image_preprocess(image)
-    # Measure processing time (ms)
-    start = time.perf_counter()
-
-    image_path = f"/tmp/{time.time()}.png"
-    image.save(image_path)
-    pred, confidence = engine.predict(model=model, image_path=image_path)
-
-    elapsed_ms = int(round((time.perf_counter() - start) * 1000))
-
-    image.close()
-    os.remove(image_path)
-    return jsonify({"predicted": pred, "confidence": confidence, "processing_ms": elapsed_ms})
+    try:
+        stream = f.stream
+        image: Image.Image = Image.open(stream)
+        pred, confidence, elapsed_ms = predict(image)
+        return jsonify({"predicted": pred, "confidence": confidence, "processing_ms": elapsed_ms})
+    except Exception as e:
+        return jsonify({"error": f"Failed to process image: {str(e)}"}), 400
 
 @app.route("/api/v1/captcha/octet-stream", methods=["POST"])
 def predict_octet_stream():
-    """
-    Handles octet-stream binary file upload for captcha prediction
-    Content-Type: application/octet-stream
-    """
-    # Check content type
     if request.content_type != 'application/octet-stream':
         return jsonify({"error": "Content-Type must be application/octet-stream"}), 400
     
-    # Get raw binary data
     binary_data = request.get_data()
     
     if not binary_data:
         return jsonify({"error": "no binary data received"}), 400
     
     try:
-        # Create image from binary data
-        from io import BytesIO
         image_stream = BytesIO(binary_data)
         image: Image.Image = Image.open(image_stream)
-        
-        # Preprocess image if needed
-        if image.size != (image_width, image_height):
-            image = image_preprocess(image)
-        
-        # Measure processing time (ms)
-        start = time.perf_counter()
-
-        # Save temporary image for prediction
-        image_path = f"/tmp/{time.time()}.png"
-        image.save(image_path)
-        pred, confidence = engine.predict(model=model, image_path=image_path)
-
-        elapsed_ms = int(round((time.perf_counter() - start) * 1000))
-
-        # Cleanup
-        image.close()
-        image_stream.close()
-        os.remove(image_path)
-        
-        return jsonify({"predicted": pred, "confidence": confidence, "processing_ms": elapsed_ms})
-        
+        pred, confidence, elapsed_ms = predict(image)
+        return jsonify({"predicted": pred, "confidence": confidence, "processing_ms": elapsed_ms})     
     except Exception as e:
         return jsonify({"error": f"Failed to process image: {str(e)}"}), 400
 
 if __name__ == '__main__':
-    # Parse command line arguments
     parser = argparse.ArgumentParser(description='Captcha Resolver Web Server')
     parser.add_argument('--port', type=int, default=5000, help='Port to run the server on (default: 5000)')
     args = parser.parse_args()
-    
-    # 전역 변수에 현재 포트 저장
     current_port = args.port
-    
-    # Check if we're in production environment
     is_production = os.getenv('FLASK_ENV') == 'production' or os.path.exists('/.dockerenv')
-    
-    # When run directly: start Flask development server
     app.run(host='0.0.0.0', port=args.port, debug=not is_production)
-
