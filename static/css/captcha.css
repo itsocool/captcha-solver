@@ -1,0 +1,274 @@
+:root {
+  --teal: #0d9488;
+  --teal-2: #14b8a6;
+  --teal-50: #e6fffb;
+  --nav-bg: #ffffff;
+  --nav-text: rgba(0, 0, 0, 0.8);
+}
+
+/* dropzone color tokens (overridden in dark mode) */
+:root {
+  --drop-bg: #ffffff;
+  --drop-text: rgba(0, 0, 0, 0.65);
+  --drop-accent: var(--teal);
+}
+
+/* fixed-top navbar 사용에 따라 상단 패딩을 증가시킵니다 */
+body {
+  padding-top: 80px;
+  padding-bottom: 60px;
+  background: linear-gradient(180deg, #fbffff, #f7fffe);
+  font-family: 'Noto Sans KR', system-ui, -apple-system, Roboto, 'Helvetica Neue', Arial;
+}
+
+/* navbar 스타일 (테마에 따라 색상이 바뀝니다) */
+nav.navbar {
+  background: var(--nav-bg);
+  color: var(--nav-text);
+  transition: background .12s ease, color .12s ease;
+}
+
+nav.navbar .navbar-brand,
+nav.navbar .nav-link {
+  color: var(--nav-text);
+}
+
+nav.navbar .nav-link.active {
+  color: var(--teal) !important;
+  font-weight: 600
+}
+
+.preview-img {
+  max-width: 100%;
+  max-height: 220px;
+  object-fit: contain;
+  border: 1px solid var(--teal-2);
+  padding: 6px;
+  border-radius: 6px;
+  background: #fff
+}
+
+/* Dropzone look */
+#dropzone {
+  background: var(--drop-bg);
+  color: var(--drop-text);
+  transition: background .15s ease, color .12s ease;
+}
+
+#dropzone .bi {
+  color: var(--drop-accent);
+}
+
+.border-dashed {
+  border-style: dashed !important;
+}
+
+#dropzone.dragover {
+  background: var(--teal-50);
+  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.06);
+}
+
+#dropFilename {
+  color: rgba(0, 0, 0, 0.6);
+}
+
+.monospace {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', 'Helvetica Neue', monospace;
+}
+
+.btn-teal {
+  background-color: var(--teal);
+  border-color: var(--teal);
+  color: #fff
+}
+
+.btn-teal:hover,
+.btn-teal:focus {
+  background-color: var(--teal-2);
+  border-color: var(--teal-2);
+}
+
+.card.border-teal {
+  border: 1px solid rgba(13, 148, 136, 0.15);
+}
+
+.card .card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px
+}
+
+.icon-circle {
+  width: 36px;
+  height: 36px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--teal);
+  color: #fff
+}
+
+.bg-teal-soft {
+  background: var(--teal-50);
+  border-radius: 6px;
+  padding: 6px
+}
+
+.spinner-teal {
+  color: var(--teal)
+}
+
+/* Result card improvements for better visibility */
+.result-card {
+  border-left: 4px solid var(--teal);
+  box-shadow: 0 6px 18px rgba(13, 148, 136, 0.06);
+  background: linear-gradient(180deg, #ffffff, #fbfffe);
+}
+
+.result-card .card-body {
+  padding: 0.75rem 1rem;
+}
+
+.predicted-text {
+  font-size: 1.15rem;
+  color: #0b6a63;
+}
+
+.confidence-badge {
+  font-weight: 700;
+}
+
+.result-card img.img-thumbnail {
+  border: 1px solid rgba(13, 148, 136, 0.08);
+}
+
+.result-card:hover {
+  transform: translateY(-3px);
+  transition: transform .12s ease-out;
+}
+
+/* Dark mode overrides (applied when body[data-theme="dark"]) */
+body[data-theme="dark"] {
+  background: linear-gradient(180deg, #071919, #052625);
+  color: #e6fffb
+}
+
+/* dark-mode 토큰: navbar 배경/문자색 포함 */
+body[data-theme="dark"] {
+  --drop-bg: #052625;
+  --drop-text: rgba(230, 255, 251, 0.95);
+  --drop-accent: #14b8a6;
+  --nav-bg: #052625;
+  --nav-text: rgba(230, 255, 251, 0.95);
+}
+
+body[data-theme="dark"] .card {
+  background: #072624;
+  color: #d7fff6
+}
+
+body[data-theme="dark"] .card.border-teal {
+  border-color: rgba(20, 184, 166, 0.12)
+}
+
+body[data-theme="dark"] .preview-img {
+  border-color: rgba(20, 184, 166, 0.18);
+  background: #052625
+}
+
+body[data-theme="dark"] .btn-teal {
+  background-color: #0ebaa6;
+  border-color: #0ebaa6
+}
+
+body[data-theme="dark"] .bg-teal-soft {
+  background: rgba(20, 184, 166, 0.08);
+}
+
+body[data-theme="dark"] .result-card {
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6);
+}
+
+/* mode select: Bootstrap 기반, 테마 토큰을 사용하여 라이트/다크 모두에 적절하게 표시 */
+#modeSelect.mode-select {
+  min-width: 140px;
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  border-radius: .375rem;
+  background: var(--drop-bg);
+  color: var(--drop-text);
+  border: 1px solid rgba(13, 148, 136, 0.12);
+  transition: background .12s ease, color .12s ease, border-color .12s ease, box-shadow .12s ease;
+}
+
+/* focus / active */
+#modeSelect.mode-select:focus {
+  outline: none;
+  box-shadow: 0 0 0 0.2rem rgba(20, 184, 166, 0.12);
+  border-color: var(--teal-2);
+}
+
+/* 옵션 텍스트(브라우저 간 동작 차이 존재) */
+#modeSelect.mode-select option {
+  background: var(--drop-bg);
+  color: var(--drop-text);
+}
+
+/* dark mode overrides inherit token values defined above */
+body[data-theme="dark"] #modeSelect.mode-select {
+  background: rgba(20, 184, 166, 0.03);
+  color: var(--drop-text);
+  border-color: rgba(20, 184, 166, 0.14);
+}
+
+.server-status {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-left: auto;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 14px;
+}
+
+.status-indicator {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  transition: background-color 0.3s;
+}
+
+.status-online {
+  background-color: #4CAF50;
+  box-shadow: 0 0 8px rgba(76, 175, 80, 0.6);
+}
+
+.status-offline {
+  background-color: #f44336;
+}
+
+.status-checking {
+  background-color: #FFC107;
+}
+
+footer.fixed-bottom {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--nav-bg);
+  color: var(--nav-text);
+  transition: background .12s ease, color .12s ease;
+}
+
+/*
+.container {
+  height: calc(100vh - 80px - 60px);
+}
+  */

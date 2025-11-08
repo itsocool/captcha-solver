@@ -4,10 +4,9 @@ set -euo pipefail
 COMMAND=${1:-start}
 PORT=5000
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/." && pwd)"
-# FLASK_ENV 기본값 설정
 FLASK_ENV=${FLASK_ENV:-development}
-CPU_ONLY=${CPU_ONLY:-0}
-# python 우선, 없으면 python3 사용
+DEVICE=${DEVICE:-cpu}
+
 if command -v python >/dev/null 2>&1; then
   PYTHON=$(command -v python)
 elif command -v python3 >/dev/null 2>&1; then
@@ -16,6 +15,7 @@ else
   echo "ERROR: Neither python nor python3 found in PATH" >&2
   exit 1
 fi
+
 LOG_DIR="$BASE_DIR/logs"
 LOG="$LOG_DIR/web.log"
 PIDFILE="$BASE_DIR/web.pid"

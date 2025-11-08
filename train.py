@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 # os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # TensorFlow C++ 로그 레벨 (0=ALL,1=INFO,2=WARNING,3=ERROR)
 # os.environ['GLOG_minloglevel'] = '2'  # Google 로깅
 
@@ -16,16 +17,22 @@ backend = 'pytorch'
 rev = 1
 image_width = 200
 image_height = 50
-epochs = 40
+epochs = 60
 batch_size = 32
 early_stopping_patience = 6
-save_model = False
+train_ratio = 0.9
+shuffle = False
 
 model: PyTorchModel = engine.get_captcha_model(captcha_id=captcha_id, backend=backend)
 train_data: TrainData = model.train_data
 model.train_data.rev = rev
 model.train_data.image_width = image_width
 model.train_data.image_height = image_height
+
+if shuffle:
+    image_dir = Path(train_data.get_image_dir()).parent.as_posix()
+    engine.redistribute_train_pred(image_dir=image_dir, train_ratio=train_ratio)
+
 model_base_dir = engine.train_model(
     model=model,
     epochs=epochs,

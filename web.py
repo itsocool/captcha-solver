@@ -1,7 +1,9 @@
 import os
-cpu_only = os.getenv('CPU_ONLY', '1') == '1'
 
-if cpu_only:
+from torch import device
+DEVICE = os.getenv('DEVICE', 'cpu')
+
+if DEVICE == 'cpu':
     os.environ["NVIDIA_VISIBLE_DEVICES"] = "none"
     os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
     os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
@@ -44,13 +46,21 @@ train_data.image_height = image_height
 
 app = Flask(__name__)
 
-model.load_prediction_model(cpu_only=True)
+model.load_prediction_model()
 
 @app.route("/")
 @app.route("/captcha")
 def index():
     # Render a small test page that lets users upload an image and see prediction
-    return render_template('captcha.html', cpu_only=cpu_only, backend=backend, captcha_id=captcha_id, rev=rev, image_width=image_width, image_height=image_height)
+    return render_template(
+        'captcha.html',
+        device=DEVICE.upper(),
+        backend=backend,
+        captcha_id=captcha_id,
+        rev=rev,
+        image_width=image_width,
+        image_height=image_height
+    )
 
 @app.route("/health/")
 @app.route("/health/<int:port>")

@@ -11,9 +11,9 @@ from captchaResolver.core import PyTorchModel, ctc_decode
 from captchaResolver.dataclass import CaptchaType, TrainData
 from captchaResolver.keras_core import KerasModel
 
-def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: str = "keras", cpu_only: bool = False) -> Dict[str, CaptchaType]:
+def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: str = "keras") -> Dict[str, CaptchaType]:
 
-    default = CaptchaType(name="기본 캡챠", desc="기본 캡챠", cpu_only=cpu_only, train_data=TrainData(
+    default = CaptchaType(name="기본 캡챠", desc="기본 캡챠", train_data=TrainData(
         captcha_id="default",
         backend=backend,
         train_data_base_dir=train_data_base_dir,
@@ -21,7 +21,7 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: 
         characters=list('2345678bcdefgmnpwxy')
     ))
 
-    supreme_court = CaptchaType(name="대법원", desc="대법원 캡챠", cpu_only=cpu_only, train_data=TrainData(
+    supreme_court = CaptchaType(name="대법원", desc="대법원 캡챠", train_data=TrainData(
         captcha_id="supreme_court",
         backend=backend,
         train_data_base_dir=train_data_base_dir,
@@ -29,7 +29,7 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: 
         image_height=40
     ))
 
-    gov24 = CaptchaType(name="정부 24", desc="대한민국 정부 24 캡챠", cpu_only=cpu_only, train_data=TrainData(
+    gov24 = CaptchaType(name="정부 24", desc="대한민국 정부 24 캡챠", train_data=TrainData(
         captcha_id="gov24",
         backend=backend,
         train_data_base_dir=train_data_base_dir,
@@ -38,7 +38,7 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: 
         threshold=60
     ))
 
-    wetax = CaptchaType(name="WETAX", desc="WETAX 캡챠", cpu_only=cpu_only, train_data=TrainData(
+    wetax = CaptchaType(name="WETAX", desc="WETAX 캡챠", train_data=TrainData(
         captcha_id="wetax",
         backend=backend,
         train_data_base_dir=train_data_base_dir,
@@ -46,7 +46,7 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: 
         image_height=60
     ))
 
-    kshop = CaptchaType(captcha_id="kshop", name="kshop", desc="KT Shopping 캡챠", cpu_only=cpu_only, train_data=TrainData(
+    kshop = CaptchaType(captcha_id="kshop", name="kshop", desc="KT Shopping 캡챠", train_data=TrainData(
         captcha_id="kshop",
         backend=backend,
         train_data_base_dir=train_data_base_dir,
@@ -73,8 +73,8 @@ def get_model(captcha_type: CaptchaType) -> PyTorchModel | KerasModel:
     
     return model
 
-def get_captcha_model(captcha_id: str = "default", backend: str = "keras", cpu_only: bool = False) -> KerasModel | PyTorchModel:
-    captcha_type_list: Dict[str, CaptchaType] = get_captcha_type_list(backend=backend, cpu_only=cpu_only)
+def get_captcha_model(captcha_id: str = "default", backend: str = "keras") -> KerasModel | PyTorchModel:
+    captcha_type_list: Dict[str, CaptchaType] = get_captcha_type_list(backend=backend)
 
     if captcha_id not in captcha_type_list:
         raise ValueError(f"Unsupported captcha_id: {captcha_id}")
@@ -286,63 +286,24 @@ def batch_predict_model(
 def predict(
     model: PyTorchModel | KerasModel,
     image_path: str,
-    model_path: Optional[str] = None,
     verbose: int = 1
 ) -> Tuple[str, float]:
     
     if model.train_data.backend == 'pytorch':
         torch_model: PyTorchModel = model
-        train_data: TrainData = torch_model.train_data
         
-        # 모델 로드
-        predict_model = torch_model.load_prediction_model(model_path)
+        # load_prediction_model() 호출 (내부에서 모델 초기화 및 로드)
+        if torch_model.model is None:
+            torch_model.load_prediction_model()
+        
+        # predict() 메서드 사용 - 텍스트와 신뢰도 반환
+        pred_text, confidence = torch_model.predict(image_path)
+        
         if verbose:
-            print("Model loaded successfully!")
+            print(f"image_path: {image_path}")
+            print(f"Prediction: {pred_text} (confidence: {confidence:.4f})")
         
-        # 매핑 정보
-        mapping_inv = {i+1: ch for i, ch in enumerate(train_data.characters)}
-        
-        # 이미지 전처리 (학습 시와 동일한 방식)
-        with Image.open(image_path) as img:
-            image = img.convert('L')
-        
-        # Transform 적용: Resize + ToTensor (학습 시와 동일)
-        transform = T.Compose([
-            T.Resize((train_data.image_height, train_data.image_width)),
-            T.ToTensor()
-        ])
-        
-        image_tensor = transform(image).unsqueeze(0).to(torch_model.device)  # (1, 1, H, W)
-        
-        # Threshold 적용 (ToTensor 후)
-        threshold = train_data.threshold
-        if threshold > 0:
-            threshold_norm = threshold / 255.0
-            image_tensor = torch.where(image_tensor > threshold_norm, torch.ones_like(image_tensor), image_tensor)
-        
-        # 예측
-        with torch.no_grad():
-            out, _ = predict_model(image_tensor)  # (T, 1, C)
-            out = out.permute(1, 0, 2)  # (1, T, C)
-            # log_softmax 적용 전에 확률 계산
-            out_log_softmax = out.log_softmax(2)
-            out_probs = torch.exp(out_log_softmax)  # log_softmax를 다시 확률로 변환
-            out_argmax = out_log_softmax.argmax(2)
-            
-            out_np = out_argmax.cpu().numpy()
-            probs_np = out_probs.cpu().numpy()
-            
-            # 디코딩
-            pred_text = ctc_decode(out_np, mapping_inv)
-            
-            # 신뢰도 계산: 각 타임스텝의 최대 확률의 평균
-            max_probs = np.max(probs_np[:, 0, :], axis=1)  # (T,) - 각 타임스텝의 최대 확률
-            confidence = float(np.mean(max_probs))
-            
-            if verbose:
-                print(f"Prediction: {pred_text} (confidence: {confidence:.4f})")
-            
-            return pred_text, confidence
+        return pred_text, confidence
     
     else:
         keras_model: KerasModel = model
@@ -356,11 +317,11 @@ def predict(
 
         keras_model.verbose = verbose
         pred_val = keras_model.predict_model.predict(target_img, verbose=keras_model.verbose)
-        pred = keras_model.decode_batch_predictions(pred_val)[0]
+        pred_text = keras_model.decode_batch_predictions(pred_val)[0]
 
         confidence = float(np.max(pred_val, axis=-1).mean())
 
-        return pred, confidence
+        return pred_text, confidence
 
 # 새로 추가: image_dir 내의 png 파일을 train/pred 폴더로 train_ratio 비율만큼 재분배
 def redistribute_train_pred(

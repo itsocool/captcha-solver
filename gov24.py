@@ -1,6 +1,19 @@
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
+DEVICE = os.getenv('DEVICE', 'cpu')
+if DEVICE == 'cpu':
+    os.environ["NVIDIA_VISIBLE_DEVICES"] = "none"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+    os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+else:
+    if "NVIDIA_VISIBLE_DEVICES" in os.environ:
+        del os.environ["NVIDIA_VISIBLE_DEVICES"] 
+    if "CUDA_VISIBLE_DEVICES" in os.environ:
+        del os.environ["CUDA_VISIBLE_DEVICES"] 
+    if "TF_CPP_MIN_LOG_LEVEL" in os.environ:
+        del os.environ["TF_CPP_MIN_LOG_LEVEL"]
+
 import warnings
 warnings.filterwarnings('ignore', category=DeprecationWarning)
 
@@ -12,7 +25,6 @@ NULL_OUT = open(os.devnull, "w")
 STD_OUT = sys.stdout
 sys.stdout = NULL_OUT
 
-cpu_only = os.getenv('CPU_ONLY', '1') == '1'
 backend = 'keras'
 argv = None
 exec = 'gov24.exe'
@@ -74,7 +86,6 @@ def predict(image_path: str) -> str:
     captcha_type : dataclass.CaptchaType = dataclass.CaptchaType(
         name="정부 24",
         desc="대한민국 정부 24 캡챠",
-        cpu_only=cpu_only,
         train_data=train_data)
     model: KerasModel = KerasModel(captcha_type=captcha_type, verbose=0)
     pred, confidence = engine.predict(model=model, image_path=image_path)

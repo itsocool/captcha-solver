@@ -11,7 +11,7 @@ services:
     environment:
       - HOST_PORT=5001
       - FLASK_ENV=production
-      - CPU_ONLY=1
+      - DEVICE=cpu
       - CAPTCHA_ID=gov24
       - BACKEND=pytorch
       - REV=1
