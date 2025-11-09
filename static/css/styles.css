@@ -441,8 +441,41 @@ footer.fixed-bottom {
   padding: 8px;
   border-top: 1px solid var(--chat-border);
   display: flex;
-  gap: 8px;
-  align-items: center;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chat-widget .chat-input-wrapper {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+}
+
+/* File preview area */
+.chat-file-preview {
+  width: 100%;
+}
+
+.chat-file-preview .bg-light {
+  background: rgba(0,0,0,0.03) !important;
+}
+
+.chat-widget[data-theme="dark"] .chat-file-preview .bg-light {
+  background: rgba(255,255,255,0.06) !important;
+}
+
+.chat-widget[data-theme="dark"] .chat-file-preview .border {
+  border-color: rgba(255,255,255,0.12) !important;
+}
+
+/* Drag over effect */
+.chat-footer.drag-over {
+  background: rgba(13,148,136,0.08);
+  border-color: var(--teal) !important;
+}
+
+.chat-widget[data-theme="dark"] .chat-footer.drag-over {
+  background: rgba(6,182,212,0.12);
 }
 
 /* Chat footer input -> support textarea auto-resize with scroll after 4 lines */

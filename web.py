@@ -333,31 +333,53 @@ def _handle_normal_response(full_message: str):
     return jsonify({"text": text, "confidence": confidence, "processing_ms": elapsed_ms})
 
 
-@app.route("/api/v1/chat", methods=["GET"])
+@app.route("/api/v1/chat", methods=["GET", "POST"])
 def chat_text():
-    """Simple text chat endpoint.
+    """Simple text chat endpoint with optional image attachment.
 
     Usage:
       GET /api/v1/chat?message=hello
       GET /api/v1/chat?message=how+to+use+tf&library=tensorflow
       GET /api/v1/chat?message=hello&stream=1
+      POST /api/v1/chat (with form-data: message=hello, image=<file>, stream=1)
 
-    Query Parameters:
-      - message: The chat message (required)
+    Query/Form Parameters:
+      - message: The chat message (required if no image)
       - library: Optional library name for Context7 cached docs
       - stream: '1', 'true', or 'on' to enable streaming response
+      - image: Optional image file (POST only)
 
     If `library` query param is provided, this endpoint will look for a cached
     Context7 document at `cached_contexts/<library>.txt` (relative to project root)
     and prepend it to the user's message before calling the chat helper.
-    """
-    # Read query params
-    message = request.args.get('message') or request.values.get('message') or ''
-    library = request.args.get('library') or None
-    stream_flag = request.args.get('stream') or request.values.get('stream') or '0'
     
-    # Prepare full message with optional context
-    full_message = _prepare_full_message(message, library)
+    If an image is provided, it will be processed first using the captcha model,
+    and the prediction will be included in the message context.
+    """
+    # Read params from both query and form
+    message = request.args.get('message') or request.form.get('message') or ''
+    library = request.args.get('library') or request.form.get('library') or None
+    stream_flag = request.args.get('stream') or request.form.get('stream') or '0'
+    
+    # Handle image attachment if present
+    image_context = ""
+    if 'image' in request.files:
+        file = request.files['image']
+        if file and file.filename:
+            try:
+                # Process image with captcha model
+                image = Image.open(file.stream)
+                start_time = time.time()
+                predicted, confidence = model.predict(image)
+                processing_ms = int((time.time() - start_time) * 1000)
+                
+                image_context = f"\n\n[이미지 분석 결과]\n예측값: {predicted}\n신뢰도: {confidence:.4f}\n처리시간: {processing_ms}ms\n\n"
+            except Exception as e:
+                image_context = f"\n\n[이미지 처리 오류: {str(e)}]\n\n"
+    
+    # Prepare full message with image context and optional library context
+    full_message = image_context + message
+    full_message = _prepare_full_message(full_message, library)
     
     # Determine if client requested streaming
     use_stream = str(stream_flag).lower() in ('1', 'true', 'on')

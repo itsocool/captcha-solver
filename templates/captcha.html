@@ -164,12 +164,27 @@ $response.Content | ConvertFrom-Json</code></pre>
     <div class="chat-body">
       <div class="text-muted small">챗봇이 아직 연결되어 있지 않습니다. 간단한 안내 메시지나 모델 정보를 표시하려면 이곳을 업데이트하세요.</div>
     </div>
-    <div class="chat-footer">
-      <textarea id="chatInput" class="form-control form-control-sm" rows="1" placeholder="메시지를 입력하세요 (Shift+Enter 줄바꿈, Enter 전송)" aria-label="Chat input"></textarea>
-      <button id="chatSendBtn" class="btn btn-sm btn-teal d-flex align-items-center" type="button" aria-label="메시지 전송" title="전송">
-        <span class="send-icon" aria-hidden="true"><i class="bi bi-send-fill"></i></span>
-        <span class="send-spinner visually-hidden" aria-hidden="true"><span class="spinner-border spinner-border-sm text-white" role="status" aria-hidden="true"></span></span>
-      </button>
+    <div class="chat-footer" id="chatFooter">
+      <div class="chat-file-preview d-none" id="chatFilePreview">
+        <div class="d-flex align-items-center gap-2 p-2 bg-light border rounded mb-2">
+          <i class="bi bi-file-earmark-image text-primary"></i>
+          <span class="small flex-grow-1 text-truncate" id="chatFileName">file.png</span>
+          <button type="button" class="btn btn-sm btn-outline-danger" id="chatFileRemove" title="파일 제거">
+            <i class="bi bi-x"></i>
+          </button>
+        </div>
+      </div>
+      <div class="chat-input-wrapper d-flex align-items-end gap-1">
+        <!-- <input type="file" id="chatFileInput" class="d-none" accept="image/*" aria-label="파일 첨부">
+        <button type="button" id="chatFileBtn" class="btn btn-sm btn-outline-secondary d-flex align-items-center" title="파일 첨부" aria-label="파일 첨부">
+          <i class="bi bi-paperclip"></i>
+        </button> -->
+        <textarea id="chatInput" class="form-control form-control-sm flex-grow-1" rows="1" placeholder="메시지를 입력하세요 (Shift+Enter 줄바꿈)" aria-label="Chat input"></textarea>
+        <button id="chatSendBtn" class="btn btn-sm btn-teal d-flex align-items-center" type="button" aria-label="메시지 전송" title="전송">
+          <span class="send-icon" aria-hidden="true"><i class="bi bi-send-fill"></i></span>
+          <span class="send-spinner visually-hidden" aria-hidden="true"><span class="spinner-border spinner-border-sm text-white" role="status" aria-hidden="true"></span></span>
+        </button>
+      </div>
     </div>
   </div>
 

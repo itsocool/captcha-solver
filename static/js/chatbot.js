@@ -6,8 +6,17 @@
     var closeBtn = document.getElementById('chatCloseBtn');
     var sendBtn = document.getElementById('chatSendBtn');
     var input = document.getElementById('chatInput');
+    var chatFooter = document.getElementById('chatFooter');
+    var chatFileInput = document.getElementById('chatFileInput');
+    var chatFileBtn = document.getElementById('chatFileBtn');
+    var chatFilePreview = document.getElementById('chatFilePreview');
+    var chatFileName = document.getElementById('chatFileName');
+    var chatFileRemove = document.getElementById('chatFileRemove');
 
     if (!toggleBtn || !widget) return;
+
+    // File attachment state
+    var attachedFile = null;
 
     // Theme handling: widget follows global theme only. It will set
     // data-theme on the widget based on document-level indicators
@@ -70,6 +79,75 @@
 
     if (closeBtn) closeBtn.addEventListener('click', closeWidget);
 
+    // File attachment handlers
+    if (chatFileBtn && chatFileInput) {
+      chatFileBtn.addEventListener('click', function() {
+        chatFileInput.click();
+      });
+
+      chatFileInput.addEventListener('change', function(e) {
+        if (e.target.files && e.target.files[0]) {
+          handleFileSelect(e.target.files[0]);
+        }
+      });
+    }
+
+    if (chatFileRemove) {
+      chatFileRemove.addEventListener('click', function() {
+        clearAttachment();
+      });
+    }
+
+    // Drag and drop on chat footer
+    if (chatFooter) {
+      chatFooter.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        chatFooter.classList.add('drag-over');
+      });
+
+      chatFooter.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        chatFooter.classList.remove('drag-over');
+      });
+
+      chatFooter.addEventListener('drop', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        chatFooter.classList.remove('drag-over');
+        
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+          handleFileSelect(e.dataTransfer.files[0]);
+        }
+      });
+    }
+
+    function handleFileSelect(file) {
+      if (!file.type.startsWith('image/')) {
+        alert('이미지 파일만 첨부할 수 있습니다.');
+        return;
+      }
+      
+      attachedFile = file;
+      if (chatFileName) {
+        chatFileName.textContent = file.name;
+      }
+      if (chatFilePreview) {
+        chatFilePreview.classList.remove('d-none');
+      }
+    }
+
+    function clearAttachment() {
+      attachedFile = null;
+      if (chatFileInput) {
+        chatFileInput.value = '';
+      }
+      if (chatFilePreview) {
+        chatFilePreview.classList.add('d-none');
+      }
+    }
+
     // Close on ESC
     document.addEventListener('keydown', function (ev) {
       if (ev.key === 'Escape' && widget.classList.contains('open')) {
@@ -101,7 +179,7 @@
       input.addEventListener('input', function () { adjustTextareaHeight(input); });
       sendBtn.addEventListener('click', async function () {
         var v = input.value && input.value.trim();
-        if (!v) return;
+        if (!v && !attachedFile) return;
 
         var bodyEl = widget.querySelector('.chat-body');
         // show user message as bubble
@@ -135,7 +213,11 @@
           bodyEl.scrollTop = bodyEl.scrollHeight;
         }
 
-        appendMessage('user', v);
+        var userMsg = v || '';
+        if (attachedFile) {
+          userMsg += (userMsg ? '\n' : '') + '📎 ' + attachedFile.name;
+        }
+        appendMessage('user', userMsg);
 
         // disable input while waiting and show spinner
         sendBtn.disabled = true;
@@ -149,20 +231,38 @@
         } catch (e) { /* ignore */ }
 
         try {
-          var url = new URL('/api/v1/chat', window.location.origin);
-          url.searchParams.append('message', v);
           // include stream flag if the toggle exists
           var streamToggle = document.getElementById('chatStreamToggle');
           var useStream = false;
           if (streamToggle) {
-            var checked = !!streamToggle.checked;
-            url.searchParams.append('stream', checked ? '1' : '0');
-            useStream = checked;
+            useStream = !!streamToggle.checked;
+          }
+
+          // Prepare request based on whether file is attached
+          var fetchOptions = { method: 'GET' };
+          var url = new URL('/api/v1/chat', window.location.origin);
+          
+          if (attachedFile) {
+            // Use POST with FormData for file upload
+            var formData = new FormData();
+            formData.append('message', v || '');
+            formData.append('image', attachedFile);
+            formData.append('stream', useStream ? '1' : '0');
+            
+            url = new URL('/api/v1/chat', window.location.origin);
+            fetchOptions = {
+              method: 'POST',
+              body: formData
+            };
+          } else {
+            // Use GET with query params for text-only
+            url.searchParams.append('message', v);
+            url.searchParams.append('stream', useStream ? '1' : '0');
           }
 
           if (useStream) {
             // open a streaming fetch and read chunks progressively
-            var resp = await fetch(url, { method: 'GET' });
+            var resp = await fetch(url, fetchOptions);
             if (!resp.ok) {
               var dataErr = null;
               try { dataErr = await resp.json(); } catch (e) { /* ignore */ }
@@ -202,7 +302,7 @@
               }
             }
           } else {
-            var resp = await fetch(url, { method: 'GET' });
+            var resp = await fetch(url, fetchOptions);
             var data = await resp.json();
             if (!resp.ok) {
               var errMsg = data.error || resp.statusText || 'Unknown error';
@@ -226,6 +326,7 @@
           sendBtn.disabled = false;
           input.disabled = false;
           input.value = '';
+          clearAttachment();
           input.focus();
         }
       });
