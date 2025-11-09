@@ -6,10 +6,10 @@ import argparse
 import requests
 import json
 import time
-from ollama import ChatResponse, chat
+from ollama import Client, ChatResponse, chat
 
-OLLAMA_HOST = os.getenv('OLLAMA_HOST', 'https://ollama.com/api')
-os.environ.setdefault('OLLAMA_HOST', 'https://ollama.com/api')
+OLLAMA_HOST = os.getenv('OLLAMA_HOST', 'https://ollama.com')
+os.environ.setdefault('OLLAMA_HOST', 'https://ollama.com')
 OLLAMA_MODEL_ID = os.getenv("OLLAMA_MODEL_ID", "qwen3-vl:235b-instruct-cloud")
 OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY", "f306bbcebc3642f39e43744afa3c13b7.aH1Gn9Al9C-LvxKczozDTU8s")
 
@@ -58,8 +58,8 @@ def ocr_image(
     from ollama import Client
 
     client = Client(
-        host="https://ollama.com",
-        headers={'Authorization': 'Bearer ' + os.environ.get('OLLAMA_API_KEY')}
+        host=OLLAMA_HOST,
+        headers={'Authorization': 'Bearer ' + OLLAMA_API_KEY}
     )
 
     response: ChatResponse = client.chat(
@@ -97,205 +97,255 @@ def ocr_image(
         "bbox": None
     }
 
-# def cloud_chat(
+def chat_text(
+    message: str,
+    stream: bool = False,
+    model_id: str = OLLAMA_MODEL_ID,
+    api_key: str = OLLAMA_API_KEY,
+):
+    start_time = time.perf_counter()
+    
+    # 스트림 모드에 따라 다른 시스템 메시지 사용
+    if stream:
+        system_msg = """You are a helpful assistant.
+Answer questions directly and concisely in Korean.
+IMPORTANT: Return ONLY plain text in your response. 
+Do NOT use JSON format, markdown formatting, or any structured format.
+Just provide the direct answer as natural text."""
+    else:
+        system_msg = """You are a helpful assistant that answers in Korean.
+Format your response as JSON with this exact structure:
+{
+    "text": "your answer here",
+    "confidence": 0.95,
+    "processing_ms": 1234
+}"""
+    user_msg: dict = {'role': 'user', 'content': message}
+    client = Client(
+        host=OLLAMA_HOST,
+        headers={'Authorization': 'Bearer ' + (api_key or OLLAMA_API_KEY)}
+    )
+
+    # Streaming mode: return a generator that yields chunks as they arrive
+    if stream:
+        def _stream_generator():
+            try:
+                stream_resp = client.chat(
+                    model=model_id,
+                    messages=[{'role': 'system', 'content': system_msg}, user_msg],
+                    options={'temperature': 0.0, 'max_tokens': 1024 * 4},
+                    stream=True,
+                )
+            except Exception as e:
+                elapsed_ms = int(round((time.perf_counter() - start_time) * 1000))
+                yield json.dumps({"error": str(e), "processing_ms": elapsed_ms}, ensure_ascii=False)
+                return
+
+            for part in stream_resp:
+                text = None
+                try:
+                    if hasattr(part, "message"):
+                        text = getattr(part.message, "content", None)
+                    elif isinstance(part, dict):
+                        # Extract text field from dict, don't serialize the whole dict
+                        text = part.get("text") or part.get("content") or part.get("response") or part.get("answer")
+                        # if nested message shape
+                        if text is None and part.get("message"):
+                            msg = part.get("message")
+                            if isinstance(msg, dict):
+                                text = msg.get("content") or msg.get("text")
+                            elif isinstance(msg, str):
+                                text = msg
+                    elif isinstance(part, str):
+                        text = part
+                except Exception:
+                    text = None
+
+                # If we still don't have text and part is dict-like, try to extract any textual content
+                if text is None and isinstance(part, dict):
+                    # Last resort: try to find any string value that looks like content
+                    for key in ['text', 'content', 'response', 'answer', 'output']:
+                        if key in part and isinstance(part[key], str):
+                            text = part[key]
+                            break
+
+                # Only convert to string if we have something meaningful
+                if text is not None:
+                    if not isinstance(text, str):
+                        try:
+                            text = str(text)
+                        except Exception:
+                            text = ""
+                    
+                    text = text.strip()
+                    if text:
+                        yield text
+
+        return _stream_generator()
+
+    # Non-streaming (synchronous) behavior
+    response = None
+    last_exc = None
+    for attempt in range(2):
+        try:
+            response: ChatResponse = client.chat(
+                model=model_id,
+                messages=[{'role': 'system', 'content': system_msg}, user_msg],
+                options={'temperature': 0.0, 'max_tokens': 1024 * 4},
+            )
+            break
+        except Exception as e:
+            last_exc = e
+            if attempt == 0:
+                time.sleep(0.25)
+            else:
+                elapsed_ms = int(round((time.perf_counter() - start_time) * 1000))
+                import traceback
+                tb = traceback.format_exc()
+                print(f"chat_text failed: {e}\n{tb}")
+                return {"text": f"<error: {str(e)}>", "confidence": 0.0, "processing_ms": elapsed_ms}
+
+    elapsed_ms = int(round((time.perf_counter() - start_time) * 1000))
+    result = getattr(response.message, 'content', '') if response is not None else ''
+
+    if not isinstance(result, str):
+        try:
+            result = str(result)
+        except Exception:
+            result = ''
+
+    try:
+        parsed = json.loads(result)
+        if isinstance(parsed, dict):
+            resp_text = parsed.get('text') or parsed.get('response') or parsed.get('answer') or result
+            confidence = float(parsed.get('confidence', 0.0))
+            processing_ms = int(parsed.get('processing_ms', elapsed_ms))
+            return {"text": resp_text, "confidence": confidence, "processing_ms": processing_ms}
+    except Exception:
+        pass
+
+    return {"text": result.strip(), "confidence": 0.0, "processing_ms": elapsed_ms}
+
+# def chat_with_image(
 #     message: str,
-#     model_id: str = "qwen3-vl:235b-instruct-cloud",
-#     api_key: str | None = None,
+#     image_path: str | None = None,
+#     model_id: str = OLLAMA_MODEL_ID,
+#     api_key: str = OLLAMA_API_KEY,
 #     stream: bool = False,
-# ) -> str:
-#     if api_key is None:
-#         api_key = os.environ.get("OLLAMA_API_KEY")
+# ):
+#     """If stream=True yields text chunks as they arrive (generator).
+#     If stream=False returns a dict with the full response (as before)."""
 #     if not api_key:
 #         raise ValueError("API key is required: set OLLAMA_API_KEY or pass api_key")
 
-#     # base64 encode (ascii 문자열)
-#     # b64 = base64.b64encode(image_bytes).decode("ascii")
-    
-#     messages=[{
-#     'role': 'user',
-#     'content': message,
-#     }]
-    
-#     response: ChatResponse = chat(
-#         model=model_id,
-#         messages=messages,
-#         options={'temperature': 0.0},
+#     start_time = time.perf_counter()
+
+#     system_msg = (
+#         "You are a helpful assistant that can analyze an optional image and answer the user's message. "
+#         "If the user provided an image, consider it when answering. Keep answers concise unless the user asks for detail. "
+#         "When appropriate, prefer short, factual responses."
 #     )
-    
-#     return response
 
-# def chat_stream(
-#     prompt: str,
-#     model: str = "qwen3-vl:235b-instruct-cloud",
-#     api_key: str | None = None,
-#     host: str = "https://ollama.com/api/generate",
-#     timeout: int = 60,
-# ):
-#     """Stream the response from the generate endpoint (best-effort).
+#     user_msg: dict = {'role': 'user', 'content': message}
+#     if image_path:
+#         user_msg['images'] = [image_path]
 
-#     This will yield decoded lines as they arrive. The exact streaming format depends on
-#     the server (newline-separated JSON parts is common)."""
-#     if api_key is None:
-#         api_key = os.environ.get("OLLAMA_API_KEY")
-#     if not api_key:
-#         raise ValueError("API key is required: set OLLAMA_API_KEY or pass --api-key")
+#     from ollama import Client
 
-#     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-#     payload = {"model": model, "prompt": prompt, "stream": True}
+#     client = Client(host=OLLAMA_HOST, headers={'Authorization': 'Bearer ' + api_key})
 
-#     with requests.post(host, json=payload, headers=headers, timeout=timeout, stream=True) as resp:
-#         resp.raise_for_status()
-#         for raw in resp.iter_lines(decode_unicode=True):
-#             if not raw:
-#                 continue
-#             # try to parse JSON chunk
-#             try:
-#                 part = json.loads(raw)
-#             except Exception:
-#                 yield raw
-#                 continue
-#             # extract content if present
-#             text = extract_message_content(part)
-#             if text:
-#                 yield text
-#             else:
-#                 yield json.dumps(part, ensure_ascii=False)
-
-# def _probe_models(host: str, api_key: str | None = None) -> list[str]:
-#     """Try to query the /models endpoint on a set of candidate base paths and return model ids found.
-
-#     This is a best-effort helper used for host/model validation.
-#     """
-#     if api_key is None:
-#         api_key = os.environ.get("OLLAMA_API_KEY")
-#     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-
-#     # derive candidate bases from the provided host URL
-#     parsed = urlparse(host)
-#     base = f"{parsed.scheme}://{parsed.netloc}"
-#     candidates = [f"{base}/models", f"{base}/api/models", f"{base}/models/list"]
-#     results: list[str] = []
-#     for url in candidates:
+#     # Streaming mode: return a generator yielding chunks
+#     if stream:
 #         try:
-#             r = requests.get(url, headers=headers, timeout=5)
-#             if r.status_code == 200:
-#                 data = r.json()
-#                 # expect a list or dict with 'models' etc
-#                 if isinstance(data, list):
-#                     results.extend([str(x) for x in data])
-#                 elif isinstance(data, dict):
-#                     # common shapes: {'models': [...]} or {'items': [...]} or {'model': ...}
-#                     for k in ("models", "items", "model"):
-#                         if k in data and isinstance(data[k], list):
-#                             results.extend([str(x) for x in data[k]])
-#                     # sometimes API returns dict of model->meta
-#                     results.extend([str(k) for k in data.keys()])
-#                 if results:
-#                     return results
-#         except Exception:
-#             continue
-#     return results
+#             stream_resp = client.chat(
+#                 model=model_id,
+#                 messages=[{'role': 'system', 'content': system_msg}, user_msg],
+#                 options={'temperature': 0.0, 'max_tokens': 768},
+#                 stream=True,
+#             )
+#         except Exception as e:
+#             elapsed_ms = int(round((time.perf_counter() - start_time) * 1000))
+#             yield json.dumps({"error": str(e), "processing_ms": elapsed_ms}, ensure_ascii=False)
+#             return
 
-# def extract_message_content(resp_json: dict[str, Any]) -> str | None:
-#     if not isinstance(resp_json, dict):
-#         return None
-#     msg = resp_json.get("message")
-#     if isinstance(msg, dict):
-#         cont = msg.get("content")
-#         if isinstance(cont, str):
-#             return cont
-
-#     for key in ("text", "output", "result", "completion", "body"):
-#         v = resp_json.get(key)
-#         if isinstance(v, str):
-#             return v
-
-#     choices = resp_json.get("choices")
-#     if isinstance(choices, list) and choices:
-#         c0 = choices[0]
-#         if isinstance(c0, dict):
-#             for k in ("text", "message", "output"):
-#                 vv = c0.get(k)
-#                 if isinstance(vv, str):
-#                     return vv
-#     return None
-
-# def generate(
-#     prompt: str,
-#     model: str = "qwen3-vl:235b-instruct-cloud",
-#     api_key: str | None = None,
-#     host: str = "https://ollama.com/api/generate",
-#     timeout: int = 30,
-# ) -> str:
-#     """Send a single generate request to Ollama and return the extracted text.
-
-#     Raises requests.HTTPError on non-2xx responses.
-#     """
-#     if api_key is None:
-#         api_key = os.environ.get("OLLAMA_API_KEY")
-#     if not api_key:
-#         raise ValueError("API key is required: set OLLAMA_API_KEY or pass --api-key")
-
-#     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-#     payload = {"model": model, "prompt": prompt, "stream": False}
-
-#     resp = requests.post(host, json=payload, headers=headers, timeout=timeout)
-#     # raise for HTTP errors (4xx/5xx)
-#     resp.raise_for_status()
-
-#     # attempt to parse JSON and extract content
-#     try:
-#         data = resp.json()
-#     except ValueError:
-#         # not JSON (unexpected) — return raw text
-#         return resp.text.strip()
-
-#     text = extract_message_content(data)
-#     if text is None:
-#         # return pretty-printed JSON as fallback
-#         return json.dumps(data, ensure_ascii=False, indent=2)
-#     return text
-
-# def generate_stream(
-#     prompt: str,
-#     model: str = "qwen3-vl:235b-instruct-cloud",
-#     api_key: str | None = None,
-#     host: str = "https://ollama.com/api/generate",
-#     timeout: int = 60,
-# ):
-#     """Stream the response from the generate endpoint (best-effort).
-
-#     This will yield decoded lines as they arrive. The exact streaming format depends on
-#     the server (newline-separated JSON parts is common)."""
-#     if api_key is None:
-#         api_key = os.environ.get("OLLAMA_API_KEY")
-#     if not api_key:
-#         raise ValueError("API key is required: set OLLAMA_API_KEY or pass --api-key")
-
-#     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-#     payload = {"model": model, "prompt": prompt, "stream": True}
-
-#     with requests.post(host, json=payload, headers=headers, timeout=timeout, stream=True) as resp:
-#         resp.raise_for_status()
-#         for raw in resp.iter_lines(decode_unicode=True):
-#             if not raw:
-#                 continue
-#             # try to parse JSON chunk
+#         # stream_resp is expected to be iterable of partial ChatResponse-like objects or strings
+#         for part in stream_resp:
+#             # try to extract textual content from the part
+#             text = None
 #             try:
-#                 part = json.loads(raw)
+#                 if hasattr(part, "message"):
+#                     text = getattr(part.message, "content", None)
+#                 elif isinstance(part, dict):
+#                     # try common shapes
+#                     text = part.get("text") or part.get("output") or part.get("message", {}).get("content")
+#                 elif isinstance(part, str):
+#                     text = part
 #             except Exception:
-#                 yield raw
-#                 continue
-#             # extract content if present
-#             text = extract_message_content(part)
+#                 text = None
+
+#             if text is None:
+#                 # fallback to serializing the part
+#                 try:
+#                     text = json.dumps(part, ensure_ascii=False)
+#                 except Exception:
+#                     text = str(part)
+
+#             # normalize
+#             if not isinstance(text, str):
+#                 try:
+#                     text = str(text)
+#                 except Exception:
+#                     text = ""
+
 #             if text:
 #                 yield text
+#         return
+
+#     # Non-streaming (existing behavior)
+#     response = None
+#     last_exc = None
+#     for attempt in range(2):
+#         try:
+#             response = client.chat(
+#                 model=model_id,
+#                 messages=[{'role': 'system', 'content': system_msg}, user_msg],
+#                 options={'temperature': 0.0, 'max_tokens': 768},
+#             )
+#             break
+#         except Exception as e:
+#             last_exc = e
+#             if attempt == 0:
+#                 time.sleep(0.25)
 #             else:
-#                 yield json.dumps(part, ensure_ascii=False)
+#                 elapsed_ms = int(round((time.perf_counter() - start_time) * 1000))
+#                 import traceback
+#                 tb = traceback.format_exc()
+#                 print(f"chat_with_image failed: {e}\n{tb}")
+#                 return {"response": f"<error: {str(e)}>", "confidence": 0.0, "processing_ms": elapsed_ms}
+
+#     elapsed_ms = int(round((time.perf_counter() - start_time) * 1000))
+#     result = getattr(response.message, 'content', '') if response is not None else ''
+
+#     if not isinstance(result, str):
+#         try:
+#             result = str(result)
+#         except Exception:
+#             result = ''
+
+#     try:
+#         parsed = json.loads(result)
+#         if isinstance(parsed, dict):
+#             resp_text = parsed.get('response') or parsed.get('text') or parsed.get('answer') or result
+#             confidence = float(parsed.get('confidence', 0.0))
+#             processing_ms = int(parsed.get('processing_ms', elapsed_ms))
+#             return {"response": resp_text, "confidence": confidence, "processing_ms": processing_ms}
+#     except Exception:
+#         pass
+
+#     return {"response": result.strip(), "confidence": 0.0, "processing_ms": elapsed_ms}
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Test OCR with Ollama endpoint.")
-    parser.add_argument("--image", "-i", required=True, help="Path to image file for OCR")
     parser.add_argument("--model", "-m", default="qwen3-vl:235b-instruct-cloud", help="Model id")
     parser.add_argument("--api-key", "-k", help="API key. If omitted, reads OLLAMA_API_KEY env var.")
     parser.add_argument(
@@ -305,32 +355,6 @@ def main(argv: list[str] | None = None) -> int:
         help="Ollama API host (default from OLLAMA_HOST or https://ollama.com/api)",
     )
     args = parser.parse_args(argv)
-    
-    try:
-        result = ocr_image(
-            image_path=args.image,
-            host=args.host,
-            model_id=args.model,
-            api_key=args.api_key or os.environ.get("OLLAMA_API_KEY")
-        )
-        print("\n=== OCR Result ===")
-        print(json.dumps(result, indent=2, ensure_ascii=False))
-        return 0
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-        return 1
-    except requests.HTTPError as e:
-        print(f"HTTP error: {e} (status {getattr(e.response, 'status_code', 'unknown')})", file=sys.stderr)
-        try:
-            print("Response body:", e.response.text, file=sys.stderr)
-        except Exception:
-            pass
-        return 2
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
 
 if __name__ == "__main__":
     raise SystemExit(main())

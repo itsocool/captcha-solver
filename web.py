@@ -64,6 +64,10 @@ def index():
         image_height=image_height
     )
 
+@app.route("/img")
+def img():
+    return render_template('img.html')
+
 @app.route("/health/")
 @app.route("/health/<int:port>")
 @app.route("/health/<int:port>/")
@@ -130,6 +134,16 @@ def ocr(image: Image.Image):
     image.close()
     os.remove(image_path)
     return pred, confidence, elapsed_ms, bbox
+
+# @app.route("/api/v1/chat", methods=["POST"])
+# def chat():
+#     message = request.json.get("message", "")
+#     result = ollama_generate.chat_with_image(message=message)
+#     response = result.get("response", "")
+#     confidence = result.get("confidence", 0.0)
+#     elapsed_ms = result.get("processing_ms", 0)
+
+#     return response, confidence, elapsed_ms
 
 @app.route("/api/v1/captcha", methods=["POST"])
 def predict_multi_part():
@@ -198,6 +212,161 @@ def ocr_multi_part():
         print(f"OCR Unexpected Error: {error_msg}")
         print(traceback.format_exc())
         return jsonify({"error": error_msg, "trace": traceback.format_exc()}), 500
+
+def _load_context_library(library: str | None) -> str | None:
+    """Load cached Context7 document for the specified library."""
+    if not library:
+        return None
+    
+    try:
+        cached_dir = os.path.join(os.path.dirname(__file__), 'cached_contexts')
+        cached_path = os.path.join(cached_dir, f"{library}.txt")
+        if os.path.exists(cached_path):
+            with open(cached_path, 'r', encoding='utf-8') as fh:
+                return fh.read()
+    except Exception:
+        pass
+    
+    return None
+
+
+def _prepare_full_message(message: str, library: str | None) -> str:
+    """Prepare the full message with optional context prepended."""
+    context_text = _load_context_library(library)
+    if context_text:
+        return f"[Context from {library}]\n{context_text}\n\nUser message:\n{message}"
+    return message
+
+
+def _handle_streaming_response(full_message: str) -> Response:
+    """Handle streaming chat response - expects plain text chunks only."""
+    gen = ollama_generate.chat_text(message=full_message, stream=True)
+
+    def stream_generator():
+        try:
+            for part in gen:
+                # Streaming mode should return plain text only
+                # No JSON parsing needed as the model is instructed to return plain text
+                text_chunk = ''
+                
+                try:
+                    if isinstance(part, str):
+                        text_chunk = part
+                    elif isinstance(part, dict):
+                        # Fallback: if dict received, extract text field
+                        text_chunk = part.get('text') or part.get('content') or part.get('response') or str(part)
+                    else:
+                        text_chunk = str(part)
+                except Exception:
+                    continue
+                
+                text_chunk = text_chunk.strip()
+                if text_chunk:
+                    yield text_chunk
+                    
+        except Exception as e:
+            try:
+                yield f"[error] {str(e)}"
+            except Exception:
+                yield "[error]"
+
+    # Return a chunked text/plain response (no JSON) for streaming clients
+    response = Response(stream_generator(), content_type='text/plain; charset=utf-8')
+    # disable caching for interactive stream
+    response.headers['Cache-Control'] = 'no-cache'
+    response.headers['X-Accel-Buffering'] = 'no'
+    return response
+
+
+def _handle_normal_response(full_message: str):
+    """Handle normal (non-streaming) chat response."""
+    result = ollama_generate.chat_text(message=full_message)
+
+    text = ""
+    confidence = 0.0
+    elapsed_ms = 0
+
+    try:
+        if isinstance(result, dict):
+            # prefer common keys but allow fallbacks
+            text = result.get("text") or result.get("response") or result.get("output") or ""
+            try:
+                confidence = float(result.get("confidence", 0.0))
+            except Exception:
+                confidence = 0.0
+            elapsed_ms = int(result.get("processing_ms", result.get("processing_time_ms", result.get("processing_ms", 0))))
+        elif isinstance(result, str):
+            text = result
+        elif isinstance(result, (list, tuple)):
+            # try to find first string as response and numeric values as confidence/elapsed
+            for item in result:
+                if isinstance(item, str):
+                    text = item
+                    break
+            nums = [i for i in result if isinstance(i, (int, float))]
+            if len(nums) == 1:
+                # ambiguous: treat single numeric as elapsed_ms
+                elapsed_ms = int(nums[0])
+            elif len(nums) >= 2:
+                # assume first numeric is confidence, last is elapsed_ms
+                try:
+                    confidence = float(nums[0])
+                except Exception:
+                    confidence = 0.0
+                try:
+                    elapsed_ms = int(nums[-1])
+                except Exception:
+                    elapsed_ms = 0
+        else:
+            # unknown type: stringify
+            text = str(result)
+    except Exception:
+        # if anything unexpected happens when parsing, fallback to safe defaults
+        try:
+            text = str(result)
+        except Exception:
+            text = ""
+        confidence = 0.0
+        elapsed_ms = 0
+
+    # Return using the new chat response schema: { text, confidence, processing_ms }
+    return jsonify({"text": text, "confidence": confidence, "processing_ms": elapsed_ms})
+
+
+@app.route("/api/v1/chat", methods=["GET"])
+def chat_text():
+    """Simple text chat endpoint.
+
+    Usage:
+      GET /api/v1/chat?message=hello
+      GET /api/v1/chat?message=how+to+use+tf&library=tensorflow
+      GET /api/v1/chat?message=hello&stream=1
+
+    Query Parameters:
+      - message: The chat message (required)
+      - library: Optional library name for Context7 cached docs
+      - stream: '1', 'true', or 'on' to enable streaming response
+
+    If `library` query param is provided, this endpoint will look for a cached
+    Context7 document at `cached_contexts/<library>.txt` (relative to project root)
+    and prepend it to the user's message before calling the chat helper.
+    """
+    # Read query params
+    message = request.args.get('message') or request.values.get('message') or ''
+    library = request.args.get('library') or None
+    stream_flag = request.args.get('stream') or request.values.get('stream') or '0'
+    
+    # Prepare full message with optional context
+    full_message = _prepare_full_message(message, library)
+    
+    # Determine if client requested streaming
+    use_stream = str(stream_flag).lower() in ('1', 'true', 'on')
+    
+    # Route to appropriate handler
+    if use_stream:
+        return _handle_streaming_response(full_message)
+    else:
+        return _handle_normal_response(full_message)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Captcha Resolver Web Server')

@@ -79,36 +79,35 @@ function clearForm() {
 }
 
 ocrBtn.addEventListener('click', async () => {
-      alerts.innerHTML = '';
-      const f = imageInput.files && imageInput.files[0];
-      if (!f) { showAlert('이미지를 선택하세요.', 'warning'); return; }
+  alerts.innerHTML = '';
+  const f = imageInput.files && imageInput.files[0];
+  if (!f) { showAlert('이미지를 선택하세요.', 'warning'); return; }
 
-      const form = new FormData();
-      form.append('image', f, f.name);
+  const form = new FormData();
+  form.append('image', f, f.name);
 
-      spinner.classList.remove('d-none');
-      ocrBtn.disabled = true;
-      clearBtn.disabled = true;
+  spinner.classList.remove('d-none');
+  ocrBtn.disabled = true;
+  clearBtn.disabled = true;
 
-      try {
-        const resp = await fetch('/api/v1/ocr', { method: 'POST', body: form });
-        const data = await resp.json();
-        if (!resp.ok) {
-          showAlert(`오류: ${data.error || resp.statusText}`, 'danger');
-        } else {
-          // Add a result card with image, predicted value, confidence and processing time (ms)
-          addResultCard(f, data.predicted, data.confidence ?? 'N/A', data.processing_ms ?? null, data.bbox ?? null);
-          // 자동 초기화: 결과를 리스트에 추가한 뒤 입력폼을 초기화
-          clearForm();
-        }
-      } catch (err) {
-        showAlert('요청 실패: ' + err.message, 'danger');
-      } finally {
-        spinner.classList.add('d-none');
-        ocrBtn.disabled = false;
-        clearBtn.disabled = false;
-      }
-    });
+  try {
+    const resp = await fetch('/api/v1/ocr', { method: 'POST', body: form });
+    const data = await resp.json();
+    if (!resp.ok) {
+      showAlert(`오류: ${data.error || resp.statusText}`, 'danger');
+    } else {
+      const cardId = `card-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      addResultCard(f, data.predicted, data.confidence ?? 'N/A', data.processing_ms ?? null, data.bbox ?? null, cardId);
+      clearForm();
+    }
+  } catch (err) {
+    showAlert('요청 실패: ' + err.message, 'danger');
+  } finally {
+    spinner.classList.add('d-none');
+    ocrBtn.disabled = false;
+    clearBtn.disabled = false;
+  }
+});
 
 clearBtn.addEventListener('click', () => {
   clearForm();
@@ -158,24 +157,39 @@ function formatConfidence(c) {
   return num.toFixed(2) + (num > 10 ? '%' : '%');
 }
 
+function drawBboxOnImage(imgElement, bbox) {
+  const [x, y, w, h] = bbox;
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  const img = new Image();
+
+  img.crossOrigin = "anonymous";
+  img.onload = function () {
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+
+    ctx.drawImage(img, 0, 0);
+    ctx.strokeStyle = '#00ff00';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+    imgElement.src = canvas.toDataURL('image/png');
+  };
+  img.src = imgElement.src;
+}
+
 function addResultCard(file, predicted, confidence, processingMs, bbox) {
   const list = document.getElementById('resultsList');
-  const url = preview.src || (file ? URL.createObjectURL(file) : '');
+  const oriImage = preview.src;
   const time = new Date().toLocaleString();
   const confText = formatConfidence(confidence);
   const div = document.createElement('div');
+  const cardId = `canvas-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
   div.className = 'card mb-3 result-card';
-  
-  // Canvas wrapper for bbox visualization
-  const canvasId = `canvas-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  const imageContainerId = `img-container-${canvasId}`;
-  
   div.innerHTML = `
-        <div class="row g-0 align-items-center">
+        <div id="${cardId}" class="row g-0 align-items-center">
           <div class="col-auto p-2">
-            <div id="${imageContainerId}" style="position:relative; width:140px; height:80px;">
-              <canvas id="${canvasId}" style="position:absolute; top:0; left:0; width:100%; height:100%;"></canvas>
-            </div>
+            <img class="img-thumbnail" style="max-width:100%; height:auto; object-fit:contain; background:#fff" alt="preview">
           </div>
           <div class="col">
             <div class="card-body py-2">
@@ -191,6 +205,15 @@ function addResultCard(file, predicted, confidence, processingMs, bbox) {
         </div>
       `;
 
+  const imgElem = div.querySelector('img.img-thumbnail');
+  imgElem.src = oriImage;
+  
+  if (bbox && Array.isArray(bbox) && bbox.length === 4) {
+    setTimeout(() => {
+      drawBboxOnImage(imgElem, bbox);
+    }, 250);
+  }
+
   // copy handler
   div.querySelector('.copy-btn').addEventListener('click', () => {
     navigator.clipboard && navigator.clipboard.writeText(predicted);
@@ -202,70 +225,6 @@ function addResultCard(file, predicted, confidence, processingMs, bbox) {
 
   // prepend newest on top
   list.prepend(div);
-  
-  // Draw image and bounding boxes on canvas
-  const canvas = document.getElementById(canvasId);
-  const ctx = canvas.getContext('2d');
-  const img = new Image();
-  
-  img.onload = () => {
-    // Set canvas size to match display size
-    const displayWidth = 140;
-    const displayHeight = 80;
-    canvas.width = displayWidth;
-    canvas.height = displayHeight;
-    
-    // Calculate scaling to fit image within canvas (object-fit: contain)
-    const imgAspect = img.width / img.height;
-    const canvasAspect = displayWidth / displayHeight;
-    let drawWidth, drawHeight, offsetX = 0, offsetY = 0;
-    
-    if (imgAspect > canvasAspect) {
-      drawWidth = displayWidth;
-      drawHeight = displayWidth / imgAspect;
-      offsetY = (displayHeight - drawHeight) / 2;
-    } else {
-      drawHeight = displayHeight;
-      drawWidth = displayHeight * imgAspect;
-      offsetX = (displayWidth - drawWidth) / 2;
-    }
-    
-    // Draw image
-    ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
-    
-    // Draw bounding boxes if available
-    if (bbox && Array.isArray(bbox) && bbox.length > 0) {
-      const scaleX = drawWidth / img.width;
-      const scaleY = drawHeight / img.height;
-      
-      ctx.strokeStyle = '#00ff00'; // 녹색
-      ctx.lineWidth = 2;
-      
-      bbox.forEach(box => {
-        // bbox format: [x, y, width, height] 또는 [x1, y1, x2, y2]
-        if (box.length >= 4) {
-          const x1 = box[0] * scaleX + offsetX;
-          const y1 = box[1] * scaleY + offsetY;
-          
-          // Check if it's [x, y, w, h] or [x1, y1, x2, y2]
-          let width, height;
-          if (box[2] < img.width && box[3] < img.height && box[2] > 0 && box[3] > 0) {
-            // Likely width/height format
-            width = box[2] * scaleX;
-            height = box[3] * scaleY;
-          } else {
-            // Likely x2/y2 format
-            width = (box[2] - box[0]) * scaleX;
-            height = (box[3] - box[1]) * scaleY;
-          }
-          
-          ctx.strokeRect(x1, y1, width, height);
-        }
-      });
-    }
-  };
-  
-  img.src = url;
 }
 
 // Theme handling: light / dark / auto
