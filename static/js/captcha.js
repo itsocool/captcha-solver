@@ -80,6 +80,7 @@ function clearForm() {
 
 ocrBtn.addEventListener('click', async () => {
   alerts.innerHTML = '';
+  const cardId = `card-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   const f = imageInput.files && imageInput.files[0];
   if (!f) { showAlert('이미지를 선택하세요.', 'warning'); return; }
 
@@ -96,8 +97,7 @@ ocrBtn.addEventListener('click', async () => {
     if (!resp.ok) {
       showAlert(`오류: ${data.error || resp.statusText}`, 'danger');
     } else {
-      const cardId = `card-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      addResultCard(f, data.predicted, data.confidence ?? 'N/A', data.processing_ms ?? null, data.bbox ?? null, cardId);
+      await addResultCard(cardId, data.predicted, data.confidence ?? 'N/A', data.processing_ms ?? null, data.bbox ?? null);
       clearForm();
     }
   } catch (err) {
@@ -115,6 +115,7 @@ clearBtn.addEventListener('click', () => {
 
 submitBtn.addEventListener('click', async () => {
   alerts.innerHTML = '';
+  const cardId = `card-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   const f = imageInput.files && imageInput.files[0];
   if (!f) { showAlert('이미지를 선택하세요.', 'warning'); return; }
 
@@ -133,9 +134,7 @@ submitBtn.addEventListener('click', async () => {
     if (!resp.ok) {
       showAlert(`오류: ${data.error || resp.statusText}`, 'danger');
     } else {
-      // Add a result card with image, predicted value, confidence and processing time (ms)
-      addResultCard(f, data.predicted, data.confidence ?? 'N/A', data.processing_ms ?? null);
-      // 자동 초기화: 결과를 리스트에 추가한 뒤 입력폼을 초기화
+      await addResultCard(cardId, data.predicted, data.confidence ?? 'N/A', data.processing_ms ?? null);
       clearForm();
     }
   } catch (err) {
@@ -158,38 +157,43 @@ function formatConfidence(c) {
 }
 
 function drawBboxOnImage(imgElement, bbox) {
-  const [x, y, w, h] = bbox;
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  const img = new Image();
-
-  img.crossOrigin = "anonymous";
-  img.onload = function () {
-    canvas.width = img.naturalWidth;
-    canvas.height = img.naturalHeight;
-
-    ctx.drawImage(img, 0, 0);
-    ctx.strokeStyle = '#00ff00';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(x, y, w, h);
-    imgElement.src = canvas.toDataURL('image/png');
-  };
-  img.src = imgElement.src;
+  return new Promise((resolve, reject) => {
+    const [x, y, w, h] = bbox;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    
+    img.onload = () => {
+      try {
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        ctx.drawImage(img, 0, 0);
+        ctx.strokeStyle = '#00ff00';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, w, h);
+        imgElement.src = canvas.toDataURL('image/png');
+        resolve();
+      } catch (error) {
+        reject(error);
+      }
+    };
+    
+    img.onerror = () => reject(new Error('Failed to load image'));
+    img.src = imgElement.src;
+  });
 }
 
-function addResultCard(file, predicted, confidence, processingMs, bbox) {
+async function addResultCard(cardId, predicted, confidence, processingMs, bbox) {
   const list = document.getElementById('resultsList');
-  const oriImage = preview.src;
-  const time = new Date().toLocaleString();
+  const previewImage = preview.src;
   const confText = formatConfidence(confidence);
   const div = document.createElement('div');
-  const cardId = `canvas-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
   div.className = 'card mb-3 result-card';
   div.innerHTML = `
         <div id="${cardId}" class="row g-0 align-items-center">
           <div class="col-auto p-2">
-            <img class="img-thumbnail" style="max-width:100%; height:auto; object-fit:contain; background:#fff" alt="preview">
+            <img src="${previewImage}" class="img-thumbnail" style="max-width:100%; height:auto; object-fit:contain; background:#fff" alt="preview">
           </div>
           <div class="col">
             <div class="card-body py-2">
@@ -205,15 +209,6 @@ function addResultCard(file, predicted, confidence, processingMs, bbox) {
         </div>
       `;
 
-  const imgElem = div.querySelector('img.img-thumbnail');
-  imgElem.src = oriImage;
-  
-  if (bbox && Array.isArray(bbox) && bbox.length === 4) {
-    setTimeout(() => {
-      drawBboxOnImage(imgElem, bbox);
-    }, 250);
-  }
-
   // copy handler
   div.querySelector('.copy-btn').addEventListener('click', () => {
     navigator.clipboard && navigator.clipboard.writeText(predicted);
@@ -225,6 +220,33 @@ function addResultCard(file, predicted, confidence, processingMs, bbox) {
 
   // prepend newest on top
   list.prepend(div);
+
+  // bbox 처리: 이미지 로드 완료 후 그리기
+  if (bbox && Array.isArray(bbox) && bbox.length === 4) {
+    const imgElem = div.querySelector('img.img-thumbnail');
+    
+    if (imgElem) {
+      console.log('Drawing bbox on image:', bbox);
+      
+      // 이미지가 이미 로드되었는지 확인
+      if (imgElem.complete && imgElem.naturalHeight !== 0) {
+        try {
+          await drawBboxOnImage(imgElem, bbox);
+        } catch (error) {
+          console.error('Failed to draw bbox:', error);
+        }
+      } else {
+        // 이미지 로드 대기
+        imgElem.onload = async () => {
+          try {
+            await drawBboxOnImage(imgElem, bbox);
+          } catch (error) {
+            console.error('Failed to draw bbox:', error);
+          }
+        };
+      }
+    }
+  }
 }
 
 // Theme handling: light / dark / auto
