@@ -1,21 +1,12 @@
 import os
-# os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-# os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
-# os.environ['GLOG_minloglevel'] = '2'
-
-# import logging, warnings
-# logging.getLogger('tensorflow').setLevel(logging.ERROR)
-# warnings.filterwarnings('ignore', category=FutureWarning)
-# warnings.filterwarnings('ignore', category=DeprecationWarning)
-
-import captchaResolver.engine as engine
 from pathlib import Path
+import captchaResolver.engine as engine
 from captchaResolver.dataclass import TrainData
 from captchaResolver.core import PyTorchModel
 
-captcha_id = 'gov24'
+captcha_id = 'default'
 backend = 'pytorch'
-rev = 1
+rev = 0
 image_width = 200
 image_height = 50
 train_ratio = 0.9
@@ -33,4 +24,4 @@ if shuffle:
 
 engine.batch_predict_model(model=model)
 
-engine.predict(model=model, image_path='captcha_data/gov24/1/images/pred/076074.png')
+# engine.predict(model=model, image_path='captcha_data/gov24/1/images/pred/076074.png')
