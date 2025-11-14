@@ -8,7 +8,7 @@ from PIL import Image
 from typing import Tuple, Optional, Dict
 from tqdm import tqdm
 from captchaResolver.core import PyTorchModel, ctc_decode
-from captchaResolver.dataclass import CaptchaType, TrainData
+from captchaResolver.dataclass import CAPTCHA_CHAR_SETS, CaptchaType, TrainData
 # from captchaResolver.keras_core import KerasModel
 
 def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: str = "keras") -> Dict[str, CaptchaType]:
@@ -18,7 +18,7 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: 
         backend=backend,
         train_data_base_dir=train_data_base_dir,
         label_length=5,
-        characters=list('2345678bcdefgmnpwxy')
+        characters=list(CAPTCHA_CHAR_SETS)
     ))
 
     supreme_court = CaptchaType(name="대법원", desc="대법원 캡챠", train_data=TrainData(
