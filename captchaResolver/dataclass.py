@@ -14,7 +14,7 @@ LOWER_CASE: Final = "abcdefghijklmnopqrstuvwxyz"
 UPPER_CASE: Final = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 ALPHABET: Final = LOWER_CASE + UPPER_CASE
 ALPHA_NUMERIC: Final = DIGITS + ALPHABET
-
+CAPTCHA_CHAR_SETS: Final = "2345678bcdefgmnpwxy"
 
 @dataclass
 class TrainData:

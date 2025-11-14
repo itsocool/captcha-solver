@@ -1,13 +1,11 @@
 import os, time
 import shutil, glob, random
-import torch
-import torchvision.transforms as T
 import tensorflow as tf
 import numpy as np
 from PIL import Image
 from typing import Tuple, Optional, Dict
-from tqdm import tqdm
-from captchaResolver.core import PyTorchModel, ctc_decode
+# from tqdm import tqdm
+# from captchaResolver.core import PyTorchModel, ctc_decode
 from captchaResolver.dataclass import CaptchaType, TrainData
 from captchaResolver.keras_core import KerasModel
 

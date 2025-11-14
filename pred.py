@@ -24,13 +24,12 @@ shuffle = False
 model: PyTorchModel = engine.get_captcha_model(captcha_id=captcha_id, backend=backend)
 train_data: TrainData = model.train_data
 model.train_data.rev = rev
-model.train_data.image_width = image_width
-model.train_data.image_height = image_height
+# model.train_data.image_width = image_width
+# model.train_data.image_height = image_height
 
 if shuffle:
     image_dir = Path(train_data.get_image_dir()).parent.as_posix()
     engine.redistribute_train_pred(image_dir=image_dir, train_ratio=train_ratio)
 
 engine.batch_predict_model(model=model)
-
-engine.predict(model=model, image_path='captcha_data/gov24/1/images/pred/076074.png')
+# engine.predict(model=model, image_path='captcha_data/default/0/images/pred/2en7g.png')
