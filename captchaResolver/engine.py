@@ -2,14 +2,14 @@ import os, time
 import shutil, glob, random
 import torch
 import torchvision.transforms as T
-import tensorflow as tf
+# import tensorflow as tf
 import numpy as np
 from PIL import Image
 from typing import Tuple, Optional, Dict
 from tqdm import tqdm
 from captchaResolver.core import PyTorchModel, ctc_decode
-from captchaResolver.dataclass import CaptchaType, TrainData
-from captchaResolver.keras_core import KerasModel
+from captchaResolver.dataclass import CAPTCHA_CHAR_SETS, CaptchaType, TrainData
+# from captchaResolver.keras_core import KerasModel
 
 def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: str = "keras") -> Dict[str, CaptchaType]:
 
@@ -18,7 +18,7 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: 
         backend=backend,
         train_data_base_dir=train_data_base_dir,
         label_length=5,
-        characters=list('2345678bcdefgmnpwxy')
+        characters=list(CAPTCHA_CHAR_SETS)
     ))
 
     supreme_court = CaptchaType(name="대법원", desc="대법원 캡챠", train_data=TrainData(
@@ -62,18 +62,18 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: 
         "kshop": kshop,
     }
 
-def get_model(captcha_type: CaptchaType) -> PyTorchModel | KerasModel:
+def get_model(captcha_type: CaptchaType) -> PyTorchModel:
     train_data: TrainData = captcha_type.train_data
-    if train_data.backend == 'pytorch':
-        model = PyTorchModel(captcha_type=captcha_type, verbose=1)
-    elif train_data.backend == 'keras':
-        model = KerasModel(captcha_type=captcha_type, verbose=1)
-    else:
-        raise ValueError(f"Unsupported backend: {train_data.backend}")
+    # if train_data.backend == 'pytorch':
+    model = PyTorchModel(captcha_type=captcha_type, verbose=1)
+    # elif train_data.backend == 'keras':
+    #     model = KerasModel(captcha_type=captcha_type, verbose=1)
+    # else:
+    #     raise ValueError(f"Unsupported backend: {train_data.backend}")
     
     return model
 
-def get_captcha_model(captcha_id: str = "default", backend: str = "keras") -> KerasModel | PyTorchModel:
+def get_captcha_model(captcha_id: str = "default", backend: str = "keras") -> PyTorchModel:
     captcha_type_list: Dict[str, CaptchaType] = get_captcha_type_list(backend=backend)
 
     if captcha_id not in captcha_type_list:
@@ -85,7 +85,7 @@ def get_captcha_model(captcha_id: str = "default", backend: str = "keras") -> Ke
     return model
 
 def train_model(
-    model: PyTorchModel | KerasModel,
+    model: PyTorchModel,
     epochs: int = 100,
     batch_size: int = 32,
     earlystopping: bool = False,
@@ -125,17 +125,17 @@ def train_model(
         
         return model_base_dir
     
-    else:
-        keras_model: KerasModel = model
-        return model.train_model(
-            epochs=epochs,
-            batch_size=batch_size,
-            earlystopping=earlystopping,
-            early_stopping_patience=early_stopping_patience,
-        )      
+    # else:
+    #     keras_model: KerasModel = model
+    #     return model.train_model(
+    #         epochs=epochs,
+    #         batch_size=batch_size,
+    #         earlystopping=earlystopping,
+    #         early_stopping_patience=early_stopping_patience,
+    #     )      
 
 def batch_predict_model(
-    model: PyTorchModel | KerasModel,
+    model: PyTorchModel,
     batch_size: int = 32,
 ) -> Dict[str, float]:
    
@@ -145,66 +145,32 @@ def batch_predict_model(
         torch_model: PyTorchModel = model
         train_data: TrainData = torch_model.train_data
         torch_model.load_prediction_model()
-        pred_loader = torch_model.create_prediction_dataset(batch_size=batch_size)
-        mapping_inv = {i+1: ch for i, ch in enumerate(train_data.characters)}
         pred_image_files = train_data.get_data_files(train=False)
+
         results = []
         mismatches = []
         total = 0
         match_count = 0
-        debug_first = True  # 첫 번째 불일치에서만 디버그 출력
-        torch_model.model.eval()
-        device = torch_model.device
 
+        # 단순화된 루프: core.PyTorchModel.predict()를 호출하여 예측 및 신뢰도 획득
+        torch_model.model.eval()
         with torch.no_grad():
-            tk = tqdm(pred_loader, total=len(pred_loader), desc="Predicting")
-            batch_idx = 0
-            
-            for images, labels in tk:
-                images = images.to(device)
-                labels = labels.to(device)
-                out, _ = torch_model.model(images)
-                out = out.permute(1, 0, 2)
-                # log_softmax 적용 전에 확률 계산
-                out_log_softmax = out.log_softmax(2)
-                out_probs = torch.exp(out_log_softmax)  # log_softmax를 다시 확률로 변환
-                out_argmax = out_log_softmax.argmax(2)
-                
-                out_np = out_argmax.cpu().numpy()
-                probs_np = out_probs.cpu().numpy()
-                
-                for i in range(out_np.shape[0]):
-                    img_idx = batch_idx * batch_size + i
-                    if img_idx >= len(pred_image_files):
-                        break
-                    
-                    image_path = pred_image_files[img_idx]
-                    image_name = os.path.basename(image_path)
-                    expected = os.path.splitext(image_name)[0]
-                    pred_text = ctc_decode(out_np[i:i+1], mapping_inv)
-                    
-                    # 신뢰도 계산: 각 타임스텝의 최대 확률의 평균
-                    max_probs = np.max(probs_np[:, i, :], axis=1)  # (T,) - 각 타임스텝의 최대 확률
-                    confidence = float(np.mean(max_probs))
-                    
-                    is_match = (pred_text == expected)
-                    
-                    if not is_match and debug_first:
-                        debug_first = False  # 첫 디버그 완료
-                    
-                    if is_match:
-                        match_count += 1
-                    else:
-                        mismatches.append({'image': image_name, 'expected': expected, 'pred': pred_text, 'confidence': confidence})
-                    
-                    results.append({'image': image_name, 'expected': expected, 'pred': pred_text, 'confidence': confidence, 'match': is_match})
-                    total += 1
-                
-                batch_idx += 1
-                tk.set_postfix({'Accuracy': f'{match_count/total*100:.2f}%' if total > 0 else '0.00%'})
+            for image_path in tqdm(pred_image_files, desc="Predicting"):
+                image_name = os.path.basename(image_path)
+                expected = os.path.splitext(image_name)[0]
+
+                pred_text, confidence = torch_model.predict(image_path)
+
+                is_match = (pred_text == expected)
+                if is_match:
+                    match_count += 1
+                else:
+                    mismatches.append({'image': image_name, 'expected': expected, 'pred': pred_text, 'confidence': confidence})
+
+                results.append({'image': image_name, 'expected': expected, 'pred': pred_text, 'confidence': confidence, 'match': is_match})
+                total += 1
 
         end = time.time()
-        # 결과 출력
         accuracy = (match_count / total * 100) if total > 0 else 0.0
 
         for r in results:
@@ -212,7 +178,7 @@ def batch_predict_model(
             print(f"  {status} {r['image']}: {r['expected']} ➡️ {r['pred']} (conf: {r['confidence']:.4f})")
 
         if mismatches:
-            print(f"\nMismatch samples {len(mismatches)}):")
+            print(f"\nMismatch samples ({len(mismatches)}):")
             for m in mismatches:
                 print(f"  ❌ {m['image']}: {m['expected']} ➡️ {m['pred']} (conf: {m['confidence']:.4f})")
 
@@ -225,66 +191,66 @@ def batch_predict_model(
         print(f"  pred time: {end - start:.2f} sec")
         print("=" * 70)
         print("\nPrediction completed!")
-    else:
-        keras_model: KerasModel = model
-        match_count = 0
-        pred_img_path_list = keras_model.train_data.get_data_files(train=False)
-        pred_labels = model.train_data.get_labels(train=False)
-        pred_dataset = tf.data.Dataset.from_tensor_slices((pred_img_path_list, pred_labels))
-        pred_dataset = (
-            pred_dataset
-            .map(keras_model.encode_single_sample, num_parallel_calls=tf.data.AUTOTUNE)
-            .batch(batch_size)
-            .prefetch(buffer_size=tf.data.AUTOTUNE)
-        )
+    # else:
+    #     keras_model: KerasModel = model
+    #     match_count = 0
+    #     pred_img_path_list = keras_model.train_data.get_data_files(train=False)
+    #     pred_labels = model.train_data.get_labels(train=False)
+    #     pred_dataset = tf.data.Dataset.from_tensor_slices((pred_img_path_list, pred_labels))
+    #     pred_dataset = (
+    #         pred_dataset
+    #         .map(keras_model.encode_single_sample, num_parallel_calls=tf.data.AUTOTUNE)
+    #         .batch(batch_size)
+    #         .prefetch(buffer_size=tf.data.AUTOTUNE)
+    #     )
         
-        keras_model.load_prediction_model()
-        all_preds = []
-        all_labels = []
-        all_confs = []
+    #     keras_model.load_prediction_model()
+    #     all_preds = []
+    #     all_labels = []
+    #     all_confs = []
         
-        for batch in pred_dataset:
-            images = batch["image"]
-            labels = batch["label"]
-            pred_vals = keras_model.predict_model.predict(images, verbose=0)
-            # 각 샘플별 신뢰도 계산
-            batch_confs = np.max(pred_vals, axis=-1).mean(axis=1)
-            all_confs.extend(batch_confs.tolist())
-            preds = keras_model.decode_batch_predictions(pred_vals)
-            for label in labels:
-                label_text = tf.strings.reduce_join(
-                    keras_model.num_to_char(label + 1)
-                ).numpy().decode("utf-8")
-                all_labels.append(label_text)
+    #     for batch in pred_dataset:
+    #         images = batch["image"]
+    #         labels = batch["label"]
+    #         pred_vals = keras_model.predict_model.predict(images, verbose=0)
+    #         # 각 샘플별 신뢰도 계산
+    #         batch_confs = np.max(pred_vals, axis=-1).mean(axis=1)
+    #         all_confs.extend(batch_confs.tolist())
+    #         preds = keras_model.decode_batch_predictions(pred_vals)
+    #         for label in labels:
+    #             label_text = tf.strings.reduce_join(
+    #                 keras_model.num_to_char(label + 1)
+    #             ).numpy().decode("utf-8")
+    #             all_labels.append(label_text)
             
-            all_preds.extend(preds)
+    #         all_preds.extend(preds)
         
-        for idx, (ori, pred) in enumerate(zip(all_labels, all_preds)):
-            msg = ""
-            if ori == pred:
-                msg = "✅ "
-            else:
-                msg = "❌ "
+    #     for idx, (ori, pred) in enumerate(zip(all_labels, all_preds)):
+    #         msg = ""
+    #         if ori == pred:
+    #             msg = "✅ "
+    #         else:
+    #             msg = "❌ "
 
-            msg = f"{msg} {ori}.png: {ori}    ➡️    {pred} (conf: {all_confs[idx]:.4f})"
-            # msg = f"{msg} {ori}.png: {ori} ➡️ {pred} (conf: {confs[idx]:.4f})"
-            print(msg)
+    #         msg = f"{msg} {ori}.png: {ori}    ➡️    {pred} (conf: {all_confs[idx]:.4f})"
+    #         # msg = f"{msg} {ori}.png: {ori} ➡️ {pred} (conf: {confs[idx]:.4f})"
+    #         print(msg)
         
-        end = time.time()
-        total = len(pred_img_path_list)
-        accuracy = match_count / total * 100 if total > 0 else 0
-        print("\n" + "=" * 70)
-        print(f"Prediction Results:")
-        print(f"  Total: {total}")
-        print(f"  Match: {match_count}")
-        print(f"  Mismatch: {total - match_count}")
-        print(f"  Accuracy: {accuracy:.2f}%")
-        print(f"  pred time: {end - start:.2f} sec")
-        print("=" * 70)
-        print("\nPrediction completed!")    
+    #     end = time.time()
+    #     total = len(pred_img_path_list)
+    #     accuracy = match_count / total * 100 if total > 0 else 0
+    #     print("\n" + "=" * 70)
+    #     print(f"Prediction Results:")
+    #     print(f"  Total: {total}")
+    #     print(f"  Match: {match_count}")
+    #     print(f"  Mismatch: {total - match_count}")
+    #     print(f"  Accuracy: {accuracy:.2f}%")
+    #     print(f"  pred time: {end - start:.2f} sec")
+    #     print("=" * 70)
+    #     print("\nPrediction completed!")    
 
 def predict(
-    model: PyTorchModel | KerasModel,
+    model: PyTorchModel,
     image_path: str,
     verbose: int = 1
 ) -> Tuple[str, float]:
@@ -305,23 +271,23 @@ def predict(
         
         return pred_text, confidence
     
-    else:
-        keras_model: KerasModel = model
-        image_width = keras_model.train_data.image_width
-        image_height = keras_model.train_data.image_height
-        target_img = keras_model.encode_single_sample(image_path)["image"]
-        target_img = tf.reshape(target_img, shape=[1, image_width, image_height, 1])
+    # else:
+    #     keras_model: KerasModel = model
+    #     image_width = keras_model.train_data.image_width
+    #     image_height = keras_model.train_data.image_height
+    #     target_img = keras_model.encode_single_sample(image_path)["image"]
+    #     target_img = tf.reshape(target_img, shape=[1, image_width, image_height, 1])
 
-        if keras_model.predict_model is None:
-            keras_model.load_prediction_model()
+    #     if keras_model.predict_model is None:
+    #         keras_model.load_prediction_model()
 
-        keras_model.verbose = verbose
-        pred_val = keras_model.predict_model.predict(target_img, verbose=keras_model.verbose)
-        pred_text = keras_model.decode_batch_predictions(pred_val)[0]
+    #     keras_model.verbose = verbose
+    #     pred_val = keras_model.predict_model.predict(target_img, verbose=keras_model.verbose)
+    #     pred_text = keras_model.decode_batch_predictions(pred_val)[0]
 
-        confidence = float(np.max(pred_val, axis=-1).mean())
+    #     confidence = float(np.max(pred_val, axis=-1).mean())
 
-        return pred_text, confidence
+    #     return pred_text, confidence
 
 # 새로 추가: image_dir 내의 png 파일을 train/pred 폴더로 train_ratio 비율만큼 재분배
 def redistribute_train_pred(

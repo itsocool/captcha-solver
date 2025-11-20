@@ -4,11 +4,11 @@ import captchaResolver.engine as engine
 from captchaResolver.dataclass import TrainData
 from captchaResolver.core import PyTorchModel
 
-captcha_id = 'gov24'
+captcha_id = 'supreme_court'
 backend = 'pytorch'
-rev = 1
-image_width = 200
-image_height = 50
+rev = 0
+# image_width = 120
+# image_height = 40
 train_ratio = 0.9
 shuffle = False
 epochs = 60
@@ -18,8 +18,8 @@ early_stopping_patience = 6
 model: PyTorchModel = engine.get_captcha_model(captcha_id=captcha_id, backend=backend)
 train_data: TrainData = model.train_data
 model.train_data.rev = rev
-model.train_data.image_width = image_width
-model.train_data.image_height = image_height
+# model.train_data.image_width = image_width
+# model.train_data.image_height = image_height
 
 if shuffle:
     image_dir = Path(train_data.get_image_dir()).parent.as_posix()

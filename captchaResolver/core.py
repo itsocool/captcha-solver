@@ -562,7 +562,11 @@ class PyTorchModel:
             
         return self.model
     
+<<<<<<< HEAD
     def predict(self, image_path: str) -> str:
+=======
+    def predict(self, image_path: str) -> Tuple[str, float]:
+>>>>>>> dev
         """단일 이미지 예측."""
         if self.model is None:
             raise ValueError("Model not loaded. Call load_prediction_model() first.")
@@ -582,6 +586,7 @@ class PyTorchModel:
         self.model.eval()
         with torch.no_grad():
             out, _ = self.model(image_tensor)
+<<<<<<< HEAD
             out = out.permute(1, 0, 2)
             out = out.log_softmax(2)
             out = out.argmax(2)
@@ -590,6 +595,48 @@ class PyTorchModel:
         pred_text = ctc_decode(out_np, self.idx_to_char)
         
         return pred_text
+=======
+            out = out.permute(1, 0, 2)  # (N, T, C)
+
+            # log-probabilities -> probabilities
+            log_probs = out.log_softmax(2)
+            probs = log_probs.exp()
+
+            # argmax prediction per timestep
+            pred_idx = torch.argmax(log_probs, dim=2)
+            out_np = pred_idx.cpu().numpy()
+
+        # CTC 디코딩으로 텍스트 생성
+        pred_text = ctc_decode(out_np, self.idx_to_char)
+
+        # 신뢰도 계산 (각 예측 문자에 대한 확률의 기하평균)
+        # 배치 크기 1을 가정 (단일 이미지 예측)
+        try:
+            probs_np = probs.cpu().numpy()  # (N, T, C)
+            seq = out_np[0] if out_np.ndim == 2 else out_np
+            prev = -1
+            char_probs = []
+            for t, pi in enumerate(seq):
+                pi = int(pi)
+                if pi != prev and pi != 0:  # 0 = blank
+                    p = float(probs_np[0, t, pi])
+                    # 안전 하한
+                    p = max(p, 1e-12)
+                    char_probs.append(p)
+                prev = pi
+
+            if len(char_probs) == 0:
+                confidence = 0.0
+            else:
+                # geometric mean: exp(mean(log(p_i))) — 시퀀스 길이 정규화
+                log_sum = sum(np.log(char_probs))
+                geom_mean = float(np.exp(log_sum / len(char_probs)))
+                confidence = geom_mean
+        except Exception:
+            confidence = 0.0
+
+        return pred_text, confidence
+>>>>>>> dev
     
     def validate_model(self, val_loader: DataLoader) -> Tuple[float, float]:
         """모델 평가 (정확도 계산)."""
