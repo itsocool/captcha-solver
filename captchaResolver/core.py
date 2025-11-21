@@ -8,31 +8,17 @@ from typing import List, Tuple, Optional, Dict
 from tqdm import tqdm
 from captchaResolver.dataclass import CaptchaType, TrainData
 
-class Bidirectional(nn.Module):
-    def __init__(self, inp: int, hidden: int, out: int, lstm: bool = True):
-        super(Bidirectional, self).__init__()
-        if lstm:
-            self.rnn = nn.LSTM(inp, hidden, bidirectional=True)
-        else:
-            self.rnn = nn.GRU(inp, hidden, bidirectional=True)
-        self.embedding = nn.Linear(hidden * 2, out)
-    
-    def forward(self, X: torch.Tensor) -> torch.Tensor:
-        recurrent, _ = self.rnn(X)
-        out = self.embedding(recurrent)
-        return out
-
 class CRNN(nn.Module):
     """
-    CRNN 아키텍처 (dev.ipynb 기반).
+    CRNN 아키텍처
     
     특징:
-    - 동적 feature_dim 계산 (최초 forward 시 Linear 레이어 생성)
+    - 동적 feature_dim 계산 제거 (생성자에서 계산)
     - 고정 입력 크기 전제 (리사이즈로 보장)
     - CTC Loss 통합
     """
     
-    def __init__(self, in_channels: int, output: int):
+    def __init__(self, in_channels: int, output: int, img_height: int, img_width: int, label_length: int = None):
         super(CRNN, self).__init__()
         
         self.cnn = nn.Sequential(
@@ -45,11 +31,21 @@ class CRNN(nn.Module):
             nn.BatchNorm2d(256)
         )
         
-        # Linear는 최초 forward에서 feature_dim에 맞춰 동적 생성
-        self.linear = None
+        # Feature dimension 계산
+        with torch.no_grad():
+            dummy_input = torch.zeros(1, in_channels, img_height, img_width)
+            dummy_out = self.cnn(dummy_input)
+            # (N, C, H, W) -> Feature dim = C * H
+            n, c, h, w = dummy_out.size()
+            self.feature_dim = c * h
+            
+        self.linear = nn.Linear(self.feature_dim, 256)
+        
         # Keras 스타일: 두 개의 Bidirectional LSTM 레이어
         self.rnn1 = Bidirectional(256, 128, 256, lstm=True)  # 입력 차원 256으로 복구
         self.rnn2 = Bidirectional(256, 64, output + 1, lstm=True)  # 두 번째 LSTM (64 hidden units) -> output
+        # Optional: store expected label length for downstream usage (training/inference helpers)
+        self.label_length = label_length
     
     def forward(self, X: torch.Tensor, y: Optional[torch.Tensor] = None,
                 criterion: Optional[nn.Module] = None) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
@@ -64,23 +60,19 @@ class CRNN(nn.Module):
             loss: scalar loss (y와 criterion 제공 시)
         """
         out = self.cnn(X)
-        N, C, w, h = out.size()
         
-        # Reshape: (N, C, w, h) -> (N, C*w, h) 
-        # Keras와 동일한 reshape 계산: (width//4, height//4 * channels)
-        out = out.view(N, -1, h)
-        out = out.permute(0, 2, 1)  # (N, h, feature_dim)
-        
-        # 최초 forward 시 feature_dim에 맞춰 linear 생성
-        feature_dim = out.size(-1)
-        if self.linear is None:
-            self.linear = nn.Linear(feature_dim, 256).to(out.device)
+        # (N, C, H, W) -> (N, W, C, H) -> (N, W, C*H)
+        # Time dimension = Width
+        N, C, H, W = out.size()
+        out = out.permute(0, 3, 1, 2).contiguous()
+        out = out.view(N, W, -1)
         
         out = self.linear(out)
-        out = out.permute(1, 0, 2)  # (h, N, 256) for RNN
+        out = out.permute(1, 0, 2)  # (W, N, 256) for RNN
+        
         # Keras 스타일: 순차적으로 두 개의 Bidirectional LSTM 통과
-        out = self.rnn1(out)  # (h, N, 256)
-        out = self.rnn2(out)  # (h, N, num_classes)
+        out = self.rnn1(out)  # (W, N, 256)
+        out = self.rnn2(out)  # (W, N, num_classes)
         
         if y is not None and criterion is not None:
             T = out.size(0)
@@ -95,6 +87,18 @@ class CRNN(nn.Module):
             return out, loss
         
         return out, None
+
+class Bidirectional(nn.Module):
+    def __init__(self, inp: int, hidden: int, out: int, lstm: bool = True):
+        super(Bidirectional, self).__init__()
+        rnn_cls = nn.LSTM if lstm else nn.GRU
+        self.rnn = rnn_cls(inp, hidden, bidirectional=True)
+        self.embedding = nn.Linear(hidden * 2, out)
+    
+    def forward(self, X: torch.Tensor) -> torch.Tensor:
+        recurrent, _ = self.rnn(X)
+        out = self.embedding(recurrent)
+        return out
 
 class CaptchaDataset(Dataset):
     """PyTorch Dataset for CAPTCHA images."""
@@ -111,11 +115,13 @@ class CaptchaDataset(Dataset):
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         data = self.df.iloc[idx]
         image_path = os.path.join(self.path, data['image'])
-        image = Image.open(image_path).convert('L')
+        image = Image.open(image_path)
         label = torch.tensor(data['label'], dtype=torch.long)
         
         if self.transform is not None:
             image = self.transform(image)
+        else:
+            image = image.convert('L')
         
         return image, label
 
@@ -244,9 +250,7 @@ class PyTorchModel:
         self.char_to_idx = {char: idx + 1 for idx, char in enumerate(self.characters)}
         self.idx_to_char = {idx: char for char, idx in self.char_to_idx.items()}
         self.idx_to_char[0] = ''  # blank
-        
         self.num_classes = len(self.characters)
-        
         self.model = None
         self.engine = None
     
@@ -271,9 +275,9 @@ class PyTorchModel:
         df = pd.DataFrame(data)
         df_train, df_test = train_test_split(df, test_size=1 - train_size, shuffle=shuffle)
         
-        # Transform: 고정 크기 리사이즈 (dev.ipynb 기반 - augmentation 없음)
+        # Transform: TrainData.image_pre_process 사용
         transform = T.Compose([
-            T.Resize((self.train_data.image_height, self.train_data.image_width)),
+            T.Lambda(lambda img: self.train_data.image_pre_process(img)),
             T.ToTensor()
         ])
         
@@ -323,9 +327,9 @@ class PyTorchModel:
         
         df_pred = pd.DataFrame(data)
         
-        # Transform: 고정 크기 리사이즈
+        # Transform: TrainData.image_pre_process 사용
         transform = T.Compose([
-            T.Resize((self.train_data.image_height, self.train_data.image_width)),
+            T.Lambda(lambda img: self.train_data.image_pre_process(img)),
             T.ToTensor()
         ])
         
@@ -348,7 +352,13 @@ class PyTorchModel:
     
     def build_model(self) -> nn.Module:
         """CRNN 모델 생성 (dev.ipynb 스타일 - dropout 없음)."""
-        model = CRNN(in_channels=1, output=self.num_classes)
+        model = CRNN(
+            in_channels=1,
+            output=self.num_classes,
+            img_height=self.train_data.image_height,
+            img_width=self.train_data.image_width,
+            label_length=self.train_data.label_length,
+        )
         model.to(self.device)
         return model
     
@@ -361,7 +371,6 @@ class PyTorchModel:
             self.model = self.build_model()
         
         optimizer = optim.Adam(self.model.parameters(), lr=lr)
-        # dev.ipynb와 동일: PyTorch 기본 CTCLoss 사용
         criterion = nn.CTCLoss()
         
         # Learning rate scheduler (warmup 지원)
@@ -527,9 +536,7 @@ class PyTorchModel:
        
         if self.verbose > 0:
             print(f"Model saved to {model_dir}")
-            # print(f"  - Weights: {weights_path}")
             print(f"  - Full model: {full_model_path}")
-            # print(f"  - Mappings: {mapping_path}, {mapping_inv_path}")
 
     def load_prediction_model(self, model_path: str = None, cpu_only: bool = False) -> nn.Module:
         """모델 로드."""
@@ -548,11 +555,6 @@ class PyTorchModel:
             if self.model is None:
                 self.model = self.build_model()
             
-            # CRNN의 동적 linear 레이어를 초기화하기 위해 dummy forward pass
-            dummy_input = torch.randn(1, 1, self.train_data.image_height, self.train_data.image_width).to(self.device)
-            with torch.no_grad():
-                _ = self.model(dummy_input)
-            
             self.model.load_state_dict(loaded)
         
         self.model.eval()
@@ -562,11 +564,7 @@ class PyTorchModel:
             
         return self.model
     
-<<<<<<< HEAD
-    def predict(self, image_path: str) -> str:
-=======
     def predict(self, image_path: str) -> Tuple[str, float]:
->>>>>>> dev
         """단일 이미지 예측."""
         if self.model is None:
             raise ValueError("Model not loaded. Call load_prediction_model() first.")
@@ -576,26 +574,20 @@ class PyTorchModel:
         
         # Transform 적용
         transform = T.Compose([
-            T.Resize((self.train_data.image_height, self.train_data.image_width)),
+            T.Lambda(lambda img: self.train_data.image_pre_process(img)),
             T.ToTensor()
         ])
         
-        image = Image.open(image_path).convert('L')
+        if self.train_data.captcha_id == 'supreme_court':
+            image = self.train_data.supreme_court_image_preprocess(image_path)
+        else:
+            image = Image.open(image_path)
+        
         image_tensor = transform(image).unsqueeze(0).to(self.device)
         
         self.model.eval()
         with torch.no_grad():
             out, _ = self.model(image_tensor)
-<<<<<<< HEAD
-            out = out.permute(1, 0, 2)
-            out = out.log_softmax(2)
-            out = out.argmax(2)
-            out_np = out.cpu().numpy()
-        
-        pred_text = ctc_decode(out_np, self.idx_to_char)
-        
-        return pred_text
-=======
             out = out.permute(1, 0, 2)  # (N, T, C)
 
             # log-probabilities -> probabilities
@@ -636,7 +628,6 @@ class PyTorchModel:
             confidence = 0.0
 
         return pred_text, confidence
->>>>>>> dev
     
     def validate_model(self, val_loader: DataLoader) -> Tuple[float, float]:
         """모델 평가 (정확도 계산)."""
