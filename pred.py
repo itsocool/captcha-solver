@@ -1,4 +1,3 @@
-from sympy import im
 import captchaResolver.engine as engine
 from pathlib import Path
 from captchaResolver.dataclass import TrainData
