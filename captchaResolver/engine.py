@@ -114,7 +114,7 @@ def batch_predict_model(model: PyTorchModel, pred_image_dir: str = None) -> Dict
             image_name = os.path.basename(image_path)
             expected = os.path.splitext(image_name)[0]
             pred_text, confidence = torch_model.predict(image_path)
-            is_match = (pred_text == expected)
+            is_match = (pred_text == expected and len(pred_text) == train_data.label_length)
             if is_match:
                 match_count += 1
             else:

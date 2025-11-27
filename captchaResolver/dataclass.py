@@ -1,6 +1,8 @@
 import os
 import glob
+from pyexpat import model
 import random
+import struct
 import shutil
 import string
 from PIL import Image
@@ -13,16 +15,19 @@ UPPER_CASE: Final = string.ascii_uppercase
 ALPHABET: Final = string.ascii_letters
 ALPHA_NUMERIC: Final = string.digits + string.ascii_letters
 CAPTCHA_CHAR_SETS: Final = "2345678bcdefgmnpwxy"
+DEV_CHAR_SETS: Final = "2345678ABCDEFGHKLMNPRSTUVWYZabcdefhklmnoprstuvwyz"
 
 @dataclass
 class TrainData:
     captcha_id: str
+    backend: str = "pytorch"
     rev: int = 0
     train_data_base_dir: str = "./captcha_data"
-    image_width: int = 200
-    image_height: int = 50
+    image_width: int = 200  # 원본 이미지 너비 (자동 감지됨)
+    image_height: int = 50  # 원본 이미지 높이 (자동 감지됨)
+    model_image_size: Tuple[int, int] = None  # 모델 입력 이미지 크기 (width, height)
     label_length: int = 6
-    characters: List[str] = field(default_factory=lambda: list(ALPHA_NUMERIC))
+    characters: List[str] = field(default_factory=lambda: list(DIGITS))
     threshold: int = 255
     init: bool = False
 
@@ -36,33 +41,51 @@ class TrainData:
                 self.image_height,
                 self.label_length,
                 self.characters,
+                self.threshold,
             ) = self.get_train_info()
 
-    def get_train_info(self) -> Tuple[str, str, str, int, int, int, List[str]]:
+    def get_train_info(self) -> Tuple[str, str, str, int, int, int, List[str], int]:
         train_image_path = self.get_image_dir(train=True)
         pred_image_path = self.get_image_dir(train=False)
         model_path = self.get_model_path()
         train_files = self.get_data_files(train=True)
+        iw, ih = self.image_width, self.image_height
+        labels: List[str] = []
+        characters: List[str] = list(ALPHA_NUMERIC)
 
         if train_files:
-            last_file = train_files[-1]
+            last = train_files[-1]
+            # Try Pillow first for robust detection
+            try:
+                from PIL import Image
 
-            with Image.open(last_file) as image:
-                image_width, image_height = image.size
+                with Image.open(last) as im:
+                    iw, ih = im.size
+            except Exception:
+                with open(last, "rb") as f:
+                    f.seek(16)
+                    data = f.read(8)
+                    if len(data) >= 8:
+                        iw, ih = struct.unpack("!II", data)
 
             labels = [os.path.basename(p).split(".")[0] for p in train_files]
             if labels:
                 label_length = max(len(l) for l in labels)
                 characters = sorted(set(ch for l in labels for ch in l))
+            else:
+                label_length = self.label_length
+        else:
+            label_length = self.label_length
 
         return (
             os.path.abspath(train_image_path),
             os.path.abspath(pred_image_path),
             os.path.abspath(model_path),
-            image_width,
-            image_height,
-            label_length,
+            int(iw),
+            int(ih),
+            int(label_length),
             characters,
+            int(self.threshold),
         )
 
     def get_image_dir(self, train: bool = True) -> str:
@@ -95,13 +118,21 @@ class TrainData:
 
     def get_model_path(self) -> str:
         model_base_dir = self.get_model_base_dir()
-        model_file_name = "model_full.pth"
+        if self.backend == "pytorch":
+            model_file_name = "model_full.pth"
+        elif self.backend == "keras":
+            model_file_name = "weights.keras"
+        else:
+            model_file_name = "weights.keras"
         return os.path.join(os.path.abspath(model_base_dir), model_file_name)
 
     def choice_pred_image(self) -> str:
-        candidates = self.get_data_files(train=False)
+        image_dir = self.get_image_dir(train=False)
+        if not os.path.exists(image_dir):
+            raise RuntimeError(f"No images directory: {image_dir}")
+        candidates = sorted(glob.glob(os.path.join(image_dir, "*")))
         if not candidates:
-            raise RuntimeError(f"No images found in image_dir")
+            raise RuntimeError(f"No images found in {image_dir}")
         return random.choice(candidates)
 
     def shuffle_train_data(self, train_size=0.9) -> None:
@@ -147,39 +178,58 @@ class TrainData:
 
     def image_pre_process(self, image: Image.Image) -> Image.Image:
         """
-        이미지 전처리:
-        1. 리사이즈
-        2. 투명 배경 -> 흰색
-        3. 그레이스케일
-        4. Threshold 처리
+        이미지 전처리 (train/predict 공통 사용)
+        - captcha_id별 특수 전처리 포함
         """
-        # 1. Resize
-        image = image.resize((self.image_width, self.image_height), Image.Resampling.BILINEAR)
+        # captcha_id별 특수 전처리
+        if self.captcha_id == 'supreme_court':
+            return self._supreme_court_preprocess(image)
         
-        # 2. Transparent background -> White
+        # 기본 전처리
+        return self._default_preprocess(image)
+    
+    def _default_preprocess(self, image: Image.Image) -> Image.Image:
+        """기본 이미지 전처리"""
+        # 1. Transparent background -> White
         if image.mode == 'RGBA':
             background = Image.new('RGBA', image.size, (255, 255, 255, 255))
             image = Image.alpha_composite(background, image).convert('RGB')
         
-        # 3. Grayscale
+        # 2. Grayscale
         image = image.convert('L')
         
-        # 4. Threshold (밝은 값은 흰색으로)
+        # 3. Threshold (밝은 값은 흰색으로)
         if 0 < self.threshold < 255:
             image = image.point(lambda p: 255 if p > self.threshold else p)
-            
+
+        # 4. model_image_size 지정되면 Resize 모든 입력이미지 크기를 동일하게 맞춤
+        if self.model_image_size is not None:
+            image = image.resize(self.model_image_size, Image.Resampling.BILINEAR)
+
         return image
 
-    def supreme_court_image_preprocess(self,image_path: str) -> Image.Image:
-        image_size = (120, 40)
-        bg_color = 255
-        crop = (3, 1, image_size[0]-1, image_size[1]-7)
-        image = Image.open(image_path)
-        crop_image = image.crop(crop)
-        alpha = crop_image.split()[-1] if crop_image.mode == "RGBA" else None
-        image = Image.new("L", image_size, bg_color)
-        image.paste(crop_image, (1, 1), mask=alpha)
-        return image
+    def _supreme_court_preprocess(self, image: Image.Image) -> Image.Image:
+        """대법원 캡챠 전용 전처리"""
+        if image.mode == 'RGBA':
+            background = Image.new('RGBA', image.size, (255, 255, 255, 255))
+            image = Image.alpha_composite(background, image).convert('RGB')
+        
+        image = image.convert('L')
+        target_size = (self.image_width, self.image_height)
+
+        if image.size != target_size:
+            bg_color = 255
+            crop = (3, 1, target_size[0]-1, target_size[1]-7)
+            crop_image = image.crop(crop)
+            result = Image.new("L", target_size, bg_color)
+            result.paste(crop_image, (1, 1))
+        else:
+            result = image
+        
+        # 4. model_image_size 지정되면 Resize 모든 입력이미지 크기를 동일하게 맞춤
+        if self.model_image_size is not None:
+            result = result.resize(self.model_image_size, Image.Resampling.BILINEAR)
+        return result
 
 @dataclass
 class CaptchaType:

@@ -10,12 +10,13 @@ shuffle = False
 model: PyTorchModel = engine.get_captcha_model(captcha_id=captcha_id)
 train_data: TrainData = model.train_data
 model.train_data.rev = rev
+# model.train_data.model_image_size = (500, 100)
 
 if shuffle:
     image_dir = Path(train_data.get_image_dir()).parent.as_posix()
     engine.redistribute_train_pred(image_dir=image_dir, train_ratio=train_ratio)
 
-# engine.batch_predict_model(model=model)
-engine.batch_predict_model(model=model, pred_image_dir="captcha_data/supreme_court/0/images/draft")
+engine.batch_predict_model(model=model)
+# engine.batch_predict_model(model=model, pred_image_dir="captcha_data/supreme_court/0/images/labeled")
 
 # pred = engine.predict(model=model, image_path="captcha_data/supreme_court/0/images/pred/133171.png")

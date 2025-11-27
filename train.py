@@ -6,7 +6,7 @@ from captchaResolver.core import PyTorchModel
 
 captcha_id = 'supreme_court'
 rev = 0
-train_ratio = 0.9
+train_ratio = 0.8
 shuffle = False
 epochs = 60
 batch_size = 32
@@ -14,6 +14,7 @@ early_stopping_patience = 10
 model: PyTorchModel = engine.get_captcha_model(captcha_id=captcha_id)
 train_data: TrainData = model.train_data
 model.train_data.rev = rev
+# model.train_data.model_image_size = (500, 100)
 
 if shuffle:
     image_dir = Path(train_data.get_image_dir()).parent.as_posix()

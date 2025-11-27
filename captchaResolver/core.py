@@ -1,3 +1,4 @@
+from requests import get
 import os, numpy as np, torch, collections
 import torch.nn as nn
 import torch.optim as optim
@@ -201,17 +202,6 @@ class Engine:
         
         return out
 
-def ctc_decode(pred_array: np.ndarray, mapping_inv: Dict[int, str]) -> str:
-    seq = pred_array[0] if pred_array.ndim == 2 else pred_array
-    prev = -1
-    chars = []
-    for p in seq:
-        pi = int(p)
-        if pi != prev and pi != 0:  # 0 = blank
-            chars.append(mapping_inv.get(pi, f'[UNK:{pi}]'))
-        prev = pi
-    return ''.join(chars)
-
 class PyTorchModel:
     
     def __init__(
@@ -220,7 +210,7 @@ class PyTorchModel:
         verbose: int = 1,
         device: Optional[torch.device] = None,
         use_compile: bool = False,
-        use_amp: bool = False
+        use_amp: bool = False,
     ):
         self.captcha_type = captcha_type
         self.train_data = captcha_type.train_data
@@ -352,11 +342,18 @@ class PyTorchModel:
     
     def build_model(self) -> nn.Module:
         """CRNN 모델 생성 (dev.ipynb 스타일 - dropout 없음)."""
+        model_image_size = self.train_data.model_image_size
+        
+        if model_image_size is None:
+            image_width, image_height = self.captcha_type.train_data.image_width, self.captcha_type.train_data.image_height
+        else:
+            image_width, image_height = model_image_size
+            
         model = CRNN(
             in_channels=1,
             output=self.num_classes,
-            img_height=self.train_data.image_height,
-            img_width=self.train_data.image_width,
+            img_height=image_height,
+            img_width=image_width,
             label_length=self.train_data.label_length,
         )
         model.to(self.device)
@@ -572,17 +569,13 @@ class PyTorchModel:
         if self.engine is None:
             self.engine = Engine(self.model, None, None, device=self.device)
         
-        # Transform 적용
+        # Transform 적용 (image_pre_process에서 captcha_id별 전처리 통합 처리)
         transform = T.Compose([
             T.Lambda(lambda img: self.train_data.image_pre_process(img)),
             T.ToTensor()
         ])
         
-        if self.train_data.captcha_id == 'supreme_court':
-            image = self.train_data.supreme_court_image_preprocess(image_path)
-        else:
-            image = Image.open(image_path)
-        
+        image = Image.open(image_path)
         image_tensor = transform(image).unsqueeze(0).to(self.device)
         
         self.model.eval()
@@ -667,3 +660,14 @@ class PyTorchModel:
         accuracy = correct / total if total > 0 else 0.0
         
         return avg_loss, accuracy
+
+def ctc_decode(pred_array: np.ndarray, mapping_inv: Dict[int, str]) -> str:
+    seq = pred_array[0] if pred_array.ndim == 2 else pred_array
+    prev = -1
+    chars = []
+    for p in seq:
+        pi = int(p)
+        if pi != prev and pi != 0:  # 0 = blank
+            chars.append(mapping_inv.get(pi, f'[UNK:{pi}]'))
+        prev = pi
+    return ''.join(chars)
