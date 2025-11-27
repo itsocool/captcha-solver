@@ -1,0 +1,650 @@
+<!doctype html>
+<html lang="ko">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hyper CAPTCHA Resolver</title>
+  <!-- Bootstrap 5 CDN -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Bootstrap Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+  <!-- Noto Sans KR for improved Korean rendering -->
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --teal: #0d9488;
+      --teal-2: #14b8a6;
+      --teal-50: #e6fffb;
+      --nav-bg: #ffffff;
+      --nav-text: rgba(0, 0, 0, 0.8);
+    }
+
+    /* dropzone color tokens (overridden in dark mode) */
+    :root {
+      --drop-bg: #ffffff;
+      --drop-text: rgba(0, 0, 0, 0.65);
+      --drop-accent: var(--teal);
+    }
+
+    /* fixed-top navbar 사용에 따라 상단 패딩을 증가시킵니다 */
+    body {
+      padding-top: 80px;
+      background: linear-gradient(180deg, #fbffff, #f7fffe);
+      font-family: 'Noto Sans KR', system-ui, -apple-system, Roboto, 'Helvetica Neue', Arial;
+    }
+
+    /* navbar 스타일 (테마에 따라 색상이 바뀝니다) */
+    nav.navbar {
+      background: var(--nav-bg);
+      color: var(--nav-text);
+      transition: background .12s ease, color .12s ease;
+    }
+
+    nav.navbar .navbar-brand,
+    nav.navbar .nav-link {
+      color: var(--nav-text);
+    }
+
+    nav.navbar .nav-link.active {
+      color: var(--teal) !important;
+      font-weight: 600
+    }
+
+    .preview-img {
+      max-width: 100%;
+      max-height: 220px;
+      object-fit: contain;
+      border: 1px solid var(--teal-2);
+      padding: 6px;
+      border-radius: 6px;
+      background: #fff
+    }
+
+    /* Dropzone look */
+    #dropzone {
+      background: var(--drop-bg);
+      color: var(--drop-text);
+      transition: background .15s ease, color .12s ease;
+    }
+
+    #dropzone .bi {
+      color: var(--drop-accent);
+    }
+
+    .border-dashed {
+      border-style: dashed !important;
+    }
+
+    #dropzone.dragover {
+      background: var(--teal-50);
+      box-shadow: 0 4px 12px rgba(13, 148, 136, 0.06);
+    }
+
+    #dropFilename {
+      color: rgba(0, 0, 0, 0.6);
+    }
+
+    .monospace {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', 'Helvetica Neue', monospace;
+    }
+
+    .btn-teal {
+      background-color: var(--teal);
+      border-color: var(--teal);
+      color: #fff
+    }
+
+    .btn-teal:hover,
+    .btn-teal:focus {
+      background-color: var(--teal-2);
+      border-color: var(--teal-2);
+    }
+
+    .card.border-teal {
+      border: 1px solid rgba(13, 148, 136, 0.15);
+    }
+
+    .card .card-title {
+      display: flex;
+      align-items: center;
+      gap: 8px
+    }
+
+    .icon-circle {
+      width: 36px;
+      height: 36px;
+      display: inline-grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--teal);
+      color: #fff
+    }
+
+    .bg-teal-soft {
+      background: var(--teal-50);
+      border-radius: 6px;
+      padding: 6px
+    }
+
+    .spinner-teal {
+      color: var(--teal)
+    }
+
+    /* Result card improvements for better visibility */
+    .result-card {
+      border-left: 4px solid var(--teal);
+      box-shadow: 0 6px 18px rgba(13, 148, 136, 0.06);
+      background: linear-gradient(180deg, #ffffff, #fbfffe);
+    }
+
+    .result-card .card-body {
+      padding: 0.75rem 1rem;
+    }
+
+    .predicted-text {
+      font-size: 1.15rem;
+      color: #0b6a63;
+    }
+
+    .confidence-badge {
+      font-weight: 700;
+    }
+
+    .result-card img.img-thumbnail {
+      border: 1px solid rgba(13, 148, 136, 0.08);
+    }
+
+    .result-card:hover {
+      transform: translateY(-3px);
+      transition: transform .12s ease-out;
+    }
+
+    /* Dark mode overrides (applied when body[data-theme="dark"]) */
+    body[data-theme="dark"] {
+      background: linear-gradient(180deg, #071919, #052625);
+      color: #e6fffb
+    }
+
+    /* dark-mode 토큰: navbar 배경/문자색 포함 */
+    body[data-theme="dark"] {
+      --drop-bg: #052625;
+      --drop-text: rgba(230, 255, 251, 0.95);
+      --drop-accent: #14b8a6;
+      --nav-bg: #052625;
+      --nav-text: rgba(230, 255, 251, 0.95);
+    }
+
+    body[data-theme="dark"] .card {
+      background: #072624;
+      color: #d7fff6
+    }
+
+    body[data-theme="dark"] .card.border-teal {
+      border-color: rgba(20, 184, 166, 0.12)
+    }
+
+    body[data-theme="dark"] .preview-img {
+      border-color: rgba(20, 184, 166, 0.18);
+      background: #052625
+    }
+
+    body[data-theme="dark"] .btn-teal {
+      background-color: #0ebaa6;
+      border-color: #0ebaa6
+    }
+
+    body[data-theme="dark"] .bg-teal-soft {
+      background: rgba(20, 184, 166, 0.08);
+    }
+
+    body[data-theme="dark"] .result-card {
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6);
+    }
+
+    /* mode select: Bootstrap 기반, 테마 토큰을 사용하여 라이트/다크 모두에 적절하게 표시 */
+    #modeSelect.mode-select {
+      min-width: 140px;
+      display: inline-block;
+      padding: 0.25rem 0.5rem;
+      font-size: 0.875rem;
+      line-height: 1.5;
+      border-radius: .375rem;
+      background: var(--drop-bg);
+      color: var(--drop-text);
+      border: 1px solid rgba(13, 148, 136, 0.12);
+      transition: background .12s ease, color .12s ease, border-color .12s ease, box-shadow .12s ease;
+    }
+
+    /* focus / active */
+    #modeSelect.mode-select:focus {
+      outline: none;
+      box-shadow: 0 0 0 0.2rem rgba(20, 184, 166, 0.12);
+      border-color: var(--teal-2);
+    }
+
+    /* 옵션 텍스트(브라우저 간 동작 차이 존재) */
+    #modeSelect.mode-select option {
+      background: var(--drop-bg);
+      color: var(--drop-text);
+    }
+
+    /* dark mode overrides inherit token values defined above */
+    body[data-theme="dark"] #modeSelect.mode-select {
+      background: rgba(20, 184, 166, 0.03);
+      color: var(--drop-text);
+      border-color: rgba(20, 184, 166, 0.14);
+    }
+
+    .server-status {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      margin-left: auto;
+    }
+
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 14px;
+    }
+
+    .status-indicator {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      transition: background-color 0.3s;
+    }
+
+    .status-online {
+      background-color: #4CAF50;
+      box-shadow: 0 0 8px rgba(76, 175, 80, 0.6);
+    }
+
+    .status-offline {
+      background-color: #f44336;
+    }
+
+    .status-checking {
+      background-color: #FFC107;
+    }
+  </style>
+</head>
+
+<body>
+  <!-- 상단 고정 네비게이션 바: 브랜드 + 메뉴 (Captcha 전용) + 테마 토글 버튼 -->
+  <nav class="navbar navbar-expand-lg navbar-light fixed-top shadow-sm">
+    <div class="container">
+      <a class="navbar-brand d-flex align-items-center gap-2" href="#">
+        <span class="icon-circle"><i class="bi bi-shield-lock-fill"></i></span>
+        <span class="fw-bold">Hyper CAPTCHA Resolver</span>
+      </a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#topNav"
+        aria-controls="topNav" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="topNav">
+        <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+          <li class="nav-item"><a class="nav-link active" aria-current="page" href="#" id="nav-captcha">Captcha</a></li>
+          <!-- Chat 링크 제거 -->
+        </ul>
+          <!-- Server status indicators -->
+          <div class="server-status">
+            <div class="status-item">
+              <span class="status-indicator status-checking" id="status-5000"></span>
+              <span>5000</span>
+            </div>
+            <div class="status-item">
+              <span class="status-indicator status-checking" id="status-5001"></span>
+              <span>5001</span>
+            </div>
+          </div>
+
+        <div class="d-flex align-items-center">
+          <!-- Theme toggle button moved to navbar (ID 유지) -->
+          <button id="themeBtn" class="btn btn-sm btn-outline-secondary ms-2" title="Toggle theme">
+            <i id="themeIcon" class="bi bi-circle-half"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div class="row justify-content-center">
+      <div class="col-12 col-md-8">
+        <div class="card shadow-sm border-teal">
+          <div class="card-body">
+            <h3 class="card-title mb-3">
+              <span class="icon-circle"><i class="bi bi-shield-lock-fill"></i></span>
+              Hyper CAPTCHA Resolver - {% if cpu_only %}<span>CPU</span>{% endif %}
+            </h3>
+
+            <form id="uploadForm" class="row g-3">
+              <div class="col-12">
+                <label for="image" class="form-label">이미지 업로드</label>
+                <!-- Custom dropzone / file input -->
+                <div id="dropzone" class="p-3 mb-2 text-center border border-dashed rounded bg-white"
+                  style="border-color: rgba(13,148,136,0.08); cursor: pointer;">
+                  <div class="d-flex flex-column align-items-center bg-dark">
+                    <i class="bi bi-cloud-arrow-up-fill" style="font-size:28px; color:var(--teal)"></i>
+                    <div class="mt-2 text-white">이미지를 끌어다 놓거나 클릭하여 선택하세요</div>
+                    <div id="dropFilename" class="small text-muted mt-1"></div>
+                  </div>
+                  <input class="form-control visually-hidden" type="file" id="image" name="image" accept="image/*">
+                </div>
+              </div>
+
+              <div class="col-12">
+                <img id="preview" class="preview-img d-none" src="" alt="preview" />
+              </div>
+
+              <div class="col-12 d-flex gap-2 align-items-center">
+                <button id="submitBtn" type="button" class="btn btn-teal"><i class="bi bi-play-fill me-1"></i>예측 실행</button>
+                <button id="clearBtn" type="button" class="btn btn-outline-secondary"><i class="bi bi-x-circle me-1"></i>초기화</button>
+                <!-- 단일 예측 모드: 캡챠 전용 -->
+                <div id="spinner" class="spinner-border ms-auto d-none spinner-teal" role="status"><span
+                    class="visually-hidden">Loading...</span></div>
+              </div>
+            </form>
+
+            <div id="alerts" class="mt-3"></div>
+
+            <!-- Results list (cards) -->
+            <div id="resultsList" class="mt-3"></div>
+
+            <!-- <div class="mt-3 d-flex gap-2 align-items-center">
+                <small class="text-muted">서버 엔드포인트: <code>/api/v1/captcha</code></small>
+                <span class="badge bg-teal-soft text-teal ms-auto">테마: 청록색</span>
+              </div> -->
+            <!-- API 설명 카드 -->
+            <div class="card mt-3">
+              <div class="card-body">
+                <h5 class="card-title">API 설명 &amp; 사용법</h5>
+                <p class="card-text">간단한 HTTP 엔드포인트로 이미지 파일을 multipart/form-data로 전송하면 예측을 반환합니다.</p>
+
+                <ul>
+                  <li><strong>URL</strong>: <code>POST /api/v1/captcha</code></li>
+                  <li><strong>필드</strong>: <code>image</code> (파일)</li>
+                  <li><strong>응답(예)</strong>:
+                    <pre
+                      class="bg-dark p-2"><code class="text-white">{ "predicted": "3g2w6", "confidence": 0.9876 }</code></pre>
+                  </li>
+                </ul>
+
+                <h6>curl 예제 (Linux / macOS / WSL)</h6>
+                <pre
+                  class="bg-dark text-white p-2"><code>curl -X POST https://dev.hyperinfo.co.kr/api/v1/captcha -F "image=@/path/to/captcha.png"</code></pre>
+
+                <h6>PowerShell 예제 (Windows PowerShell)</h6>
+                <pre class="bg-dark text-white p-2"><code>$form = @{ image = Get-Item 'C:\path\to\captcha.png' }
+$response = Invoke-WebRequest -Uri 'https://dev.hyperinfo.co.kr/api/v1/captcha' -Method POST -Form $form
+$response.Content | ConvertFrom-Json</code></pre>
+
+                <h6>CMD 예제 (Windows CMD) 추후 octet-stream 지원 예정</h6>
+                <pre
+                  class="bg-dark text-white p-2"><code>curl.exe -X POST https://dev.hyperinfo.co.kr/api/v1/captcha -F "image=@C:\\path\\to\\captcha.png"</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const imageInput = document.getElementById('image');
+    const preview = document.getElementById('preview');
+    const dropzone = document.getElementById('dropzone');
+    const dropFilename = document.getElementById('dropFilename');
+    const submitBtn = document.getElementById('submitBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const spinner = document.getElementById('spinner');
+    const alerts = document.getElementById('alerts');
+
+    function showAlert(message, type = 'info') {
+      alerts.innerHTML = `<div class="alert alert-${type} alert-dismissible" role="alert">
+          <div class="monospace">${message.replace(/\n/g, '<br>')}</div>
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>`;
+    }
+
+    // 추가: 이미지 선택 여부에 따라 [예측 실행] 버튼 활성/비활성 처리
+    function updateSubmitButtonState() {
+      const hasFile = imageInput.files && imageInput.files.length > 0;
+      submitBtn.disabled = !hasFile;
+    }
+
+    // 초기 상태 반영
+    updateSubmitButtonState();
+
+    // 단일 모드(캡챠 전용). 엔드포인트는 고정입니다.
+
+    imageInput.addEventListener('change', (ev) => {
+      const f = ev.target.files && ev.target.files[0];
+      if (!f) {
+        preview.classList.add('d-none');
+        preview.src = '';
+        dropFilename.textContent = '';
+        updateSubmitButtonState(); // 변경: 선택 해제 시 버튼 비활성화
+        return;
+      }
+      const url = URL.createObjectURL(f);
+      preview.src = url;
+      preview.classList.remove('d-none');
+      dropFilename.textContent = f.name;
+      updateSubmitButtonState(); // 변경: 파일 선택 시 버튼 활성화
+    });
+
+    // Dropzone handlers
+    dropzone.addEventListener('click', () => imageInput.click());
+    ['dragenter', 'dragover'].forEach(ev => {
+      dropzone.addEventListener(ev, (e) => {
+        e.preventDefault(); e.stopPropagation();
+        dropzone.classList.add('dragover');
+      });
+    });
+    ['dragleave', 'drop', 'dragend'].forEach(ev => {
+      dropzone.addEventListener(ev, (e) => {
+        dropzone.classList.remove('dragover');
+      });
+    });
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const dt = e.dataTransfer;
+      if (!dt || !dt.files || dt.files.length === 0) return;
+      const f = dt.files[0];
+      // populate the hidden file input so existing code can use it
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(f);
+      imageInput.files = dataTransfer.files;
+      // trigger change
+      const ev = new Event('change', { bubbles: true });
+      imageInput.dispatchEvent(ev);
+    });
+
+    function clearForm() {
+      imageInput.value = '';
+      preview.src = '';
+      preview.classList.add('d-none');
+      alerts.innerHTML = '';
+      if (typeof dropFilename !== 'undefined') dropFilename.textContent = '';
+      updateSubmitButtonState(); // 변경: 초기화 후 버튼 비활성화
+    }
+
+    clearBtn.addEventListener('click', () => {
+      clearForm();
+    });
+
+    submitBtn.addEventListener('click', async () => {
+      alerts.innerHTML = '';
+      const f = imageInput.files && imageInput.files[0];
+      if (!f) { showAlert('이미지를 선택하세요.', 'warning'); return; }
+
+      const form = new FormData();
+      form.append('image', f, f.name);
+
+      spinner.classList.remove('d-none');
+      submitBtn.disabled = true;
+      clearBtn.disabled = true;
+
+      try {
+        // 캡챠 전용 엔드포인트
+        const endpoint = '/api/v1/captcha';
+        const resp = await fetch(endpoint, { method: 'POST', body: form });
+        const data = await resp.json();
+        if (!resp.ok) {
+          showAlert(`오류: ${data.error || resp.statusText}`, 'danger');
+        } else {
+          // Add a result card with image, predicted value, confidence and processing time (ms)
+          addResultCard(f, data.predicted, data.confidence ?? 'N/A', data.processing_ms ?? null);
+          // 자동 초기화: 결과를 리스트에 추가한 뒤 입력폼을 초기화
+          clearForm();
+        }
+      } catch (err) {
+        showAlert('요청 실패: ' + err.message, 'danger');
+      } finally {
+        spinner.classList.add('d-none');
+        submitBtn.disabled = false;
+        clearBtn.disabled = false;
+      }
+    });
+
+    function formatConfidence(c) {
+      if (c === null || c === undefined) return 'N/A';
+      const num = Number(c);
+      if (isNaN(num)) return String(c);
+      // if in [0,1], show percent
+      if (num <= 1) return (num * 100).toFixed(2) + '%';
+      // else assume already percentage-like
+      return num.toFixed(2) + (num > 10 ? '%' : '%');
+    }
+
+    function addResultCard(file, predicted, confidence, processingMs) {
+      const list = document.getElementById('resultsList');
+      const url = preview.src || (file ? URL.createObjectURL(file) : '');
+      const time = new Date().toLocaleString();
+      const confText = formatConfidence(confidence);
+      const div = document.createElement('div');
+      div.className = 'card mb-3 result-card';
+      div.innerHTML = `
+            <div class="row g-0 align-items-center">
+              <div class="col-auto p-2">
+                <img src="${url}" class="img-thumbnail" style="width:140px; height:80px; object-fit:contain; background:#fff" alt="preview">
+              </div>
+              <div class="col">
+                <div class="card-body py-2">
+                    <h6 class="card-title mb-1">예측값: <span class="predicted-text fw-bold monospace">${predicted}</span></h6>
+                    <p class="card-text mb-1">컨피던스: <span class="badge confidence-badge bg-teal-soft text-teal">${confText}</span></p>
+                    <p class="card-text mb-1">처리시간: <span class="badge confidence-badge bg-teal-soft text-teal">${processingMs}ms</span></p>
+                </div>
+              </div>
+              <div class="col-auto pe-2">
+                <button class="btn btn-outline-secondary btn-sm copy-btn" title="Copy prediction"><i class="bi bi-clipboard"></i></button>
+                <button class="btn btn-outline-danger btn-sm ms-1 remove-btn" title="Remove"><i class="bi bi-trash"></i></button>
+              </div>
+            </div>
+          `;
+
+      // copy handler
+      div.querySelector('.copy-btn').addEventListener('click', () => {
+        navigator.clipboard && navigator.clipboard.writeText(predicted);
+      });
+      // remove handler
+      div.querySelector('.remove-btn').addEventListener('click', () => {
+        div.remove();
+      });
+
+      // prepend newest on top
+      list.prepend(div);
+    }
+
+    // Theme handling: light / dark / auto
+    const THEME_KEY = 'theme-mode'; // values: 'light' | 'dark' | 'auto'
+    const themeBtn = document.getElementById('themeBtn');
+    const themeIcon = document.getElementById('themeIcon');
+
+    function applyTheme(mode) {
+      if (mode === 'auto') {
+        // follow system
+        const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        document.body.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      } else {
+        document.body.setAttribute('data-theme', mode);
+      }
+      updateIcon(mode);
+    }
+
+    function updateIcon(mode) {
+      themeIcon.className = '';
+      if (mode === 'light') themeIcon.classList.add('bi', 'bi-sun-fill');
+      else if (mode === 'dark') themeIcon.classList.add('bi', 'bi-moon-fill');
+      else themeIcon.classList.add('bi', 'bi-circle-half');
+    }
+
+    function cycleTheme() {
+      const cur = localStorage.getItem(THEME_KEY) || 'auto';
+      const order = ['light', 'dark', 'auto'];
+      let next = order[(order.indexOf(cur) + 1) % order.length];
+      localStorage.setItem(THEME_KEY, next);
+      applyTheme(next);
+    }
+
+    // initialize theme on load
+    (function () {
+      const saved = localStorage.getItem(THEME_KEY) || 'auto';
+      applyTheme(saved);
+      // if auto, listen to system changes
+      if (window.matchMedia) {
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+          const mode = localStorage.getItem(THEME_KEY) || 'auto';
+          if (mode === 'auto') applyTheme('auto');
+        });
+      }
+    })();
+
+    // ensure button state remains correct after theme init
+    updateSubmitButtonState();
+
+    themeBtn.addEventListener('click', cycleTheme);
+
+    // Server health check
+    async function checkServerHealth(port) {
+      const indicator = document.getElementById(`status-${port}`);
+      try {
+        const response = await fetch(`https://dev.hyperinfo.co.kr/health/${port}`, {
+          method: 'GET',
+          mode: 'cors',
+          cache: 'no-cache',
+          signal: AbortSignal.timeout(3000)
+        });
+
+        if (response.ok) {
+          indicator.className = 'status-indicator status-online';
+        } else {
+          indicator.className = 'status-indicator status-offline';
+        }
+      } catch (error) {
+        indicator.className = 'status-indicator status-offline';
+      }
+    }
+
+    // Check both servers every 5 seconds
+    function startHealthChecks() {
+      checkServerHealth(5000);
+      checkServerHealth(5001);
+      setInterval(() => {
+        checkServerHealth(5000);
+        checkServerHealth(5001);
+      }, 5000);
+    }
+
+    // Start health checks when page loads
+    startHealthChecks();
+  </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>
