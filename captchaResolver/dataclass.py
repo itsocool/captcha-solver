@@ -23,9 +23,8 @@ class TrainData:
     backend: str = "pytorch"
     rev: int = 0
     train_data_base_dir: str = "./captcha_data"
-    image_width: int = 200  # 원본 이미지 너비 (자동 감지됨)
-    image_height: int = 50  # 원본 이미지 높이 (자동 감지됨)
-    model_image_size: Tuple[int, int] = None  # 모델 입력 이미지 크기 (width, height)
+    image_width: int = 200
+    image_height: int = 50
     label_length: int = 6
     characters: List[str] = field(default_factory=lambda: list(DIGITS))
     threshold: int = 255
@@ -202,33 +201,27 @@ class TrainData:
         if 0 < self.threshold < 255:
             image = image.point(lambda p: 255 if p > self.threshold else p)
 
-        # 4. model_image_size 지정되면 Resize 모든 입력이미지 크기를 동일하게 맞춤
-        if self.model_image_size is not None:
-            image = image.resize(self.model_image_size, Image.Resampling.BILINEAR)
-
         return image
 
     def _supreme_court_preprocess(self, image: Image.Image) -> Image.Image:
         """대법원 캡챠 전용 전처리"""
+        # 0. 변수 초기화
+        image_size = (self.image_width, self.image_height)
+        threshold = self.threshold
+        
         if image.mode == 'RGBA':
             background = Image.new('RGBA', image.size, (255, 255, 255, 255))
-            image = Image.alpha_composite(background, image).convert('RGB')
-        
-        image = image.convert('L')
-        target_size = (self.image_width, self.image_height)
-
-        if image.size != target_size:
+            result = Image.alpha_composite(background, image)
+        elif image.size[0] > self.image_width and image.size[1] > self.image_height:
             bg_color = 255
-            crop = (3, 1, target_size[0]-1, target_size[1]-7)
+            crop = (3, 1, self.image_width-1, self.image_height-7)
             crop_image = image.crop(crop)
-            result = Image.new("L", target_size, bg_color)
+            result = Image.new("RGBA", (self.image_width, self.image_height), bg_color)
             result.paste(crop_image, (1, 1))
         else:
             result = image
         
-        # 4. model_image_size 지정되면 Resize 모든 입력이미지 크기를 동일하게 맞춤
-        if self.model_image_size is not None:
-            result = result.resize(self.model_image_size, Image.Resampling.BILINEAR)
+        result = result.convert('RGB').convert('L')
         return result
 
 @dataclass

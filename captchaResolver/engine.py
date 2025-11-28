@@ -91,7 +91,7 @@ def train_model(
         early_stopping_patience=patience,
     )
 
-def batch_predict_model(model: PyTorchModel, pred_image_dir: str = None) -> Dict[str, float]:
+def batch_predict_model(model: PyTorchModel, pred_image_dir: str = None, unk_token: str = "[UNK]") -> Dict[str, float]:
     start = time.time()
     torch_model: PyTorchModel = model
     train_data: TrainData = torch_model.train_data
@@ -113,7 +113,7 @@ def batch_predict_model(model: PyTorchModel, pred_image_dir: str = None) -> Dict
         for image_path in tqdm(pred_image_files, desc="Predicting"):
             image_name = os.path.basename(image_path)
             expected = os.path.splitext(image_name)[0]
-            pred_text, confidence = torch_model.predict(image_path)
+            pred_text, confidence = torch_model.predict(image_path=image_path, unk_token=unk_token)
             is_match = (pred_text == expected and len(pred_text) == train_data.label_length)
             if is_match:
                 match_count += 1
@@ -148,13 +148,14 @@ def batch_predict_model(model: PyTorchModel, pred_image_dir: str = None) -> Dict
 def predict(
     model: PyTorchModel,
     image_path: str,
-    verbose: int = 1
+    verbose: int = 1,
+    unk_token: str = "[UNK]"
 ) -> Tuple[str, float]:
     torch_model: PyTorchModel = model
     if torch_model.model is None:
         torch_model.load_prediction_model()
     
-    pred_text, confidence = torch_model.predict(image_path)
+    pred_text, confidence = torch_model.predict(image_path=image_path, unk_token=unk_token)
     
     if verbose:
         print(f"image_path: {image_path}")

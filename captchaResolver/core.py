@@ -39,6 +39,7 @@ class CRNN(nn.Module):
             # (N, C, H, W) -> Feature dim = C * H
             n, c, h, w = dummy_out.size()
             self.feature_dim = c * h
+            self.time_steps = w  # CNN 출력의 Width = Time steps
             
         self.linear = nn.Linear(self.feature_dim, 256)
         
@@ -80,7 +81,8 @@ class CRNN(nn.Module):
             N = out.size(1)
             
             input_lengths = torch.full(size=(N,), fill_value=T, dtype=torch.long, device=out.device)
-            target_lengths = torch.full(size=(N,), fill_value=y.size(1), dtype=torch.long, device=out.device)
+            target_lengths = torch.full(size=(N,), fill_value=self.label_length, dtype=torch.long, device=out.device)
+            # target_lengths = torch.full(size=(N,), fill_value=y.size(1), dtype=torch.long, device=out.device)
             
             out_log = out.log_softmax(2)
             loss = criterion(out_log, y, input_lengths, target_lengths)
@@ -342,18 +344,12 @@ class PyTorchModel:
     
     def build_model(self) -> nn.Module:
         """CRNN 모델 생성 (dev.ipynb 스타일 - dropout 없음)."""
-        model_image_size = self.train_data.model_image_size
-        
-        if model_image_size is None:
-            image_width, image_height = self.captcha_type.train_data.image_width, self.captcha_type.train_data.image_height
-        else:
-            image_width, image_height = model_image_size
-            
+        img_width, img_height = self.captcha_type.train_data.image_width, self.captcha_type.train_data.image_height
         model = CRNN(
             in_channels=1,
             output=self.num_classes,
-            img_height=image_height,
-            img_width=image_width,
+            img_height=img_height,
+            img_width=img_width,
             label_length=self.train_data.label_length,
         )
         model.to(self.device)
@@ -561,7 +557,7 @@ class PyTorchModel:
             
         return self.model
     
-    def predict(self, image_path: str) -> Tuple[str, float]:
+    def predict(self, image_path: str, unk_token: str = "[UNK]") -> Tuple[str, float]:
         """단일 이미지 예측."""
         if self.model is None:
             raise ValueError("Model not loaded. Call load_prediction_model() first.")
@@ -592,7 +588,7 @@ class PyTorchModel:
             out_np = pred_idx.cpu().numpy()
 
         # CTC 디코딩으로 텍스트 생성
-        pred_text = ctc_decode(out_np, self.idx_to_char)
+        pred_text = ctc_decode(out_np, self.idx_to_char, unk_token=unk_token)
 
         # 신뢰도 계산 (각 예측 문자에 대한 확률의 기하평균)
         # 배치 크기 1을 가정 (단일 이미지 예측)
@@ -622,52 +618,52 @@ class PyTorchModel:
 
         return pred_text, confidence
     
-    def validate_model(self, val_loader: DataLoader) -> Tuple[float, float]:
-        """모델 평가 (정확도 계산)."""
-        if self.model is None:
-            raise ValueError("Model not loaded. Call load_prediction_model() first.")
+    # def validate_model(self, val_loader: DataLoader) -> Tuple[float, float]:
+    #     """모델 평가 (정확도 계산)."""
+    #     if self.model is None:
+    #         raise ValueError("Model not loaded. Call load_prediction_model() first.")
         
-        criterion = nn.CTCLoss()
-        self.model.eval()
+    #     criterion = nn.CTCLoss()
+    #     self.model.eval()
         
-        total_loss = 0.0
-        correct = 0
-        total = 0
+    #     total_loss = 0.0
+    #     correct = 0
+    #     total = 0
         
-        with torch.no_grad():
-            for data, target in val_loader:
-                data = data.to(device=self.device)
-                target = target.to(device=self.device)
+    #     with torch.no_grad():
+    #         for data, target in val_loader:
+    #             data = data.to(device=self.device)
+    #             target = target.to(device=self.device)
                 
-                out, loss = self.model(data, target, criterion=criterion)
-                total_loss += loss.item()
+    #             out, loss = self.model(data, target, criterion=criterion)
+    #             total_loss += loss.item()
                 
-                # 예측 디코딩
-                out = out.permute(1, 0, 2).log_softmax(2).argmax(2)
-                out_np = out.cpu().numpy()
+    #             # 예측 디코딩
+    #             out = out.permute(1, 0, 2).log_softmax(2).argmax(2)
+    #             out_np = out.cpu().numpy()
                 
-                for i in range(out_np.shape[0]):
-                    pred_text = ctc_decode(out_np[i:i+1], self.idx_to_char)
-                    true_indices = target[i].cpu().numpy()
-                    true_text = ''.join([self.idx_to_char.get(int(idx), '')
-                                        for idx in true_indices if idx != 0])
+    #             for i in range(out_np.shape[0]):
+    #                 pred_text = ctc_decode(out_np[i:i+1], self.idx_to_char)
+    #                 true_indices = target[i].cpu().numpy()
+    #                 true_text = ''.join([self.idx_to_char.get(int(idx), '')
+    #                                     for idx in true_indices if idx != 0])
                     
-                    if pred_text == true_text:
-                        correct += 1
-                    total += 1
+    #                 if pred_text == true_text:
+    #                     correct += 1
+    #                 total += 1
         
-        avg_loss = total_loss / len(val_loader)
-        accuracy = correct / total if total > 0 else 0.0
+    #     avg_loss = total_loss / len(val_loader)
+    #     accuracy = correct / total if total > 0 else 0.0
         
-        return avg_loss, accuracy
+    #     return avg_loss, accuracy
 
-def ctc_decode(pred_array: np.ndarray, mapping_inv: Dict[int, str]) -> str:
+def ctc_decode(pred_array: np.ndarray, mapping_inv: Dict[int, str], unk_token: str = "[UNK]") -> str:
     seq = pred_array[0] if pred_array.ndim == 2 else pred_array
     prev = -1
     chars = []
     for p in seq:
         pi = int(p)
         if pi != prev and pi != 0:  # 0 = blank
-            chars.append(mapping_inv.get(pi, f'[UNK:{pi}]'))
+            chars.append(mapping_inv.get(pi, unk_token))
         prev = pi
     return ''.join(chars)
