@@ -200,15 +200,14 @@ class TrainData:
         # 3. Threshold (밝은 값은 흰색으로)
         if 0 < self.threshold < 255:
             image = image.point(lambda p: 255 if p > self.threshold else p)
+            
+        # 4. Resize to target size
+        image = image.resize((self.image_width, self.image_height))            
 
         return image
 
     def _supreme_court_preprocess(self, image: Image.Image) -> Image.Image:
         """대법원 캡챠 전용 전처리"""
-        # 0. 변수 초기화
-        image_size = (self.image_width, self.image_height)
-        threshold = self.threshold
-        
         if image.mode == 'RGBA':
             background = Image.new('RGBA', image.size, (255, 255, 255, 255))
             result = Image.alpha_composite(background, image)
@@ -222,6 +221,10 @@ class TrainData:
             result = image
         
         result = result.convert('RGB').convert('L')
+        
+        # 4. Resize to target size
+        result = result.resize((self.image_width, self.image_height)) 
+        
         return result
 
 @dataclass

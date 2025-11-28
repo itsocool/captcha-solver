@@ -5,9 +5,9 @@ import numpy as np
 from PIL import Image
 from typing import Tuple, Optional, Dict
 # from tqdm import tqdm
-# from captchaResolver.core import PyTorchModel, ctc_decode
+# from captchaResolver.backend.pytorch.core import PyTorchModel, ctc_decode
 from captchaResolver.dataclass import CaptchaType, TrainData
-from captchaResolver.keras_core import KerasModel
+from captchaResolver.backend.tensorflow.core import KerasModel
 
 def get_captcha_type_list(train_data_base_dir: str = "./captcha_data", backend: str = "keras") -> Dict[str, CaptchaType]:
 

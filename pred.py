@@ -1,10 +1,10 @@
 import captchaResolver.engine as engine
 from pathlib import Path
 from captchaResolver.dataclass import TrainData
-from captchaResolver.core import PyTorchModel
+from captchaResolver.backend.pytorch.core import PyTorchModel
 
-captcha_id = 'supreme_court'
-rev = 0
+captcha_id = 'gov24'
+rev = 1
 train_ratio = 0.9
 shuffle = False
 model: PyTorchModel = engine.get_captcha_model(captcha_id=captcha_id)

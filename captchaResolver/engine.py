@@ -3,7 +3,7 @@ import shutil, glob, random
 import torch
 from typing import Tuple, Optional, Dict
 from tqdm import tqdm
-from captchaResolver.core import PyTorchModel
+from captchaResolver.backend.pytorch.core import PyTorchModel
 from captchaResolver.dataclass import CAPTCHA_CHAR_SETS, CaptchaType, TrainData
 
 def get_captcha_type_list(train_data_base_dir: str = "./captcha_data") -> Dict[str, CaptchaType]:

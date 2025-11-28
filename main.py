@@ -1,7 +1,7 @@
 import os
 import captchaResolver.engine as engine
 from captchaResolver.dataclass import TrainData
-from captchaResolver.core import PyTorchModel
+from captchaResolver.backend.pytorch.core import PyTorchModel
 
 if __name__ == '__main__':
     # 학습 설정 (dev.ipynb 스타일)
