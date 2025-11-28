@@ -6,7 +6,7 @@ from captchaResolver.core import PyTorchModel
 
 captcha_id = 'supreme_court'
 rev = 0
-train_ratio = 0.4
+train_ratio = 0.6
 shuffle = True
 epochs = 60
 batch_size = 32
@@ -24,6 +24,7 @@ model_base_dir = engine.train_model(
     epochs=epochs,
     batch_size=batch_size,
     early_stopping_patience=early_stopping_patience,
+    loss_type='focal',
 )
 print(f"Model trained and saved at: {model_base_dir}{os.path.sep}model_full.pth")
 print("Done!")

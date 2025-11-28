@@ -66,7 +66,8 @@ def train_model(
     early_stopping_patience: int = 6,
     learning_rate: float = 0.001,
     num_workers: int = 0,
-    warmup_epochs: int = 0
+    warmup_epochs: int = 0,
+    loss_type: str = 'focal',
 ):
     model.model = model.build_model()
     # Split dataset (dev.ipynb style)
@@ -89,6 +90,7 @@ def train_model(
         save_best=True,
         warmup_epochs=warmup_epochs,
         early_stopping_patience=patience,
+        loss_type=loss_type,
     )
 
 def batch_predict_model(model: PyTorchModel, pred_image_dir: str = None, unk_token: str = "[UNK]") -> Dict[str, float]:

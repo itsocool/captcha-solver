@@ -4,12 +4,75 @@ import torch
 import collections
 import torch.nn as nn
 import torch.optim as optim
+import torch.nn.functional as F
 from torchvision.transforms import v2 as T  # v2 transforms API (최신)
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 from typing import List, Tuple, Optional, Dict
 from tqdm import tqdm
 from captchaResolver.dataclass import CaptchaType, TrainData
+
+
+# ============================================================
+# Custom Loss Functions
+# ============================================================
+
+class FocalCTCLoss(nn.Module):
+    """
+    Focal CTC Loss: 어려운 샘플에 더 높은 가중치 부여
+    
+    - gamma > 0: 쉬운 샘플의 가중치 감소
+    - alpha: 클래스 불균형 보정
+    """
+    def __init__(self, blank: int = 0, gamma: float = 2.0, alpha: float = 0.25, 
+                 reduction: str = 'mean', zero_infinity: bool = True):
+        super().__init__()
+        self.gamma = gamma
+        self.alpha = alpha
+        self.ctc = nn.CTCLoss(blank=blank, reduction='none', zero_infinity=zero_infinity)
+        self.reduction = reduction
+    
+    def forward(self, log_probs, targets, input_lengths, target_lengths):
+        ctc_loss = self.ctc(log_probs, targets, input_lengths, target_lengths)
+        
+        # Focal 가중치: (1 - p)^gamma
+        # p는 정답 확률의 근사치 (exp(-loss))
+        p = torch.exp(-ctc_loss)
+        focal_weight = self.alpha * (1 - p) ** self.gamma
+        focal_loss = focal_weight * ctc_loss
+        
+        if self.reduction == 'mean':
+            return focal_loss.mean()
+        elif self.reduction == 'sum':
+            return focal_loss.sum()
+        return focal_loss
+
+
+class LabelSmoothingCTCLoss(nn.Module):
+    """
+    Label Smoothing이 적용된 CTC Loss
+    
+    - 과적합 방지
+    - 모델이 너무 확신하는 것을 방지
+    """
+    def __init__(self, num_classes: int, blank: int = 0, smoothing: float = 0.1,
+                 reduction: str = 'mean', zero_infinity: bool = True):
+        super().__init__()
+        self.num_classes = num_classes
+        self.smoothing = smoothing
+        self.ctc = nn.CTCLoss(blank=blank, reduction=reduction, zero_infinity=zero_infinity)
+        self.kl = nn.KLDivLoss(reduction='batchmean')
+    
+    def forward(self, log_probs, targets, input_lengths, target_lengths):
+        ctc_loss = self.ctc(log_probs, targets, input_lengths, target_lengths)
+        
+        if self.smoothing > 0:
+            # Uniform distribution으로 smoothing
+            uniform = torch.full_like(log_probs, 1.0 / self.num_classes)
+            kl_loss = self.kl(log_probs, uniform)
+            return (1 - self.smoothing) * ctc_loss + self.smoothing * kl_loss
+        
+        return ctc_loss
 
 
 def get_train_transform(train_data: TrainData):
@@ -88,13 +151,21 @@ class CRNN(nn.Module):
             n, c, h, w = dummy_out.size()
             self.feature_dim = c * h
             self.time_steps = w  # CNN 출력의 Width = Time steps
+        
+        # Time steps 검증 (CTC 요구사항: T >= label_length)
+        if label_length is not None and self.time_steps < label_length:
+            raise ValueError(
+                f"Time steps ({self.time_steps}) must be >= label_length ({label_length}). "
+                f"Increase image width or reduce pooling."
+            )
             
         self.linear = nn.Linear(self.feature_dim, 256)
         
         # Keras 스타일: 두 개의 Bidirectional LSTM 레이어
-        self.rnn1 = Bidirectional(256, 128, 256, lstm=True)  # 입력 차원 256으로 복구
-        self.rnn2 = Bidirectional(256, 64, output + 1, lstm=True)  # 두 번째 LSTM (64 hidden units) -> output
-        # Optional: store expected label length for downstream usage (training/inference helpers)
+        self.rnn1 = Bidirectional(256, 128, 256, lstm=True)
+        self.rnn2 = Bidirectional(256, 64, output + 1, lstm=True)  # +1 for blank
+        
+        # 고정 길이 레이블 저장
         self.label_length = label_length
     
     def forward(self, X: torch.Tensor, y: Optional[torch.Tensor] = None,
@@ -409,7 +480,8 @@ class PyTorchModel:
                    epochs: int = 50, lr: float = 1e-4,
                    save_best: bool = True, model_path: Optional[str] = None,
                    warmup_epochs: int = 5, early_stopping_patience: int = 0,
-                   weight_decay: float = 1e-4, grad_clip: float = 5.0) -> List[float]:
+                   weight_decay: float = 1e-4, grad_clip: float = 5.0,
+                   loss_type: str = 'ctc') -> List[float]:
         """
         모델 학습 (개선된 학습 전략)
         
@@ -424,6 +496,7 @@ class PyTorchModel:
             early_stopping_patience: 조기 종료 patience (0이면 비활성화)
             weight_decay: L2 정규화 가중치 (기본: 1e-4)
             grad_clip: Gradient Clipping 최대값 (기본: 5.0)
+            loss_type: 손실 함수 유형 ('ctc', 'focal', 'label_smoothing')
         """
         if self.model is None:
             self.model = self.build_model()
@@ -431,12 +504,23 @@ class PyTorchModel:
         # AdamW 옵티마이저 (weight decay 포함)
         optimizer = optim.AdamW(self.model.parameters(), lr=lr, weight_decay=weight_decay)
 
-        # CTC Loss 생성
-        criterion = nn.CTCLoss(
-            blank=0,           # blank 인덱스 명시
-            reduction='mean',  # 배치 평균
-            zero_infinity=True # inf/nan 방지
-        )
+        # Loss 함수 선택
+        if loss_type == 'focal':
+            criterion = FocalCTCLoss(gamma=2.0)
+            if self.verbose > 0:
+                print(f"Using FocalCTCLoss (gamma=2.0)")
+        elif loss_type == 'label_smoothing':
+            criterion = LabelSmoothingCTCLoss(smoothing=0.1)
+            if self.verbose > 0:
+                print(f"Using LabelSmoothingCTCLoss (smoothing=0.1)")
+        else:
+            criterion = nn.CTCLoss(
+                blank=0,           # blank 인덱스 명시
+                reduction='mean',  # 배치 평균
+                zero_infinity=True # inf/nan 방지
+            )
+            if self.verbose > 0:
+                print(f"Using standard CTCLoss")
         
         # Learning Rate Scheduler 설정
         # 1. Warmup: 초기 에폭 동안 학습률을 점진적으로 증가
@@ -733,6 +817,96 @@ class PyTorchModel:
 
         return pred_text, confidence
     
+    def predict_with_length_validation(self, image_path: str, expected_length: int = None,
+                                       unk_token: str = "[UNK]", beam_width: int = 10,
+                                       max_retries: int = 3, length_penalty: float = 0.3) -> Tuple[str, float]:
+        """
+        고정 길이 레이블을 위한 길이 검증 예측.
+        
+        예측 결과의 길이가 expected_length와 다르면 beam_width를 증가시켜 재시도하거나
+        신뢰도에 페널티를 적용합니다.
+        
+        Args:
+            image_path: 이미지 파일 경로
+            expected_length: 예상 레이블 길이 (None이면 train_data.label_length 사용)
+            unk_token: 알 수 없는 문자 대체 토큰
+            beam_width: 초기 Beam Search 너비 (기본: 10)
+            max_retries: 길이 불일치 시 최대 재시도 횟수 (기본: 3)
+            length_penalty: 길이 불일치 시 신뢰도 페널티 (기본: 0.3)
+            
+        Returns:
+            (예측 텍스트, 조정된 신뢰도)
+        """
+        if expected_length is None:
+            expected_length = self.train_data.label_length
+        
+        if self.model is None:
+            raise ValueError("Model not loaded. Call load_prediction_model() first.")
+        
+        if self.engine is None:
+            self.engine = Engine(self.model, None, None, device=self.device)
+        
+        # Transform 적용
+        transform = get_eval_transform(self.train_data)
+        image = Image.open(image_path)
+        image_tensor = transform(image).unsqueeze(0).to(self.device)
+        
+        self.model.eval()
+        with torch.no_grad():
+            out, _ = self.model(image_tensor)
+            out = out.permute(1, 0, 2)  # (N, T, C)
+            log_probs = out.log_softmax(2)
+            log_probs_np = log_probs.cpu().numpy()[0]  # (T, C)
+        
+        best_pred = None
+        best_confidence = 0.0
+        current_beam_width = beam_width
+        
+        for retry in range(max_retries + 1):
+            # 고정 길이 Beam Search 디코딩 시도
+            pred_text, confidence = ctc_beam_decode_fixed_length(
+                log_probs_np,
+                self.idx_to_char,
+                expected_length=expected_length,
+                beam_width=current_beam_width,
+                unk_token=unk_token
+            )
+            
+            # 길이가 맞으면 바로 반환
+            if len(pred_text) == expected_length:
+                return pred_text, confidence
+            
+            # 길이가 맞지 않으면 후보로 저장
+            if confidence > best_confidence:
+                best_pred = pred_text
+                best_confidence = confidence
+            
+            # beam_width 증가하여 재시도
+            current_beam_width *= 2
+            if self.verbose > 0 and retry < max_retries:
+                print(f"Length mismatch (got {len(pred_text)}, expected {expected_length}), "
+                      f"retrying with beam_width={current_beam_width}")
+        
+        # 모든 재시도 실패 시 일반 beam search 결과 사용
+        if best_pred is None:
+            best_pred, best_confidence = ctc_beam_decode(
+                log_probs_np,
+                self.idx_to_char,
+                beam_width=beam_width,
+                unk_token=unk_token
+            )
+        
+        # 길이 불일치 페널티 적용
+        if len(best_pred) != expected_length:
+            length_diff = abs(len(best_pred) - expected_length)
+            penalty = length_penalty * length_diff
+            best_confidence = max(0.0, best_confidence - penalty)
+            if self.verbose > 0:
+                print(f"Warning: Prediction length {len(best_pred)} != expected {expected_length}, "
+                      f"confidence adjusted with penalty {penalty:.2f}")
+        
+        return best_pred, best_confidence
+    
 
 def ctc_decode(pred_array: np.ndarray, mapping_inv: Dict[int, str], unk_token: str = "[UNK]") -> str:
     """
@@ -817,6 +991,111 @@ def ctc_beam_decode(
     best_prefix, _, best_score = beams[0]
     
     # 신뢰도: log_score를 확률로 변환 (길이 정규화)
+    if len(best_prefix) > 0:
+        confidence = float(np.exp(best_score / max(len(best_prefix), 1)))
+    else:
+        confidence = 0.0
+    
+    return best_prefix, confidence
+
+
+def ctc_beam_decode_fixed_length(
+    log_probs: np.ndarray,
+    mapping_inv: Dict[int, str],
+    expected_length: int,
+    beam_width: int = 10,
+    unk_token: str = "[UNK]",
+    length_bonus: float = 0.5
+) -> Tuple[str, float]:
+    """
+    고정 길이 레이블을 위한 Beam Search CTC 디코딩.
+    
+    예상 길이에 맞는 결과에 보너스를 부여하여 정확도를 향상시킵니다.
+    
+    Args:
+        log_probs: (T, num_classes) log probabilities
+        mapping_inv: index -> character 매핑
+        expected_length: 예상 레이블 길이
+        beam_width: beam 크기
+        unk_token: 알 수 없는 문자 대체 토큰
+        length_bonus: 길이가 맞을 때 부여할 점수 보너스
+        
+    Returns:
+        (디코딩된 문자열, 신뢰도)
+    """
+    T, num_classes = log_probs.shape
+    
+    # Beam: (prefix, last_char_idx, log_score)
+    beams = [('', -1, 0.0)]
+    
+    for t in range(T):
+        new_beams = {}
+        remaining_time = T - t - 1
+        
+        for prefix, last_char, score in beams:
+            current_len = len(prefix)
+            
+            # 가지치기: 이미 예상 길이를 초과하면 blank만 허용
+            if current_len > expected_length:
+                # blank만 진행
+                new_score = score + float(log_probs[t, 0])
+                key = (prefix, -1)
+                if key not in new_beams or new_beams[key] < new_score:
+                    new_beams[key] = new_score
+                continue
+            
+            for c in range(num_classes):
+                new_score = score + float(log_probs[t, c])
+                
+                if c == 0:  # blank
+                    key = (prefix, -1)
+                    if key not in new_beams or new_beams[key] < new_score:
+                        new_beams[key] = new_score
+                elif c == last_char:
+                    # 중복 문자: prefix 유지
+                    key = (prefix, c)
+                    if key not in new_beams or new_beams[key] < new_score:
+                        new_beams[key] = new_score
+                else:
+                    # 새 문자 추가
+                    char = mapping_inv.get(c, unk_token)
+                    new_prefix = prefix + char
+                    new_len = len(new_prefix)
+                    
+                    # 길이 기반 가지치기: 남은 시간보다 부족한 문자가 많으면 제외
+                    min_chars_needed = expected_length - new_len
+                    if min_chars_needed > remaining_time:
+                        continue  # 시간 내에 채울 수 없음
+                    
+                    key = (new_prefix, c)
+                    if key not in new_beams or new_beams[key] < new_score:
+                        new_beams[key] = new_score
+        
+        # 상위 beam_width개 유지 (길이가 맞는 것에 보너스)
+        scored_beams = []
+        for (prefix, last_char), score in new_beams.items():
+            adjusted_score = score
+            # 예상 길이와 가까울수록 보너스
+            len_diff = abs(len(prefix) - expected_length)
+            if len_diff == 0:
+                adjusted_score += length_bonus
+            scored_beams.append((prefix, last_char, score, adjusted_score))
+        
+        sorted_beams = sorted(scored_beams, key=lambda x: x[3], reverse=True)[:beam_width]
+        beams = [(prefix, last_char, score) for prefix, last_char, score, _ in sorted_beams]
+    
+    if not beams:
+        return '', 0.0
+    
+    # 예상 길이에 정확히 맞는 것 우선 선택
+    matching_beams = [(p, lc, s) for p, lc, s in beams if len(p) == expected_length]
+    if matching_beams:
+        best_prefix, _, best_score = max(matching_beams, key=lambda x: x[2])
+    else:
+        # 없으면 가장 가까운 것 선택
+        best_prefix, _, best_score = min(beams, key=lambda x: (abs(len(x[0]) - expected_length), -x[2]))
+    
+    # 신뢰도 계산
     if len(best_prefix) > 0:
         confidence = float(np.exp(best_score / max(len(best_prefix), 1)))
     else:
