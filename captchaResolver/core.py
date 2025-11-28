@@ -1,13 +1,61 @@
-from requests import get
-import os, numpy as np, torch, collections
+import os
+import numpy as np
+import torch
+import collections
 import torch.nn as nn
 import torch.optim as optim
-import torchvision.transforms as T
+from torchvision.transforms import v2 as T  # v2 transforms API (최신)
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 from typing import List, Tuple, Optional, Dict
 from tqdm import tqdm
 from captchaResolver.dataclass import CaptchaType, TrainData
+
+
+def get_train_transform(train_data: TrainData):
+    """
+    학습용 Transform (Data Augmentation 포함) - torchvision.transforms.v2 사용
+    
+    CAPTCHA 인식에 효과적인 증강 기법:
+    - 회전/이동/스케일/기울임: 문자 변형 대응
+    - 가우시안 블러: 노이즈 대응
+    - ColorJitter: 밝기/대비 변화 대응
+    """
+    return T.Compose([
+        T.Lambda(lambda img: train_data.image_pre_process(img)),
+        # Affine 변환: 약간의 회전, 이동, 스케일, 기울임
+        T.RandomAffine(
+            degrees=3,              # 회전 범위 (도)
+            translate=(0.03, 0.03), # 이동 범위 (비율)
+            scale=(0.97, 1.03),     # 스케일 범위
+            shear=2,                # 기울임 범위 (도)
+            fill=255                # 배경 흰색
+        ),
+        # 가우시안 블러 (30% 확률)
+        T.RandomApply([
+            T.GaussianBlur(kernel_size=3, sigma=(0.1, 0.5))
+        ], p=0.3),
+        # 밝기/대비 조정 (20% 확률)
+        T.RandomApply([
+            T.ColorJitter(brightness=0.2, contrast=0.2)
+        ], p=0.2),
+        T.ToImage(),
+        T.ToDtype(torch.float32, scale=True),
+        # Random Erasing: 일부 영역 지우기 (10% 확률) - 노이즈/선 대응
+        T.RandomErasing(p=0.1, scale=(0.01, 0.05), ratio=(0.3, 3.0), value=1.0),
+    ])
+
+
+def get_eval_transform(train_data: TrainData):
+    """
+    평가/추론용 Transform (Augmentation 없음) - torchvision.transforms.v2 사용
+    """
+    return T.Compose([
+        T.Lambda(lambda img: train_data.image_pre_process(img)),
+        T.ToImage(),
+        T.ToDtype(torch.float32, scale=True),
+    ])
+
 
 class CRNN(nn.Module):
     """
@@ -267,17 +315,15 @@ class PyTorchModel:
         df = pd.DataFrame(data)
         df_train, df_test = train_test_split(df, test_size=1 - train_size, shuffle=shuffle)
         
-        # Transform: TrainData.image_pre_process 사용
-        transform = T.Compose([
-            T.Lambda(lambda img: self.train_data.image_pre_process(img)),
-            T.ToTensor()
-        ])
+        # Transform: 학습용 (Data Augmentation 포함) / 평가용 (증강 없음) 분리
+        train_transform = get_train_transform(self.train_data)
+        eval_transform = get_eval_transform(self.train_data)
         
         # 데이터셋 경로
         train_dir = self.train_data.get_image_dir(train=True)
         
-        train_dataset = CaptchaDataset(df_train, train_dir, self.char_to_idx, transform)
-        test_dataset = CaptchaDataset(df_test, train_dir, self.char_to_idx, transform)
+        train_dataset = CaptchaDataset(df_train, train_dir, self.char_to_idx, train_transform)
+        test_dataset = CaptchaDataset(df_test, train_dir, self.char_to_idx, eval_transform)
         
         # DataLoader 생성
         train_loader = DataLoader(
@@ -319,11 +365,8 @@ class PyTorchModel:
         
         df_pred = pd.DataFrame(data)
         
-        # Transform: TrainData.image_pre_process 사용
-        transform = T.Compose([
-            T.Lambda(lambda img: self.train_data.image_pre_process(img)),
-            T.ToTensor()
-        ])
+        # Transform: 추론용 (Augmentation 없음)
+        transform = get_eval_transform(self.train_data)
         
         # 데이터셋 경로
         pred_dir = self.train_data.get_image_dir(train=False)
@@ -343,8 +386,8 @@ class PyTorchModel:
         return pred_loader
     
     def build_model(self) -> nn.Module:
-        """CRNN 모델 생성 (dev.ipynb 스타일 - dropout 없음)."""
-        img_width, img_height = self.captcha_type.train_data.image_width, self.captcha_type.train_data.image_height
+        """CRNN 모델 생성."""
+        img_width, img_height = self.train_data.image_width, self.train_data.image_height
         model = CRNN(
             in_channels=1,
             output=self.num_classes,
@@ -353,27 +396,70 @@ class PyTorchModel:
             label_length=self.train_data.label_length,
         )
         model.to(self.device)
+        
+        # torch.compile 지원 (PyTorch 2.0+)
+        if self.use_compile and hasattr(torch, 'compile'):
+            model = torch.compile(model)
+            if self.verbose > 0:
+                print("Model compiled with torch.compile()")
+        
         return model
     
     def train_model(self, train_loader: DataLoader, val_loader: DataLoader = None,
                    epochs: int = 50, lr: float = 1e-4,
                    save_best: bool = True, model_path: Optional[str] = None,
-                   warmup_epochs: int = 0, early_stopping_patience: int = 0) -> List[float]:
-        """모델 학습 (dev.ipynb 스타일 + early stopping)."""
+                   warmup_epochs: int = 5, early_stopping_patience: int = 0,
+                   weight_decay: float = 1e-4, grad_clip: float = 5.0) -> List[float]:
+        """
+        모델 학습 (개선된 학습 전략)
+        
+        Args:
+            train_loader: 학습 데이터 로더
+            val_loader: 검증 데이터 로더
+            epochs: 학습 에폭 수
+            lr: 초기 학습률
+            save_best: 최적 모델 저장 여부
+            model_path: 모델 저장 경로
+            warmup_epochs: 워밍업 에폭 수 (기본: 5)
+            early_stopping_patience: 조기 종료 patience (0이면 비활성화)
+            weight_decay: L2 정규화 가중치 (기본: 1e-4)
+            grad_clip: Gradient Clipping 최대값 (기본: 5.0)
+        """
         if self.model is None:
             self.model = self.build_model()
         
-        optimizer = optim.Adam(self.model.parameters(), lr=lr)
-        criterion = nn.CTCLoss()
+        # AdamW 옵티마이저 (weight decay 포함)
+        optimizer = optim.AdamW(self.model.parameters(), lr=lr, weight_decay=weight_decay)
+
+        # CTC Loss 생성
+        criterion = nn.CTCLoss(
+            blank=0,           # blank 인덱스 명시
+            reduction='mean',  # 배치 평균
+            zero_infinity=True # inf/nan 방지
+        )
         
-        # Learning rate scheduler (warmup 지원)
-        scheduler = None
+        # Learning Rate Scheduler 설정
+        # 1. Warmup: 초기 에폭 동안 학습률을 점진적으로 증가
+        # 2. ReduceLROnPlateau: validation loss가 개선되지 않으면 학습률 감소
+        warmup_scheduler = None
+        plateau_scheduler = None
+        
         if warmup_epochs > 0:
             def lr_lambda(epoch):
                 if epoch < warmup_epochs:
                     return (epoch + 1) / warmup_epochs
                 return 1.0
-            scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+            warmup_scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+        
+        # ReduceLROnPlateau: validation loss 기반 학습률 감소
+        if val_loader is not None:
+            plateau_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer, 
+                mode='min', 
+                factor=0.5,      # 학습률을 50%로 감소
+                patience=3,      # 3 에폭 동안 개선 없으면 감소
+                min_lr=1e-7      # 최소 학습률
+            )
         
         # Early stopping 초기화
         best_val_loss = float('inf')
@@ -383,12 +469,16 @@ class PyTorchModel:
         if self.verbose > 0:
             print(f"\nStarting training for {epochs} epochs...")
             print(f"Model Configuration:")
-            print(f"  - Image size: {self.train_data.image_width}x{self.train_data.image_height}")
+            model_w, model_h = self.train_data.image_width, self.train_data.image_height
+            print(f"  - Model input size: {model_w}x{model_h}")
             print(f"  - Label length: {self.train_data.label_length}")
             print(f"  - Characters: {len(self.characters)}")
-            print(f"  - Learning rate: {lr}")
+            print(f"  - Optimizer: AdamW (lr={lr}, weight_decay={weight_decay})")
+            print(f"  - Gradient Clipping: {grad_clip}")
             if warmup_epochs > 0:
                 print(f"  - Warmup epochs: {warmup_epochs}")
+            if val_loader is not None:
+                print(f"  - LR Scheduler: ReduceLROnPlateau (factor=0.5, patience=3)")
             if early_stopping_patience > 0:
                 print(f"  - Early stopping patience: {early_stopping_patience}")
             print("=" * 70)
@@ -409,10 +499,15 @@ class PyTorchModel:
                 
                 optimizer.zero_grad()
                 
-                # CRNN forward에서 loss 계산 (dev.ipynb 스타일)
+                # CRNN forward에서 loss 계산
                 out, loss = self.model(data, target, criterion=criterion)
                 
                 loss.backward()
+                
+                # Gradient Clipping (RNN 안정화)
+                if grad_clip > 0:
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=grad_clip)
+                
                 optimizer.step()
                 
                 loss_val = loss.item() if isinstance(loss, torch.Tensor) else float(loss)
@@ -445,10 +540,17 @@ class PyTorchModel:
                 val_loss = sum(epoch_val_loss) / len(epoch_val_loss) if epoch_val_loss else 0.0
                 val_hist.append(val_loss)
             
-            # Scheduler step (warmup)
+            # === Learning Rate Scheduler Step ===
             current_lr = optimizer.param_groups[0]['lr']
-            if scheduler is not None:
-                scheduler.step()
+            
+            # 1. Warmup scheduler (에폭 기반)
+            if warmup_scheduler is not None and epoch < warmup_epochs:
+                warmup_scheduler.step()
+                current_lr = optimizer.param_groups[0]['lr']
+            
+            # 2. ReduceLROnPlateau (validation loss 기반, warmup 이후)
+            if plateau_scheduler is not None and val_loss is not None and epoch >= warmup_epochs:
+                plateau_scheduler.step(val_loss)
                 current_lr = optimizer.param_groups[0]['lr']
             
             # 로깅
@@ -557,19 +659,27 @@ class PyTorchModel:
             
         return self.model
     
-    def predict(self, image_path: str, unk_token: str = "[UNK]") -> Tuple[str, float]:
-        """단일 이미지 예측."""
+    def predict(self, image_path: str, unk_token: str = "[UNK]", use_beam_search: bool = True, beam_width: int = 10) -> Tuple[str, float]:
+        """
+        단일 이미지 예측.
+        
+        Args:
+            image_path: 이미지 파일 경로
+            unk_token: 알 수 없는 문자 대체 토큰
+            use_beam_search: Beam Search 디코딩 사용 여부 (기본: False)
+            beam_width: Beam Search 너비 (기본: 10)
+            
+        Returns:
+            (예측 텍스트, 신뢰도)
+        """
         if self.model is None:
             raise ValueError("Model not loaded. Call load_prediction_model() first.")
         
         if self.engine is None:
             self.engine = Engine(self.model, None, None, device=self.device)
         
-        # Transform 적용 (image_pre_process에서 captcha_id별 전처리 통합 처리)
-        transform = T.Compose([
-            T.Lambda(lambda img: self.train_data.image_pre_process(img)),
-            T.ToTensor()
-        ])
+        # Transform 적용: 추론용 (Augmentation 없음)
+        transform = get_eval_transform(self.train_data)
         
         image = Image.open(image_path)
         image_tensor = transform(image).unsqueeze(0).to(self.device)
@@ -579,85 +689,63 @@ class PyTorchModel:
             out, _ = self.model(image_tensor)
             out = out.permute(1, 0, 2)  # (N, T, C)
 
-            # log-probabilities -> probabilities
+            # log-probabilities
             log_probs = out.log_softmax(2)
-            probs = log_probs.exp()
-
-            # argmax prediction per timestep
-            pred_idx = torch.argmax(log_probs, dim=2)
-            out_np = pred_idx.cpu().numpy()
-
-        # CTC 디코딩으로 텍스트 생성
-        pred_text = ctc_decode(out_np, self.idx_to_char, unk_token=unk_token)
-
-        # 신뢰도 계산 (각 예측 문자에 대한 확률의 기하평균)
-        # 배치 크기 1을 가정 (단일 이미지 예측)
-        try:
-            probs_np = probs.cpu().numpy()  # (N, T, C)
-            seq = out_np[0] if out_np.ndim == 2 else out_np
-            prev = -1
-            char_probs = []
-            for t, pi in enumerate(seq):
-                pi = int(pi)
-                if pi != prev and pi != 0:  # 0 = blank
-                    p = float(probs_np[0, t, pi])
-                    # 안전 하한
-                    p = max(p, 1e-12)
-                    char_probs.append(p)
-                prev = pi
-
-            if len(char_probs) == 0:
-                confidence = 0.0
+            log_probs_np = log_probs.cpu().numpy()[0]  # (T, C)
+            
+            if use_beam_search:
+                # Beam Search 디코딩
+                pred_text, confidence = ctc_beam_decode(
+                    log_probs_np, 
+                    self.idx_to_char, 
+                    beam_width=beam_width,
+                    unk_token=unk_token
+                )
             else:
-                # geometric mean: exp(mean(log(p_i))) — 시퀀스 길이 정규화
-                log_sum = sum(np.log(char_probs))
-                geom_mean = float(np.exp(log_sum / len(char_probs)))
-                confidence = geom_mean
-        except Exception:
-            confidence = 0.0
+                # Greedy 디코딩
+                probs = log_probs.exp()
+                pred_idx = torch.argmax(log_probs, dim=2)
+                out_np = pred_idx.cpu().numpy()
+                
+                pred_text = ctc_decode(out_np, self.idx_to_char, unk_token=unk_token)
+                
+                # 신뢰도 계산 (각 예측 문자에 대한 확률의 기하평균)
+                try:
+                    probs_np = probs.cpu().numpy()  # (N, T, C)
+                    seq = out_np[0] if out_np.ndim == 2 else out_np
+                    prev = -1
+                    char_probs = []
+                    for t, pi in enumerate(seq):
+                        pi = int(pi)
+                        if pi != prev and pi != 0:  # 0 = blank
+                            p = float(probs_np[0, t, pi])
+                            p = max(p, 1e-12)
+                            char_probs.append(p)
+                        prev = pi
+
+                    if len(char_probs) == 0:
+                        confidence = 0.0
+                    else:
+                        log_sum = sum(np.log(char_probs))
+                        confidence = float(np.exp(log_sum / len(char_probs)))
+                except Exception:
+                    confidence = 0.0
 
         return pred_text, confidence
     
-    # def validate_model(self, val_loader: DataLoader) -> Tuple[float, float]:
-    #     """모델 평가 (정확도 계산)."""
-    #     if self.model is None:
-    #         raise ValueError("Model not loaded. Call load_prediction_model() first.")
-        
-    #     criterion = nn.CTCLoss()
-    #     self.model.eval()
-        
-    #     total_loss = 0.0
-    #     correct = 0
-    #     total = 0
-        
-    #     with torch.no_grad():
-    #         for data, target in val_loader:
-    #             data = data.to(device=self.device)
-    #             target = target.to(device=self.device)
-                
-    #             out, loss = self.model(data, target, criterion=criterion)
-    #             total_loss += loss.item()
-                
-    #             # 예측 디코딩
-    #             out = out.permute(1, 0, 2).log_softmax(2).argmax(2)
-    #             out_np = out.cpu().numpy()
-                
-    #             for i in range(out_np.shape[0]):
-    #                 pred_text = ctc_decode(out_np[i:i+1], self.idx_to_char)
-    #                 true_indices = target[i].cpu().numpy()
-    #                 true_text = ''.join([self.idx_to_char.get(int(idx), '')
-    #                                     for idx in true_indices if idx != 0])
-                    
-    #                 if pred_text == true_text:
-    #                     correct += 1
-    #                 total += 1
-        
-    #     avg_loss = total_loss / len(val_loader)
-    #     accuracy = correct / total if total > 0 else 0.0
-        
-    #     return avg_loss, accuracy
 
 def ctc_decode(pred_array: np.ndarray, mapping_inv: Dict[int, str], unk_token: str = "[UNK]") -> str:
+    """
+    Greedy CTC 디코딩: 연속 중복 제거 + blank(인덱스 0) 제거
+    
+    Args:
+        pred_array: (T,) 또는 (1, T) 예측 인덱스 배열
+        mapping_inv: index -> character 매핑
+        unk_token: 알 수 없는 인덱스에 대한 대체 토큰
+        
+    Returns:
+        디코딩된 문자열
+    """
     seq = pred_array[0] if pred_array.ndim == 2 else pred_array
     prev = -1
     chars = []
@@ -667,3 +755,71 @@ def ctc_decode(pred_array: np.ndarray, mapping_inv: Dict[int, str], unk_token: s
             chars.append(mapping_inv.get(pi, unk_token))
         prev = pi
     return ''.join(chars)
+
+
+def ctc_beam_decode(
+    log_probs: np.ndarray, 
+    mapping_inv: Dict[int, str], 
+    beam_width: int = 10, 
+    unk_token: str = "[UNK]"
+) -> Tuple[str, float]:
+    """
+    Beam Search CTC 디코딩 (정확도 향상)
+    
+    Args:
+        log_probs: (T, num_classes) log probabilities
+        mapping_inv: index -> character 매핑
+        beam_width: beam 크기 (클수록 정확하지만 느림)
+        unk_token: 알 수 없는 문자 대체 토큰
+        
+    Returns:
+        (디코딩된 문자열, 신뢰도)
+    """
+    T, num_classes = log_probs.shape
+    
+    # Beam: (prefix, last_char_idx, log_score)
+    # last_char_idx: 마지막으로 출력한 문자 인덱스 (-1이면 없음)
+    beams = [('', -1, 0.0)]
+    
+    for t in range(T):
+        new_beams = {}
+        
+        for prefix, last_char, score in beams:
+            for c in range(num_classes):
+                new_score = score + float(log_probs[t, c])
+                
+                if c == 0:  # blank
+                    # blank: prefix 유지, last_char 리셋
+                    key = (prefix, -1)
+                    if key not in new_beams or new_beams[key] < new_score:
+                        new_beams[key] = new_score
+                elif c == last_char:
+                    # 중복 문자: prefix 유지
+                    key = (prefix, c)
+                    if key not in new_beams or new_beams[key] < new_score:
+                        new_beams[key] = new_score
+                else:
+                    # 새 문자: prefix에 추가
+                    char = mapping_inv.get(c, unk_token)
+                    new_prefix = prefix + char
+                    key = (new_prefix, c)
+                    if key not in new_beams or new_beams[key] < new_score:
+                        new_beams[key] = new_score
+        
+        # 상위 beam_width개만 유지
+        sorted_beams = sorted(new_beams.items(), key=lambda x: x[1], reverse=True)[:beam_width]
+        beams = [(prefix, last_char, score) for (prefix, last_char), score in sorted_beams]
+    
+    if not beams:
+        return '', 0.0
+    
+    # 최고 점수 beam 반환
+    best_prefix, _, best_score = beams[0]
+    
+    # 신뢰도: log_score를 확률로 변환 (길이 정규화)
+    if len(best_prefix) > 0:
+        confidence = float(np.exp(best_score / max(len(best_prefix), 1)))
+    else:
+        confidence = 0.0
+    
+    return best_prefix, confidence

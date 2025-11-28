@@ -171,35 +171,14 @@ def redistribute_train_pred(
     seed: Optional[int] = 42, 
     verbose: bool = True
 ) -> Dict[str, int]:
-    """
-    pred 폴더의 모든 이미지 파일을 train 폴더로 이동(덮어쓰기)한 후,
-    train 폴더의 전체 파일을 train_ratio 비율로 재분배합니다.
-    
-    Args:
-        image_dir: images 폴더 경로 (train, pred 하위 폴더 포함)
-        train_ratio: train에 남길 비율 (0.0 ~ 1.0)
-        extension: 파일 확장자 (기본값: 'png', 대소문자 구분)
-        seed: 셔플 시드
-        verbose: 진행 상황 출력 여부
-    
-    Returns:
-        통계 dict: {
-            'pred_found': pred 폴더에서 발견된 파일 수,
-            'train_found': train 폴더에서 발견된 파일 수,
-            'pred_moved': pred→train 이동 파일 수,
-            'overwritten': 덮어쓴 파일 수,
-            'total_after_merge': 병합 후 train 전체 파일 수,
-            'final_train': 최종 train 폴더 파일 수,
-            'final_pred': 최종 pred 폴더 파일 수
-        }
-    """
+
     if not (0.0 <= train_ratio <= 1.0):
         raise ValueError("train_ratio must be between 0 and 1")
 
     # ========== 0단계: 변수 초기화 ==========
     ext_lower = extension.lower()
     pattern_chars = ''.join(f'[{c.lower()}{c.upper()}]' for c in extension)
-    glob_pattern = os.path.join(image_dir, '**', f'*.{pattern_chars}')
+    # glob_pattern = os.path.join(image_dir, '**', f'*.{pattern_chars}')
     train_dir = os.path.join(image_dir, "train")
     pred_dir = os.path.join(image_dir, "pred")
     os.makedirs(train_dir, exist_ok=True)
@@ -239,7 +218,8 @@ def redistribute_train_pred(
         print(f"                      Overwritten {overwritten} duplicate files")
 
     # ========== 3단계: train 폴더의 전체 파일 수집 ==========
-    all_train_files = sorted(glob.glob(glob_pattern))
+    # all_train_files = sorted(glob.glob(glob_pattern))
+    all_train_files = glob.glob(os.path.join(train_dir, f"*.{pattern_chars}"))
     total_after_merge = len(all_train_files)
     
     if verbose:
