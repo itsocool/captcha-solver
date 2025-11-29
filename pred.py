@@ -3,8 +3,8 @@ import captchaResolver.engine as engine
 from pathlib import Path
 from captchaResolver.dataclass import TrainData
 
-captcha_id = 'gov24'
-rev = 1
+captcha_id = 'dev'
+rev = 0
 train_ratio = 0.9
 shuffle = False
 model: BaseModel = engine.get_captcha_model(captcha_id=captcha_id)

@@ -4,7 +4,7 @@ import torch
 from typing import Tuple, Optional, Dict
 from tqdm import tqdm
 from captchaResolver.backend.pytorch.core import PyTorchModel
-from captchaResolver.dataclass import CAPTCHA_CHAR_SETS, CaptchaType, TrainData
+from captchaResolver.dataclass import CAPTCHA_CHAR_SETS, DEV_CHAR_SETS, CaptchaType, TrainData
 
 def get_captcha_type_list(train_data_base_dir: str = "./captcha_data") -> Dict[str, CaptchaType]:
 
@@ -13,6 +13,13 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data") -> Dict[s
         train_data_base_dir=train_data_base_dir,
         label_length=5,
         characters=list(CAPTCHA_CHAR_SETS),
+    ))
+
+    dev = CaptchaType(name="개발중", desc="개발중", train_data=TrainData(
+        captcha_id="dev",
+        train_data_base_dir=train_data_base_dir,
+        label_length=6,
+        characters=list(DEV_CHAR_SETS),
     ))
 
     supreme_court = CaptchaType(name="대법원", desc="대법원 캡챠", train_data=TrainData(
@@ -43,6 +50,7 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data") -> Dict[s
 
     return {
         "default": default,
+        "dev": dev,
         "supreme_court": supreme_court,
         "gov24": gov24,
         "wetax": wetax,

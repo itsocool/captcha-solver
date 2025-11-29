@@ -4,13 +4,13 @@ import captchaResolver.engine as engine
 from captchaResolver.dataclass import TrainData
 from captchaResolver.backend.pytorch.core import PyTorchModel
 
-captcha_id = 'gov24'
-rev = 1
+captcha_id = 'dev'
+rev = 0
 train_ratio = 0.6
 shuffle = False
-epochs = 60
-batch_size = 32
-early_stopping_patience = 8
+epochs = 80
+batch_size = 64
+early_stopping_patience = 10
 model: PyTorchModel = engine.get_captcha_model(captcha_id=captcha_id)
 train_data: TrainData = model.train_data
 model.train_data.rev = rev
