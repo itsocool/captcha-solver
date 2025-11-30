@@ -76,7 +76,12 @@ def train_model(
     num_workers: int = 0,
     warmup_epochs: int = 0,
     loss_type: str = 'focal',
+    use_amp: bool = True,
 ):
+    # use_amp 인수가 명시적으로 전달되면 모델 설정 업데이트
+    if use_amp is not None:
+        model.use_amp = use_amp
+    
     model.model = model.build_model()
     # Split dataset (dev.ipynb style)
     train_loader, val_loader = model.split_dataset(
@@ -101,10 +106,21 @@ def train_model(
         loss_type=loss_type,
     )
 
-def batch_predict_model(model: PyTorchModel, pred_image_dir: str = None, unk_token: str = "[UNK]") -> Dict[str, float]:
+def batch_predict_model(
+    model: PyTorchModel,
+    pred_image_dir: str = None,
+    unk_token: str = "[UNK]",
+    use_amp: bool = True,
+    loss_type: str = 'focal',
+) -> Dict[str, float]:
     start = time.time()
     torch_model: PyTorchModel = model
     train_data: TrainData = torch_model.train_data
+    torch_model.loss_type = loss_type
+    # use_amp 인수가 명시적으로 전달되면 모델 설정 업데이트
+    if use_amp is not None:
+        torch_model.use_amp = use_amp
+    
     torch_model.load_prediction_model()
     
     if pred_image_dir is not None:
@@ -123,7 +139,12 @@ def batch_predict_model(model: PyTorchModel, pred_image_dir: str = None, unk_tok
         for image_path in tqdm(pred_image_files, desc="Predicting"):
             image_name = os.path.basename(image_path)
             expected = os.path.splitext(image_name)[0]
-            pred_text, confidence = torch_model.predict(image_path=image_path, unk_token=unk_token)
+            pred_text, confidence = torch_model.predict(
+                image_path=image_path,
+                unk_token=unk_token,
+                use_amp=use_amp,
+                loss_type=loss_type,
+            )
             is_match = (pred_text == expected and len(pred_text) == train_data.label_length)
             if is_match:
                 match_count += 1
@@ -159,13 +180,20 @@ def predict(
     model: PyTorchModel,
     image_path: str,
     verbose: int = 1,
-    unk_token: str = "[UNK]"
+    unk_token: str = "[UNK]",
+    use_amp: bool = True,
+    loss_type: str = 'focal',
 ) -> Tuple[str, float]:
     torch_model: PyTorchModel = model
+    torch_model.loss_type = loss_type
+    # use_amp 인수가 명시적으로 전달되면 모델 설정 업데이트
+    if use_amp is not None:
+        torch_model.use_amp = use_amp
+    
     if torch_model.model is None:
         torch_model.load_prediction_model()
     
-    pred_text, confidence = torch_model.predict(image_path=image_path, unk_token=unk_token)
+    pred_text, confidence = torch_model.predict(image_path=image_path, unk_token=unk_token, use_amp=use_amp, loss_type=loss_type)
     
     if verbose:
         print(f"image_path: {image_path}")

@@ -415,11 +415,13 @@ class PyTorchModel(BaseModel):
         verbose: int = 1,
         device: Optional[torch.device] = None,
         use_compile: bool = False,
-        use_amp: bool = False,
+        use_amp: bool = True,
+        loss_type: str = 'focal',
     ):
         super().__init__(captcha_type, verbose)
         self.use_compile = use_compile
         self.use_amp = use_amp
+        self.loss_type = loss_type
         
         if device is None:
             self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -598,7 +600,7 @@ class PyTorchModel(BaseModel):
                    save_best: bool = True, model_path: Optional[str] = None,
                    warmup_epochs: int = 5, early_stopping_patience: int = 0,
                    weight_decay: float = 1e-4, grad_clip: float = 5.0,
-                   loss_type: str = 'focal', dropout: float = 0.1) -> List[float]:
+                   loss_type: str = None, dropout: float = 0.1) -> List[float]:
         """
         모델 학습 (PyTorch 2.0+ 최적화, AMP 지원)
         
@@ -686,6 +688,7 @@ class PyTorchModel(BaseModel):
             print(f"  - Optimizer: AdamW (lr={lr}, weight_decay={weight_decay}, fused={use_fused})")
             print(f"  - Gradient Clipping: {grad_clip}")
             print(f"  - Mixed Precision (AMP): {self.use_amp and scaler is not None}")
+            print(f"  - Loss function: {self.loss_type if self.loss_type else 'CTCLoss'}")
             if warmup_epochs > 0:
                 print(f"  - Warmup epochs: {warmup_epochs}")
             if val_loader is not None:
@@ -888,7 +891,7 @@ class PyTorchModel(BaseModel):
         return self.model
     
     def predict(self, image_path: str, unk_token: str = "[UNK]", beam_width: int = 10,
-                 length_bonus: float = 0.5) -> Tuple[str, float]:
+                 length_bonus: float = 0.5, loss_type: str = 'focal', use_amp: bool = True) -> Tuple[str, float]:
         """
         단일 이미지 예측 (고정 길이 Beam Search 전용, 최적화됨).
         
