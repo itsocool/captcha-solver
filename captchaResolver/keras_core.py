@@ -7,12 +7,12 @@
 새로 학습된 모델은 captchaResolver.backend.tensorflow.core 경로를 사용합니다.
 """
 
-try:
-    from captchaResolver.backend.tensorflow.core import *
-    from captchaResolver.backend.tensorflow.core import (
-        KerasModel,
-        CTCLayer,
-    )
-except ImportError:
-    # TensorFlow가 설치되지 않은 경우
-    pass
+# try:
+#     from captchaResolver.backend.tensorflow.core import *
+#     from captchaResolver.backend.tensorflow.core import (
+#         KerasModel,
+#         CTCLayer,
+#     )
+# except ImportError:
+#     # TensorFlow가 설치되지 않은 경우
+#     pass

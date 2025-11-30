@@ -71,7 +71,7 @@ def train_model(
     epochs: int = 60,
     batch_size: int = 32,
     earlystopping: bool = True,
-    early_stopping_patience: int = 6,
+    early_stopping_patience: int = 8,
     learning_rate: float = 0.001,
     num_workers: int = 0,
     warmup_epochs: int = 0,

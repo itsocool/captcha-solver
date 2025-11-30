@@ -3,7 +3,7 @@ import captchaResolver.engine as engine
 from pathlib import Path
 from captchaResolver.dataclass import TrainData
 
-captcha_id = 'kshop'
+captcha_id = 'wetax'
 rev = 0
 train_ratio = 0.9
 shuffle = False
