@@ -1,21 +1,23 @@
-from captchaResolver.base_core import BaseModel
+import os
 import captchaResolver.engine as engine
 from pathlib import Path
+from captchaResolver.base_core import BaseModel
 from captchaResolver.dataclass import TrainData
 
-captcha_id = 'dev'
-rev = 0
+captcha_id = 'gov24'
+rev = 1
 train_ratio = 0.9
 shuffle = False
 model: BaseModel = engine.get_captcha_model(captcha_id=captcha_id)
 train_data: TrainData = model.train_data
-model.train_data.rev = rev
+image_dir = os.path.dirname(train_data.get_image_dir())
+# model.train_data.rev = rev
 
 if shuffle:
-    image_dir = Path(train_data.get_image_dir()).parent.as_posix()
+    image_dir =  Path(train_data.get_image_dir()).parent.as_posix()
     engine.redistribute_train_pred(image_dir=image_dir, train_ratio=train_ratio)
 
-engine.batch_predict_model(model=model,loss_type="label_smoothing")
-# engine.batch_predict_model(model=model, pred_image_dir="captcha_data/supreme_court/0/images/labeled")
+# engine.batch_predict_model(model=model,loss_type="label_smoothing")
+# engine.batch_predict_model(model=model, pred_image_dir="captcha_data/gov24/1/images/draft", loss_type="label_smoothing")
 
-# pred = engine.predict(model=model, image_path="captcha_data/supreme_court/0/images/pred/133171.png")
+pred = engine.predict(model=model, image_path="captcha_data/gov24/1/images/draft/스크린샷 1.jpg")

@@ -417,6 +417,7 @@ class PyTorchModel(BaseModel):
         use_compile: bool = False,
         use_amp: bool = True,
         loss_type: str = 'focal',
+        model_dir: Optional[str] = None,
     ):
         super().__init__(captcha_type, verbose)
         self.use_compile = use_compile
@@ -448,6 +449,9 @@ class PyTorchModel(BaseModel):
         self.num_classes = len(self._char_list)
         self.model = None
         self.engine = None
+        default_model_dir = self.captcha_type.train_data.get_model_base_dir()
+        self.model_dir = model_dir if model_dir is not None else default_model_dir
+
     
     def split_dataset(self, batch_size: int = 16, train_size: float = 0.8,
                      shuffle: bool = True, num_workers: int = 0,

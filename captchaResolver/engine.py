@@ -1,7 +1,7 @@
 import os, time
 import shutil, glob, random
 import torch
-from typing import Tuple, Optional, Dict
+from typing import List, Tuple, Optional, Dict
 from tqdm import tqdm
 from captchaResolver.backend.pytorch.core import PyTorchModel
 from captchaResolver.dataclass import CAPTCHA_CHAR_SETS, DEV_CHAR_SETS, CaptchaType, TrainData
@@ -31,6 +31,7 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data") -> Dict[s
 
     gov24 = CaptchaType(name="정부 24", desc="대한민국 정부 24 캡챠", train_data=TrainData(
         captcha_id="gov24",
+        rev=1,
         train_data_base_dir=train_data_base_dir,
         threshold=60,
     ))
@@ -57,14 +58,18 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data") -> Dict[s
         "kshop": kshop,
     }
 
-def get_captcha_model(captcha_id: str = "default") -> PyTorchModel:
-    captcha_type_list: Dict[str, CaptchaType] = get_captcha_type_list()
+def get_captcha_model(train_data_base_dir: str = "./captcha_data", captcha_id: str = "default", verbose: int = 1) -> PyTorchModel:
+    captcha_type_list: Dict[str, CaptchaType] = get_captcha_type_list(train_data_base_dir=train_data_base_dir)
 
     if captcha_id not in captcha_type_list:
         raise ValueError(f"Unsupported captcha_id: {captcha_id}")
 
     captcha_type = captcha_type_list[captcha_id]
-    return PyTorchModel(captcha_type=captcha_type)
+    return PyTorchModel(captcha_type=captcha_type, verbose=verbose)
+
+def get_captcha_pred_model_list(captcha_id_list: List[str]) -> Dict[str, PyTorchModel]:
+    models = {captcha_id : get_captcha_model(captcha_id=captcha_id) for captcha_id in captcha_id_list}
+    return models
 
 def train_model(
     model: PyTorchModel,
@@ -183,10 +188,15 @@ def predict(
     unk_token: str = "[UNK]",
     use_amp: bool = True,
     loss_type: str = 'focal',
+    captcha_data_base_dir: str = "./captcha_data",
 ) -> Tuple[str, float]:
     torch_model: PyTorchModel = model
     torch_model.loss_type = loss_type
     # use_amp 인수가 명시적으로 전달되면 모델 설정 업데이트
+    
+    model_path = os.path.join(captcha_data_base_dir, torch_model.captcha_type.captcha_id, "model", "model_full.pth")
+    torch_model.model_path = model_path
+    
     if use_amp is not None:
         torch_model.use_amp = use_amp
     
