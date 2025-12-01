@@ -1,3 +1,2 @@
 @echo off
-for /f "delims=" %%i in ('main.exe -i=".\_internal\captcha_data\supreme_court\0\images\draft\ìŠ¤í¬ë¦°ìƒ· 5.JPG"') do set "result=%%i"
-echo %result%
+main.exe -i=".\_internal\captcha_data\supreme_court\0\images\draft\½ºÅ©¸°¼¦ 5.JPG"
