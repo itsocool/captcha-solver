@@ -2,15 +2,15 @@ import os
 import captchaResolver.engine as engine
 from captchaResolver.backend.pytorch.core import PyTorchModel
 
-captcha_id = 'supreme_court'
-loss_type = "label_smoothing"
+captcha_id = 'dev'
+loss_type = 'focal'
 use_amp = True
 model: PyTorchModel = engine.get_captcha_model(captcha_id=captcha_id)
 train_ratio = 0.6
 shuffle = False
-epochs = 60
 batch_size = 64
-early_stopping_patience = 8
+epochs = 120
+early_stopping_patience = 12
 
 if shuffle:
     image_dir = os.path.dirname(model.train_data.get_image_dir())
