@@ -173,6 +173,7 @@ def batch_predict_model(
 
     print("\n" + "=" * 70)
     print(f"Prediction Results:")
+    print(f"  Loss Type: {loss_type}")
     print(f"  Total: {total}")
     print(f"  Match: {match_count}")
     print(f"  Mismatch: {total - match_count}")
@@ -188,14 +189,9 @@ def predict(
     unk_token: str = "[UNK]",
     use_amp: bool = True,
     loss_type: str = 'focal',
-    captcha_data_base_dir: str = "./captcha_data",
 ) -> Tuple[str, float]:
     torch_model: PyTorchModel = model
     torch_model.loss_type = loss_type
-    # use_amp 인수가 명시적으로 전달되면 모델 설정 업데이트
-    
-    model_path = os.path.join(captcha_data_base_dir, torch_model.captcha_type.captcha_id, "model", "model_full.pth")
-    torch_model.model_path = model_path
     
     if use_amp is not None:
         torch_model.use_amp = use_amp
@@ -226,7 +222,6 @@ def redistribute_train_pred(
     # ========== 0단계: 변수 초기화 ==========
     ext_lower = extension.lower()
     pattern_chars = ''.join(f'[{c.lower()}{c.upper()}]' for c in extension)
-    # glob_pattern = os.path.join(image_dir, '**', f'*.{pattern_chars}')
     train_dir = os.path.join(image_dir, "train")
     pred_dir = os.path.join(image_dir, "pred")
     os.makedirs(train_dir, exist_ok=True)

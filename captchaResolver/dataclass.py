@@ -118,7 +118,7 @@ class TrainData:
     def get_model_path(self) -> str:
         model_base_dir = self.get_model_base_dir()
         if self.backend == "pytorch":
-            model_file_name = "model_full.pth"
+            model_file_name = "model_full.pt"
         elif self.backend == "keras":
             model_file_name = "weights.keras"
         else:

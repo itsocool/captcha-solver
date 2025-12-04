@@ -5,11 +5,12 @@ import collections
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+from time import sleep
 from torch.amp import autocast, GradScaler
 from torchvision.transforms import v2 as T  # v2 transforms API (최신)
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Dict
 from tqdm import tqdm
 from captchaResolver.dataclass import CaptchaType, TrainData
 from captchaResolver.base_core import BaseModel
@@ -241,8 +242,8 @@ class CRNN(nn.Module):
             elif 'bias' in name:
                 nn.init.zeros_(param)
     
-    def forward(self, X: torch.Tensor, y: Optional[torch.Tensor] = None,
-                criterion: Optional[nn.Module] = None) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+    def forward(self, X: torch.Tensor, y: torch.Tensor|None = None,
+                criterion: nn.Module|None = None) -> Tuple[torch.Tensor, torch.Tensor|None]:
         """
         Args:
             X: (N, C, H, W) 입력 이미지
@@ -285,21 +286,6 @@ class CRNN(nn.Module):
             return out, loss
         
         return out, None
-
-
-# Legacy Bidirectional wrapper (하위 호환성)
-class Bidirectional(nn.Module):
-    """Legacy wrapper - 새 코드에서는 nn.LSTM(bidirectional=True) 직접 사용 권장"""
-    def __init__(self, inp: int, hidden: int, out: int, lstm: bool = True):
-        super(Bidirectional, self).__init__()
-        rnn_cls = nn.LSTM if lstm else nn.GRU
-        self.rnn = rnn_cls(inp, hidden, bidirectional=True, batch_first=False)
-        self.embedding = nn.Linear(hidden * 2, out)
-    
-    def forward(self, X: torch.Tensor) -> torch.Tensor:
-        recurrent, _ = self.rnn(X)
-        out = self.embedding(recurrent)
-        return out
 
 class CaptchaDataset(Dataset):
     """PyTorch Dataset for CAPTCHA images."""
@@ -413,11 +399,11 @@ class PyTorchModel(BaseModel):
         self,
         captcha_type: CaptchaType,
         verbose: int = 1,
-        device: Optional[torch.device] = None,
+        device: torch.device | None = None,
         use_compile: bool = False,
         use_amp: bool = True,
         loss_type: str = 'focal',
-        model_dir: Optional[str] = None,
+        model_dir: str | None = None,
     ):
         super().__init__(captcha_type, verbose)
         self.use_compile = use_compile
@@ -601,7 +587,7 @@ class PyTorchModel(BaseModel):
     
     def train_model(self, train_loader: DataLoader, val_loader: DataLoader = None,
                    epochs: int = 50, lr: float = 1e-4,
-                   save_best: bool = True, model_path: Optional[str] = None,
+                   save_best: bool = True, model_path: str | None = None,
                    warmup_epochs: int = 5, early_stopping_patience: int = 0,
                    weight_decay: float = 1e-4, grad_clip: float = 5.0,
                    loss_type: str = None, dropout: float = 0.1) -> List[float]:
@@ -624,7 +610,9 @@ class PyTorchModel(BaseModel):
         """
         if self.model is None:
             self.model = self.build_model(dropout=dropout)
-        
+            
+        model_path = model_path if model_path is not None else self.get_model_path()    
+           
         # AdamW 옵티마이저 (weight decay 포함, fused=True for CUDA)
         use_fused = self.device.type == 'cuda' and hasattr(optim.AdamW, 'fused')
         optimizer = optim.AdamW(
@@ -686,6 +674,7 @@ class PyTorchModel(BaseModel):
             print(f"\nStarting training for {epochs} epochs...")
             print(f"Model Configuration:")
             model_w, model_h = self.train_data.image_width, self.train_data.image_height
+            print(f"  - Model path: {model_path}")
             print(f"  - Model input size: {model_w}x{model_h}")
             print(f"  - Label length: {self.train_data.label_length}")
             print(f"  - Characters: {len(self.characters)}")
@@ -796,21 +785,18 @@ class PyTorchModel(BaseModel):
                 log_msg += f", LR: {current_lr:.6f}"
                 print(log_msg)
             
-            # === Early Stopping 및 Best Model 저장 ===
+            # === Early Stopping 및 Best Temp Model 저장 ===
             if val_loader is not None and val_loss is not None:
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
                     best_epoch = epoch + 1
                     patience_counter = 0
                     
-                    # Best model 저장
+                    # Best temp model 저장
                     if save_best:
-                        if model_path is None:
-                            model_path = self.train_data.get_model_path()
-                        self.save_model(model_path, train_hist)
-                        
+                        self.save_model(model_path, temp=True)
                         if self.verbose > 0:
-                            print(f"  → Best model saved (val_loss: {val_loss:.4f})")
+                            print(f"  → Best temp model saved (val_loss: {val_loss:.4f})")
                 else:
                     patience_counter += 1
                     
@@ -819,6 +805,11 @@ class PyTorchModel(BaseModel):
                     
                     # Early stopping 체크
                     if early_stopping_patience > 0 and patience_counter >= early_stopping_patience:
+                        # 최종 모델 저장 (early stopping으로 종료되지 않은 경우)
+                        self.save_model(model_path)
+                        self.save_model_jit(model_path.replace('_full.pt', '_jit.pt'))
+                        self.export_onnx(model_path + '.onnx')
+
                         if self.verbose > 0:
                             print(f"\n[Early Stopping] Triggered after {epoch + 1} epochs")
                             print(f"Best validation loss: {best_val_loss:.4f} at epoch {best_epoch}")
@@ -826,15 +817,16 @@ class PyTorchModel(BaseModel):
             else:
                 # Validation이 없으면 매 epoch마다 저장
                 if save_best and (epoch + 1) % 10 == 0:
-                    if model_path is None:
-                        model_path = self.train_data.get_model_path()
-                    self.save_model(model_path, train_hist)
+                    self.save_model(model_path, temp=True)
         
         # 최종 모델 저장 (early stopping으로 종료되지 않은 경우)
-        if save_best:
-            if model_path is None:
-                model_path = self.train_data.get_model_path()
-            self.save_model(model_path, train_hist)
+        if os.path.exists(model_path + '.tmp'):
+            os.replace(model_path + '.tmp', model_path)
+        else:
+            self.save_model(model_path)
+            
+        self.save_model_jit(model_path.replace('_full.pt', '_jit.pt'))
+        self.export_onnx(model_path + '.onnx')
         
         if self.verbose > 0:
             print("=" * 70)
@@ -844,18 +836,25 @@ class PyTorchModel(BaseModel):
         
         return train_hist
     
-    def save_model(self, path: str, hist: List[float] = None):
+    def save_model(self, model_path: str, temp: bool = False):
         """모델 저장 (PyTorch 규약 - dev.ipynb 스타일)."""
-        model_dir = os.path.dirname(path)
+        sleep(0.1)  # 파일 시스템 안정화 대기
+        model_dir = os.path.dirname(model_path)
         os.makedirs(model_dir, exist_ok=True)
-        # 전체 모델 저장 (먼저 임시 파일에 저장한 뒤 교체)
-        full_model_path = os.path.join(model_dir, 'model_full.pth')
-        temp_path = full_model_path + '.tmp'
-
+        temp_path = model_path + '.tmp'
+        
         try:
-            # 시도 1: 전체 모델을 임시파일로 저장 후 교체(원자적 교체)
-            torch.save(self.model, temp_path)
-            os.replace(temp_path, full_model_path)
+            if temp:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+                    sleep(0.1)  # 파일 시스템 안정화 대기
+                torch.save(self.model.state_dict(), temp_path)
+            else:
+                if os.path.exists(model_path):
+                    os.remove(model_path)
+                    sleep(0.1)  # 파일 시스템 안정화 대기
+                torch.save(self.model.state_dict(), model_path)
+                
         except Exception as e:
             # 실패 시 임시파일 정리(있다면) 및 폴백
             try:
@@ -863,30 +862,117 @@ class PyTorchModel(BaseModel):
                     os.remove(temp_path)
             except Exception:
                 pass
-       
+            
         if self.verbose > 0:
             print(f"Model saved to {model_dir}")
-            print(f"  - Full model: {full_model_path}")
+            
+            if temp:
+                print(f"  - Temp model: {temp_path}")
+            else:
+                print(f"  - Final model: {model_path}")
+                
+    def save_model_jit(self, model_path: str):
+        """TorchScript 형식으로 모델 저장 (trace 방식)."""
+        if self.model is None:
+            raise ValueError("Model not loaded. Call load_prediction_model() first.")
+        
+        if self.verbose > 0:
+            print(f"TorchScript saving: {model_path}")
+        
+        # TorchScript용 wrapper 클래스 - 추론 전용 forward만 노출
+        class JITWrapper(nn.Module):
+            def __init__(self, model):
+                super().__init__()
+                self.model = model
+            
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                # 원본 모델의 forward 호출 (y=None, criterion=None)
+                out, _ = self.model(x, None, None)
+                return out
+        
+        wrapper = JITWrapper(self.model)
+        wrapper.eval()
+        
+        # trace용 더미 입력 생성
+        dummy_input = torch.randn(
+            1, 1, self.train_data.image_height, self.train_data.image_width
+        ).to(self.device)
+        
+        # TorchScript 변환 (trace 방식 - 타입 어노테이션 문제 회피)
+        with torch.no_grad():
+            traced_model = torch.jit.trace(wrapper, dummy_input)
+        traced_model.save(model_path)
+        
+        if self.verbose > 0:
+            print(f"TorchScript model saved: {model_path}")
+                
+    def export_onnx(self, onnx_path: str, fixed_batch: bool = True):
+        """ONNX 형식으로 모델 내보내기.
+        
+        Args:
+            onnx_path: ONNX 파일 저장 경로
+            fixed_batch: 배치 크기를 1로 고정할지 여부 (기본값: True)
+                        LSTM의 동적 배치 경고를 방지하려면 True 권장
+        """
 
-    def load_prediction_model(self, model_path: str = None, cpu_only: bool = False) -> nn.Module:
+        if self.model is None:
+            raise ValueError("Model not loaded. Call load_prediction_model() first.")
+        
+        if self.verbose > 0:
+            print(f"ONNX export: {onnx_path}")
+        
+        # ONNX export용 wrapper 클래스 - 추론 전용 forward만 노출
+        class ONNXWrapper(nn.Module):
+            def __init__(self, model):
+                super().__init__()
+                self.model = model
+            
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                # 원본 모델의 forward 호출 (y=None, criterion=None)
+                out, _ = self.model(x, None, None)
+                return out
+        
+        wrapper = ONNXWrapper(self.model)
+        wrapper.eval()
+        batch_size = 1
+        dummy_input = torch.randn(
+            batch_size, 1, self.train_data.image_height, self.train_data.image_width,
+        ).to(self.device)
+        # 레거시 TorchScript 기반 export
+        export_kwargs = {
+            'input_names': ['input'],
+            'output_names': ['output'],
+            'opset_version': 17,
+            'dynamo': False,
+        }
+        
+        # 동적 배치 설정 (fixed_batch=False일 때만)
+        if not fixed_batch:
+            export_kwargs['dynamic_axes'] = {
+                'input': {0: 'batch_size'}, 
+                'output': {0: 'batch_size'}
+            }
+        
+        torch.onnx.export(
+            wrapper,
+            (dummy_input,),
+            onnx_path,
+            **export_kwargs
+        )
+        
+        if self.verbose > 0:
+            batch_info = "fixed batch=1" if fixed_batch else "dynamic batch"
+            print(f"ONNX exported (legacy, {batch_info}): {onnx_path}")
+
+    def load_prediction_model(self, model_path: str = None) -> nn.Module:
         """모델 로드."""
         if model_path is None:
             model_path = self.train_data.get_model_path()
         
         # 모델 로드 (전체 모델 또는 state_dict)
-        loaded = torch.load(model_path, map_location=self.device, weights_only=False)
-        
-        if isinstance(loaded, nn.Module):
-            # 전체 모델이 저장된 경우 (model_full.pth)
-            self.model = loaded
-            self.model.to(self.device)
-        else:
-            # state_dict가 저장된 경우 (weights.pth)
-            if self.model is None:
-                self.model = self.build_model()
-            
-            self.model.load_state_dict(loaded)
-        
+
+        self.model = self.build_model()
+        self.model.load_state_dict(torch.load(model_path))
         self.model.eval()
         
         if self.verbose > 0:

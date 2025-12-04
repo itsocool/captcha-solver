@@ -1,22 +1,19 @@
 import os
-from pathlib import Path
 import captchaResolver.engine as engine
-from captchaResolver.dataclass import TrainData
 from captchaResolver.backend.pytorch.core import PyTorchModel
 
-captcha_id = 'dev'
-rev = 0
+captcha_id = 'supreme_court'
+loss_type = "label_smoothing"
+use_amp = True
+model: PyTorchModel = engine.get_captcha_model(captcha_id=captcha_id)
 train_ratio = 0.6
 shuffle = False
-epochs = 120
+epochs = 60
 batch_size = 64
-early_stopping_patience = 12
-model: PyTorchModel = engine.get_captcha_model(captcha_id=captcha_id)
-train_data: TrainData = model.train_data
-model.train_data.rev = rev
+early_stopping_patience = 8
 
 if shuffle:
-    image_dir = Path(train_data.get_image_dir()).parent.as_posix()
+    image_dir = os.path.dirname(model.train_data.get_image_dir())
     engine.redistribute_train_pred(image_dir=image_dir, train_ratio=train_ratio)
 
 model_base_dir = engine.train_model(
@@ -24,7 +21,8 @@ model_base_dir = engine.train_model(
     epochs=epochs,
     batch_size=batch_size,
     early_stopping_patience=early_stopping_patience,
-    loss_type="label_smoothing",
+    loss_type=loss_type,
+    use_amp=use_amp,
 )
-print(f"Model trained and saved at: {model_base_dir}{os.path.sep}model_full.pth")
+print(f"Model trained and saved at: {model.train_data.get_model_path()}")
 print("Done!")
