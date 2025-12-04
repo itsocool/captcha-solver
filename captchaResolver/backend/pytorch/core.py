@@ -4,7 +4,6 @@ import torch
 import collections
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
 from time import sleep
 from torch.amp import autocast, GradScaler
 from torchvision.transforms import v2 as T  # v2 transforms API (최신)

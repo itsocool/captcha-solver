@@ -87,7 +87,12 @@ def main():
         logger.error(f"Error creating model for captcha_id='{args.captcha_id}': {e}")
         return 3
 
-    pred_text, confidence = engine.predict(model=model, image_path=image_path, verbose=verbose_level, captcha_data_base_dir=train_data_base_dir)
+    pred_text, confidence = engine.predict(
+        model=model,
+        image_path=image_path,
+        verbose=verbose_level,
+        captcha_data_base_dir=train_data_base_dir,
+    )
     elapsed_time = time.perf_counter() - start_time
 
     if verbose:
