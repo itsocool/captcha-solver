@@ -10,7 +10,7 @@ train_ratio = 0.6
 shuffle = False
 batch_size = 64
 epochs = 120
-early_stopping_patience = 12
+early_stopping_patience = 60
 
 if shuffle:
     image_dir = os.path.dirname(model.train_data.get_image_dir())

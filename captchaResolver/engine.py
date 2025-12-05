@@ -1,5 +1,8 @@
 import os, time
 import shutil, glob, random
+import numpy as np
+import onnx
+import onnxruntime
 import torch
 from typing import List, Tuple, Optional, Dict
 from tqdm import tqdm
@@ -82,10 +85,13 @@ def train_model(
     warmup_epochs: int = 0,
     loss_type: str = 'focal',
     use_amp: bool = True,
+    model_type: str = 'default',
 ):
     # use_amp 인수가 명시적으로 전달되면 모델 설정 업데이트
-    if use_amp is not None:
+    if model_type is not None:
         model.use_amp = use_amp
+
+    model.model_type = model_type
     
     model.model = model.build_model()
     # Split dataset (dev.ipynb style)
@@ -109,9 +115,10 @@ def train_model(
         warmup_epochs=warmup_epochs,
         early_stopping_patience=patience,
         loss_type=loss_type,
+        model_type=model_type,
     )
 
-def batch_predict_model(
+def batch_predict_model_onnx(
     model: PyTorchModel,
     pred_image_dir: str = None,
     unk_token: str = "[UNK]",
@@ -122,10 +129,11 @@ def batch_predict_model(
     torch_model: PyTorchModel = model
     train_data: TrainData = torch_model.train_data
     torch_model.loss_type = loss_type
-    # use_amp 인수가 명시적으로 전달되면 모델 설정 업데이트
+
     if use_amp is not None:
         torch_model.use_amp = use_amp
-    
+
+    torch_model.model_type = 'onnx'    
     torch_model.load_prediction_model()
     
     if pred_image_dir is not None:
@@ -182,6 +190,191 @@ def batch_predict_model(
     print("=" * 70)
     print("\nPrediction completed!")
 
+def batch_predict_model(
+    model: PyTorchModel,
+    pred_image_dir: str = None,
+    unk_token: str = "[UNK]",
+    use_amp: bool = True,
+    loss_type: str = 'focal',
+    model_type: str = 'default',
+) -> Dict[str, float]:
+    start = time.time()
+    torch_model: PyTorchModel = model
+    train_data: TrainData = torch_model.train_data
+    torch_model.loss_type = loss_type
+
+    if model_type == 'onnx':
+        batch_predict_model_onnx(
+            model=torch_model,
+            pred_image_dir=pred_image_dir,
+            unk_token=unk_token,
+            use_amp=use_amp,
+            loss_type=loss_type,
+            model_type=model_type,
+        )
+        return
+
+    if use_amp is not None:
+        torch_model.use_amp = use_amp
+
+    torch_model.model_type = model_type    
+    torch_model.load_prediction_model()
+    
+    if pred_image_dir is not None:
+        pred_image_files = sorted(glob.glob(os.path.join(pred_image_dir, "*.*")))
+    else:
+        pred_image_files = train_data.get_data_files(train=False)
+
+    results = []
+    mismatches = []
+    total = 0
+    match_count = 0
+
+    # 단순화된 루프: core.PyTorchModel.predict()를 호출하여 예측 및 신뢰도 획득
+    torch_model.model.eval()
+    with torch.no_grad():
+        for image_path in tqdm(pred_image_files, desc="Predicting"):
+            image_name = os.path.basename(image_path)
+            expected = os.path.splitext(image_name)[0]
+            pred_text, confidence = torch_model.predict(
+                image_path=image_path,
+                unk_token=unk_token,
+                use_amp=use_amp,
+                loss_type=loss_type,
+            )
+            is_match = (pred_text == expected and len(pred_text) == train_data.label_length)
+            if is_match:
+                match_count += 1
+            else:
+                mismatches.append({'image': image_name, 'expected': expected, 'pred': pred_text, 'confidence': confidence})
+
+            results.append({'image': image_name, 'expected': expected, 'pred': pred_text, 'confidence': confidence, 'match': is_match})
+            total += 1
+
+    end = time.time()
+    accuracy = (match_count / total * 100) if total > 0 else 0.0
+
+    for r in results:
+        status = "✅" if r['match'] else "❌"
+        print(f"  {status} {r['image']}: {r['expected']} ➡️ {r['pred']} (conf: {r['confidence']:.4f})")
+
+    if mismatches:
+        print(f"\nMismatch samples ({len(mismatches)}):")
+        for m in mismatches:
+            print(f"  ❌ {m['image']}: {m['expected']} ➡️ {m['pred']} (conf: {m['confidence']:.4f})")
+
+    print("\n" + "=" * 70)
+    print(f"Prediction Results:")
+    print(f"  Model Type: {model_type}")
+    print(f"  Loss Type: {loss_type}")
+    print(f"  Total: {total}")
+    print(f"  Match: {match_count}")
+    print(f"  Mismatch: {total - match_count}")
+    print(f"  Accuracy: {accuracy:.2f}%")
+    print(f"  pred time: {end - start:.2f} sec")
+    print("=" * 70)
+    print("\nPrediction completed!")
+
+def onnx_predict(
+    model: PyTorchModel,
+    image_path: str,
+    verbose: int = 1,
+    unk_token: str = "[UNK]",
+    use_amp: bool = True,
+    loss_type: str = 'focal',
+    beam_width: int = 10,
+    length_bonus: float = 0.5,
+) -> Tuple[str, float]:
+    """
+    ONNX 모델을 사용한 예측 (PyTorchModel.predict와 동일한 전처리/디코딩 사용)
+    """
+    from PIL import Image
+    from captchaResolver.backend.pytorch.core import ctc_beam_decode_fixed_length
+    
+    train_data: TrainData = model.train_data
+    onnx_model_path = train_data.get_model_path() + '.onnx'
+    
+    # 1. 모델 파일 경로 정의
+    if verbose:
+        print(f"ONNX 모델 경로: {onnx_model_path}")
+    
+    # 2. InferenceSession 생성 (모델 로드)
+    sess = onnxruntime.InferenceSession(onnx_model_path)
+    if verbose:
+        print(f"available_providers : {onnxruntime.get_available_providers()}")
+    
+    # 3. 모델의 입력 및 출력 정보 확인
+    input_names = [input.name for input in sess.get_inputs()]
+    output_names = [output.name for output in sess.get_outputs()]
+    input_shape = sess.get_inputs()[0].shape
+    input_type = sess.get_inputs()[0].type
+    
+    if verbose:
+        print(f"모델 입력 이름: {input_names}")
+        print(f"모델 출력 이름: {output_names}")
+        print(f"예상 입력 shape: {input_shape}, 자료형: {input_type}")
+
+    # 4. 실제 이미지 로드 및 전처리 (PyTorchModel.predict와 동일하게 image_pre_process 사용)
+    image = Image.open(image_path)
+    
+    # train_data.image_pre_process 사용 (RGBA 처리, captcha_id별 특수 전처리, threshold, resize 포함)
+    image = train_data.image_pre_process(image)
+    
+    # PIL Image -> numpy array 변환 후 정규화
+    img = np.array(image, dtype=np.float32) / 255.0
+    
+    # 형태 변환: (H, W) -> (1, 1, H, W)
+    img = np.expand_dims(img, axis=0)  # (1, H, W)
+    img = np.expand_dims(img, axis=0)  # (1, 1, H, W)
+    
+    if verbose:
+        print(f"입력 이미지 shape: {img.shape}")
+
+    # 5. 추론 실행 (Inference)
+    input_feed = {input_names[0]: img}
+    results = sess.run(output_names, input_feed)
+    
+    if verbose:
+        print(f"추론 결과 shape: {results[0].shape}")
+
+    # 6. 출력 디코딩 (PyTorchModel.predict와 동일하게 Beam Search CTC 디코딩 사용)
+    output = results[0]  # ONNX 출력: (T, batch, num_classes) 또는 (batch, T, num_classes)
+    
+    # shape 확인 후 (T, C) 형태로 변환
+    if len(output.shape) == 3:
+        # (T, batch, num_classes) -> (T, num_classes) for batch=0
+        if output.shape[1] == 1:  # (T, 1, C) 형태
+            output = output[:, 0, :]  # (T, C)
+        else:  # (batch, T, C) 형태
+            output = output[0]  # (T, C)
+    
+    # log_softmax 적용 (모델 출력이 logits인 경우)
+    # softmax -> log 변환 (numerically stable)
+    output_max = np.max(output, axis=-1, keepdims=True)
+    exp_output = np.exp(output - output_max)
+    softmax_output = exp_output / np.sum(exp_output, axis=-1, keepdims=True)
+    log_probs_np = np.log(softmax_output + 1e-10)  # (T, C)
+    
+    # idx_to_char 매핑 생성 (blank=0, characters는 1부터)
+    # PyTorchModel과 동일한 매핑 사용
+    idx_to_char = {i + 1: char for i, char in enumerate(train_data.characters)}
+    
+    # 고정 길이 Beam Search 디코딩
+    expected_length = train_data.label_length
+    pred_text, confidence = ctc_beam_decode_fixed_length(
+        log_probs_np,
+        idx_to_char,
+        expected_length=expected_length,
+        beam_width=beam_width,
+        unk_token=unk_token,
+        length_bonus=length_bonus
+    )
+    
+    if verbose:
+        print(f"예측 결과: {pred_text} (신뢰도: {confidence:.4f})")
+    
+    return pred_text, confidence
+
 def predict(
     model: PyTorchModel,
     image_path: str,
@@ -189,8 +382,14 @@ def predict(
     unk_token: str = "[UNK]",
     use_amp: bool = True,
     loss_type: str = 'focal',
+    model_type: str = 'default',
 ) -> Tuple[str, float]:
-    torch_model: PyTorchModel = model
+    
+    if model_type == 'onnx':
+        torch_model: PyTorchModel = model
+    else:
+        torch_model: PyTorchModel = model
+        
     torch_model.loss_type = loss_type
     
     if use_amp is not None:

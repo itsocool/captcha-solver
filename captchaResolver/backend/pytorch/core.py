@@ -1,4 +1,5 @@
 import os
+from pyexpat import model
 import numpy as np
 import torch
 import collections
@@ -403,11 +404,13 @@ class PyTorchModel(BaseModel):
         use_amp: bool = True,
         loss_type: str = 'focal',
         model_dir: str | None = None,
+        model_type: str = 'default',
     ):
         super().__init__(captcha_type, verbose)
         self.use_compile = use_compile
         self.use_amp = use_amp
         self.loss_type = loss_type
+        self.model_type = model_type
         
         if device is None:
             self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -432,7 +435,7 @@ class PyTorchModel(BaseModel):
         self.idx_to_char = {idx: char for char, idx in self.char_to_idx.items()}
         self.idx_to_char[0] = ''  # blank
         self.num_classes = len(self._char_list)
-        self.model = None
+        self.model: torch.nn.Module | None = None
         self.engine = None
         default_model_dir = self.captcha_type.train_data.get_model_base_dir()
         self.model_dir = model_dir if model_dir is not None else default_model_dir
@@ -969,6 +972,12 @@ class PyTorchModel(BaseModel):
             model_path = self.train_data.get_model_path()
         
         # 모델 로드 (전체 모델 또는 state_dict)
+        if self.model_type == 'jit':
+            model_path = model_path.replace('_full.pt', '_jit.pt')
+            if self.verbose > 0:
+                print(f"Loading TorchScript model from {model_path}")
+            self.model = torch.jit.load(model_path, map_location=self.device)
+            return self.model
 
         self.model = self.build_model()
         self.model.load_state_dict(torch.load(model_path))
@@ -1011,12 +1020,15 @@ class PyTorchModel(BaseModel):
         
         # torch.inference_mode: no_grad보다 더 빠름 (gradient 추적 완전 비활성화)
         with torch.inference_mode():
-            # AMP 추론 (선택적)
-            if self.use_amp and self.device.type == 'cuda':
-                with autocast(device_type=self.device.type, dtype=torch.float16):
-                    out, _ = self.model(image_tensor)
+            if self.model_type == 'jit':
+                out = self.model(image_tensor)
             else:
-                out, _ = self.model(image_tensor)
+                # AMP 추론 (선택적)
+                if self.use_amp and self.device.type == 'cuda':
+                    with autocast(device_type=self.device.type, dtype=torch.float16):
+                        out, _ = self.model(image_tensor)
+                else:
+                    out, _ = self.model(image_tensor)
             
             out = out.permute(1, 0, 2)  # (N, T, C)
 
