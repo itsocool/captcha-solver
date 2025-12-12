@@ -404,13 +404,13 @@ class PyTorchModel(BaseModel):
         use_amp: bool = True,
         loss_type: str = 'focal',
         model_dir: str | None = None,
-        model_type: str = 'default',
+        # model_type: str = 'default',
     ):
         super().__init__(captcha_type, verbose)
         self.use_compile = use_compile
         self.use_amp = use_amp
         self.loss_type = loss_type
-        self.model_type = model_type
+        # self.model_type = model_type
         
         if device is None:
             self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -584,7 +584,8 @@ class PyTorchModel(BaseModel):
             model = torch.compile(model, mode=compile_mode)
             if self.verbose > 0:
                 print(f"Model compiled with torch.compile(mode='{compile_mode}')")
-        
+
+        self.model = model
         return model
     
     def train_model(self, train_loader: DataLoader, val_loader: DataLoader = None,

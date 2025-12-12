@@ -1,16 +1,17 @@
+from ast import mod
 import os
 import captchaResolver.engine as engine
 from captchaResolver.backend.pytorch.core import PyTorchModel
 
-captcha_id = 'dev'
+captcha_id = 'supreme_court'
 loss_type = 'focal'
 use_amp = True
 model: PyTorchModel = engine.get_captcha_model(captcha_id=captcha_id)
 train_ratio = 0.6
 shuffle = False
 batch_size = 64
-epochs = 120
-early_stopping_patience = 60
+epochs = 60
+early_stopping_patience = 12
 
 if shuffle:
     image_dir = os.path.dirname(model.train_data.get_image_dir())

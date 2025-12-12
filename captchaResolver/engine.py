@@ -1,12 +1,13 @@
 import os, time
 import shutil, glob, random
 import numpy as np
-import onnx
 import onnxruntime
 import torch
 from typing import List, Tuple, Optional, Dict
 from tqdm import tqdm
 from captchaResolver.backend.pytorch.core import PyTorchModel
+from captchaResolver.backend.tf.core import TfModel
+from captchaResolver.base_core import BaseModel
 from captchaResolver.dataclass import CAPTCHA_CHAR_SETS, DEV_CHAR_SETS, CaptchaType, TrainData
 
 def get_captcha_type_list(train_data_base_dir: str = "./captcha_data") -> Dict[str, CaptchaType]:
@@ -70,12 +71,13 @@ def get_captcha_model(train_data_base_dir: str = "./captcha_data", captcha_id: s
     captcha_type = captcha_type_list[captcha_id]
     return PyTorchModel(captcha_type=captcha_type, verbose=verbose)
 
-def get_captcha_pred_model_list(captcha_id_list: List[str]) -> Dict[str, PyTorchModel]:
+def get_captcha_pred_model_list(captcha_id_list: List[str]) -> Dict[str, BaseModel]:
     models = {captcha_id : get_captcha_model(captcha_id=captcha_id) for captcha_id in captcha_id_list}
     return models
 
 def train_model(
-    model: PyTorchModel,
+    model: BaseModel,
+    backend: str = 'pytorch',
     epochs: int = 60,
     batch_size: int = 32,
     earlystopping: bool = True,
@@ -85,15 +87,15 @@ def train_model(
     warmup_epochs: int = 0,
     loss_type: str = 'focal',
     use_amp: bool = True,
-    model_type: str = 'default',
 ):
     # use_amp 인수가 명시적으로 전달되면 모델 설정 업데이트
-    if model_type is not None:
+    if use_amp is not None:
         model.use_amp = use_amp
 
-    model.model_type = model_type
+    # model.model_type = model_type
     
-    model.model = model.build_model()
+    model.build_model()
+
     # Split dataset (dev.ipynb style)
     train_loader, val_loader = model.split_dataset(
         batch_size=batch_size,
@@ -115,7 +117,6 @@ def train_model(
         warmup_epochs=warmup_epochs,
         early_stopping_patience=patience,
         loss_type=loss_type,
-        model_type=model_type,
     )
 
 def batch_predict_model_onnx(
