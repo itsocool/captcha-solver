@@ -972,13 +972,13 @@ class PyTorchModel(BaseModel):
         if model_path is None:
             model_path = self.train_data.get_model_path()
         
-        # 모델 로드 (전체 모델 또는 state_dict)
-        if self.model_type == 'jit':
-            model_path = model_path.replace('_full.pt', '_jit.pt')
-            if self.verbose > 0:
-                print(f"Loading TorchScript model from {model_path}")
-            self.model = torch.jit.load(model_path, map_location=self.device)
-            return self.model
+        # # 모델 로드 (전체 모델 또는 state_dict)
+        # if self.model_type == 'jit':
+        #     model_path = model_path.replace('_full.pt', '_jit.pt')
+        #     if self.verbose > 0:
+        #         print(f"Loading TorchScript model from {model_path}")
+        #     self.model = torch.jit.load(model_path, map_location=self.device)
+        #     return self.model
 
         self.model = self.build_model()
         self.model.load_state_dict(torch.load(model_path))
@@ -1021,15 +1021,15 @@ class PyTorchModel(BaseModel):
         
         # torch.inference_mode: no_grad보다 더 빠름 (gradient 추적 완전 비활성화)
         with torch.inference_mode():
-            if self.model_type == 'jit':
-                out = self.model(image_tensor)
-            else:
-                # AMP 추론 (선택적)
-                if self.use_amp and self.device.type == 'cuda':
-                    with autocast(device_type=self.device.type, dtype=torch.float16):
-                        out, _ = self.model(image_tensor)
-                else:
+            # if self.model_type == 'jit':
+            #     out = self.model(image_tensor)
+            # else:
+            # AMP 추론 (선택적)
+            if self.use_amp and self.device.type == 'cuda':
+                with autocast(device_type=self.device.type, dtype=torch.float16):
                     out, _ = self.model(image_tensor)
+            else:
+                out, _ = self.model(image_tensor)
             
             out = out.permute(1, 0, 2)  # (N, T, C)
 
