@@ -1,4 +1,3 @@
-from ast import mod
 import os
 import captchaResolver.engine as engine
 from captchaResolver.backend.pytorch.core import PyTorchModel

@@ -5,7 +5,7 @@ Base Core Module for CAPTCHA Recognition Models
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Tuple, Optional, Any
+from typing import List, Tuple, Any
 from captchaResolver.dataclass import CaptchaType, TrainData
 
 
