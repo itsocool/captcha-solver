@@ -1,14 +1,12 @@
 import os, time
 import shutil, glob, random
-from typing import List, Tuple, Optional, Dict
-
-import torch
+import torch, onnxruntime
 import numpy as np
+from typing import List, Tuple, Optional, Dict
 from tqdm import tqdm
-import onnxruntime
+from captchaResolver.core import PyTorchModel
+from captchaResolver.dataclass import TrainData
 
-from captchaResolver.core import PyTorchModel, ctc_beam_decode_fixed_length, BaseModel
-from captchaResolver.dataclass import CAPTCHA_CHAR_SETS, DEV_CHAR_SETS, TrainData
 def get_captcha_type_list(train_data_base_dir: str = "./captcha_data") -> Dict[str, TrainData]:
 
     supreme_court = TrainData(
@@ -43,12 +41,12 @@ def get_captcha_model(train_data_base_dir: str = "./captcha_data", captcha_id: s
     train_data = captcha_type_list[captcha_id]
     return PyTorchModel(train_data=train_data, verbose=verbose)
 
-def get_captcha_pred_model_list(captcha_id_list: List[str]) -> Dict[str, BaseModel]:
+def get_captcha_pred_model_list(captcha_id_list: List[str]) -> Dict[str, PyTorchModel]:
     models = {captcha_id : get_captcha_model(captcha_id=captcha_id) for captcha_id in captcha_id_list}
     return models
 
 def train_model(
-    model: BaseModel,
+    model: PyTorchModel,
     backend: str = 'pytorch',
     epochs: int = 60,
     batch_size: int = 32,
@@ -503,4 +501,3 @@ def redistribute_train_pred(
         "final_train": final_train,
         "final_pred": final_pred
     }
-

@@ -1,11 +1,9 @@
-import os
-import collections
-from time import sleep
-from typing import List, Tuple, Dict
+import os, collections, torch
 import numpy as np
-import torch
 import torch.nn as nn
 import torch.optim as optim
+from time import sleep
+from typing import List, Tuple, Dict
 from torch.amp import autocast, GradScaler
 from torchvision.transforms import v2 as T  # v2 transforms API
 from torch.utils.data import Dataset, DataLoader
@@ -13,39 +11,6 @@ from PIL import Image
 from tqdm import tqdm
 
 from captchaResolver.dataclass import TrainData
-
-
-class BaseModel:
-    """
-    최소한의 BaseModel 인터페이스 구현(추상적).
-    다른 백엔드 모델들이 상속하도록 설계되었습니다.
-    """
-    def __init__(self, train_data: TrainData, verbose: int = 1):
-        self.train_data = train_data
-        self.verbose = verbose
-
-    @property
-    def characters(self):
-        return getattr(self.train_data, 'characters', [])
-
-    def get_model_base_dir(self) -> str:
-        return self.train_data.get_model_base_dir()
-
-    def get_model_path(self) -> str:
-        return self.train_data.get_model_path()
-
-    # 하위 클래스에서 구현할 메서드들
-    def build_model(self, *args, **kwargs):
-        raise NotImplementedError()
-
-    def train_model(self, *args, **kwargs):
-        raise NotImplementedError()
-
-    def load_prediction_model(self, *args, **kwargs):
-        raise NotImplementedError()
-
-    def predict(self, *args, **kwargs):
-        raise NotImplementedError()
 
 # ============================================================
 # Custom Loss Functions
@@ -411,11 +376,11 @@ class Engine:
         
         return out
 
-class PyTorchModel(BaseModel):
+class PyTorchModel:
     """
     PyTorch 기반 CAPTCHA 인식 모델
-    
-    BaseModel을 상속받아 구현합니다.
+
+    BaseModel 상속 제거 — BaseModel 대신 내부 속성으로 초기화합니다.
     """
     
     def __init__(
@@ -429,7 +394,9 @@ class PyTorchModel(BaseModel):
         model_dir: str | None = None,
         # model_type: str = 'default',
     ):
-        super().__init__(train_data, verbose)
+        # BaseModel을 상속하지 않으므로 부모 생성자 호출 대신 내부 속성 초기화
+        self.train_data = train_data
+        self.verbose = verbose
         self.use_compile = use_compile
         self.use_amp = use_amp
         self.loss_type = loss_type
@@ -462,6 +429,11 @@ class PyTorchModel(BaseModel):
         self.engine = None
         default_model_dir = self.train_data.get_model_base_dir()
         self.model_dir = model_dir if model_dir is not None else default_model_dir
+
+    @property
+    def characters(self):
+        """`BaseModel.characters` 대체: train_data에서 문자 목록을 반환합니다."""
+        return getattr(self.train_data, 'characters', [])
 
     
     def split_dataset(self, batch_size: int = 16, train_size: float = 0.8,
@@ -637,7 +609,7 @@ class PyTorchModel(BaseModel):
         if self.model is None:
             self.model = self.build_model(dropout=dropout)
             
-        model_path = model_path if model_path is not None else self.get_model_path()    
+        model_path = model_path if model_path is not None else self.train_data.get_model_path()    
            
         # AdamW 옵티마이저 (weight decay 포함, fused=True for CUDA)
         use_fused = self.device.type == 'cuda' and hasattr(optim.AdamW, 'fused')
