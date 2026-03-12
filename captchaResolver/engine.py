@@ -1,75 +1,47 @@
 import os, time
 import shutil, glob, random
-import numpy as np
-import onnxruntime
-import torch
 from typing import List, Tuple, Optional, Dict
+
+import torch
+import numpy as np
 from tqdm import tqdm
-from captchaResolver.backend.pytorch.core import PyTorchModel
-from captchaResolver.backend.tf.core import TfModel
-from captchaResolver.base_core import BaseModel
-from captchaResolver.dataclass import CAPTCHA_CHAR_SETS, DEV_CHAR_SETS, CaptchaType, TrainData
+import onnxruntime
 
-def get_captcha_type_list(train_data_base_dir: str = "./captcha_data") -> Dict[str, CaptchaType]:
+from captchaResolver.core import PyTorchModel, ctc_beam_decode_fixed_length, BaseModel
+from captchaResolver.dataclass import CAPTCHA_CHAR_SETS, DEV_CHAR_SETS, TrainData
+def get_captcha_type_list(train_data_base_dir: str = "./captcha_data") -> Dict[str, TrainData]:
 
-    default = CaptchaType(name="기본 캡챠", desc="기본 캡챠", train_data=TrainData(
-        captcha_id="default",
-        train_data_base_dir=train_data_base_dir,
-        label_length=5,
-        characters=list(CAPTCHA_CHAR_SETS),
-    ))
-
-    dev = CaptchaType(name="개발중", desc="개발중", train_data=TrainData(
-        captcha_id="dev",
-        train_data_base_dir=train_data_base_dir,
-        label_length=6,
-        characters=list(DEV_CHAR_SETS),
-    ))
-
-    supreme_court = CaptchaType(name="대법원", desc="대법원 캡챠", train_data=TrainData(
+    supreme_court = TrainData(
         captcha_id="supreme_court",
+        name="대법원",
+        desc="대법원 캡챠",
         train_data_base_dir=train_data_base_dir,
         image_width=120,
         image_height=40,
-    ))
+    )
 
-    gov24 = CaptchaType(name="정부 24", desc="대한민국 정부 24 캡챠", train_data=TrainData(
+    gov24 = TrainData(
         captcha_id="gov24",
+        name="정부 24",
+        desc="대한민국 정부 24 캡챠",
         rev=1,
         train_data_base_dir=train_data_base_dir,
         threshold=60,
-    ))
-
-    wetax = CaptchaType(name="WETAX", desc="WETAX 캡챠", train_data=TrainData(
-        captcha_id="wetax",
-        train_data_base_dir=train_data_base_dir,
-        image_height=60,
-    ))
-
-    kshop = CaptchaType(captcha_id="kshop", name="kshop", desc="KT Shopping 캡챠", train_data=TrainData(
-        captcha_id="kshop",
-        train_data_base_dir=train_data_base_dir,
-        image_width=263,
-        image_height=54,
-    ))
+    )
 
     return {
-        "default": default,
-        "dev": dev,
         "supreme_court": supreme_court,
         "gov24": gov24,
-        "wetax": wetax,
-        "kshop": kshop,
     }
 
 def get_captcha_model(train_data_base_dir: str = "./captcha_data", captcha_id: str = "default", verbose: int = 1) -> PyTorchModel:
-    captcha_type_list: Dict[str, CaptchaType] = get_captcha_type_list(train_data_base_dir=train_data_base_dir)
+    captcha_type_list: Dict[str, TrainData] = get_captcha_type_list(train_data_base_dir=train_data_base_dir)
 
     if captcha_id not in captcha_type_list:
         raise ValueError(f"Unsupported captcha_id: {captcha_id}")
 
-    captcha_type = captcha_type_list[captcha_id]
-    return PyTorchModel(captcha_type=captcha_type, verbose=verbose)
+    train_data = captcha_type_list[captcha_id]
+    return PyTorchModel(train_data=train_data, verbose=verbose)
 
 def get_captcha_pred_model_list(captcha_id_list: List[str]) -> Dict[str, BaseModel]:
     models = {captcha_id : get_captcha_model(captcha_id=captcha_id) for captcha_id in captcha_id_list}
@@ -290,7 +262,8 @@ def onnx_predict(
     ONNX 모델을 사용한 예측 (PyTorchModel.predict와 동일한 전처리/디코딩 사용)
     """
     from PIL import Image
-    from captchaResolver.backend.pytorch.core import ctc_beam_decode_fixed_length
+    # ctc_beam_decode_fixed_length는 captchaResolver.core에 정의되어 있습니다.
+    from captchaResolver.core import ctc_beam_decode_fixed_length
     
     train_data: TrainData = model.train_data
     onnx_model_path = train_data.get_model_path() + '.onnx'

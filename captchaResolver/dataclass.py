@@ -1,28 +1,29 @@
 import os
 import glob
-from pyexpat import model
 import random
 import struct
 import shutil
 import string
-from PIL import Image
 from typing import Final, List, Tuple
 from dataclasses import dataclass, field
+from PIL import Image
 
 DIGITS: Final = string.digits
 LOWER_CASE: Final = string.ascii_lowercase
 UPPER_CASE: Final = string.ascii_uppercase
 ALPHABET: Final = string.ascii_letters
-ALPHA_NUMERIC: Final = string.digits + string.ascii_letters
-CAPTCHA_CHAR_SETS: Final = "2345678bcdefgmnpwxy"
-DEV_CHAR_SETS: Final = "2345678ABCDEFGHKLMNPRSTUVWYZabcdefhklmnoprstuvwyz"
+ALPHA_NUMERIC: Final = DIGITS + ALPHABET
+CAPTCHA_CHAR_SETS: Final = '2345678bcdefgmnpwxy'
+DEV_CHAR_SETS: Final = '2345678ABCDEFGHKLMNPRSTUVWYZabcdefhklmnoprstuvwyz'
 
 @dataclass
 class TrainData:
-    captcha_id: str
-    backend: str = "pytorch"
+    captcha_id: str = 'supreme_court'
+    name: str = '대법원 캡챠'
+    desc: str = '대법원에서 사용하는 캡챠입니다.'
+    backend: str = 'pytorch'
     rev: int = 0
-    train_data_base_dir: str = "./captcha_data"
+    train_data_base_dir: str = './captcha_data'
     image_width: int = 200
     image_height: int = 50
     label_length: int = 6
@@ -227,12 +228,4 @@ class TrainData:
         
         return result
 
-@dataclass
-class CaptchaType:
-    captcha_id: str = 'default'
-    name: str = '기본캡챠'
-    desc: str = '기본 캡챠'
-    train_data: TrainData = field(default_factory=lambda: TrainData(captcha_id='default'))
-
-    def __post_init__(self) -> None:
-        self.captcha_id=self.train_data.captcha_id
+# Note: `CaptchaType` wrapper removed — use `TrainData` directly.

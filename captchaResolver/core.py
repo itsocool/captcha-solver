@@ -1,28 +1,51 @@
 import os
-from pyexpat import model
+import collections
+from time import sleep
+from typing import List, Tuple, Dict
 import numpy as np
 import torch
-import collections
 import torch.nn as nn
 import torch.optim as optim
-from time import sleep
 from torch.amp import autocast, GradScaler
-from torchvision.transforms import v2 as T  # v2 transforms API (최신)
+from torchvision.transforms import v2 as T  # v2 transforms API
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
-from typing import List, Tuple, Dict
 from tqdm import tqdm
-from captchaResolver.dataclass import CaptchaType, TrainData
-from captchaResolver.base_core import BaseModel
 
-# ============================================================
-# PyTorch 2.0+ 최적화 설정
-# ============================================================
-# cuDNN 자동 튜닝 활성화 (고정 입력 크기에 최적)
-torch.backends.cudnn.benchmark = True
-# TF32 활성화 (Ampere GPU 이상에서 성능 향상)
-torch.backends.cuda.matmul.allow_tf32 = True
-torch.backends.cudnn.allow_tf32 = True
+from captchaResolver.dataclass import TrainData
+
+
+class BaseModel:
+    """
+    최소한의 BaseModel 인터페이스 구현(추상적).
+    다른 백엔드 모델들이 상속하도록 설계되었습니다.
+    """
+    def __init__(self, train_data: TrainData, verbose: int = 1):
+        self.train_data = train_data
+        self.verbose = verbose
+
+    @property
+    def characters(self):
+        return getattr(self.train_data, 'characters', [])
+
+    def get_model_base_dir(self) -> str:
+        return self.train_data.get_model_base_dir()
+
+    def get_model_path(self) -> str:
+        return self.train_data.get_model_path()
+
+    # 하위 클래스에서 구현할 메서드들
+    def build_model(self, *args, **kwargs):
+        raise NotImplementedError()
+
+    def train_model(self, *args, **kwargs):
+        raise NotImplementedError()
+
+    def load_prediction_model(self, *args, **kwargs):
+        raise NotImplementedError()
+
+    def predict(self, *args, **kwargs):
+        raise NotImplementedError()
 
 # ============================================================
 # Custom Loss Functions
@@ -397,7 +420,7 @@ class PyTorchModel(BaseModel):
     
     def __init__(
         self,
-        captcha_type: CaptchaType,
+        train_data: TrainData,
         verbose: int = 1,
         device: torch.device | None = None,
         use_compile: bool = False,
@@ -406,7 +429,7 @@ class PyTorchModel(BaseModel):
         model_dir: str | None = None,
         # model_type: str = 'default',
     ):
-        super().__init__(captcha_type, verbose)
+        super().__init__(train_data, verbose)
         self.use_compile = use_compile
         self.use_amp = use_amp
         self.loss_type = loss_type
@@ -437,7 +460,7 @@ class PyTorchModel(BaseModel):
         self.num_classes = len(self._char_list)
         self.model: torch.nn.Module | None = None
         self.engine = None
-        default_model_dir = self.captcha_type.train_data.get_model_base_dir()
+        default_model_dir = self.train_data.get_model_base_dir()
         self.model_dir = model_dir if model_dir is not None else default_model_dir
 
     
