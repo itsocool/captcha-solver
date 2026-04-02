@@ -10,8 +10,8 @@ model: PyTorchModel = engine.get_captcha_model(captcha_id=captcha_id)
 train_ratio = 0.6
 shuffle = False
 batch_size = 64
-epochs = 60
-early_stopping_patience = 12
+epochs = 40
+early_stopping_patience = 6
 
 if shuffle:
     image_dir = os.path.dirname(model.train_data.get_image_dir())
