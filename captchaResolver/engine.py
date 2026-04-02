@@ -1,12 +1,10 @@
 import os, time
 import shutil, glob, random
 import numpy as np
-import onnxruntime
 import torch
 from typing import List, Tuple, Optional, Dict
 from tqdm import tqdm
 from captchaResolver.backend.pytorch.core import PyTorchModel
-from captchaResolver.backend.tf.core import TfModel
 from captchaResolver.base_core import BaseModel
 from captchaResolver.dataclass import CAPTCHA_CHAR_SETS, DEV_CHAR_SETS, CaptchaType, TrainData
 
@@ -275,106 +273,6 @@ def batch_predict_model(
     print(f"  pred time: {end - start:.2f} sec")
     print("=" * 70)
     print("\nPrediction completed!")
-
-def onnx_predict(
-    model: PyTorchModel,
-    image_path: str,
-    verbose: int = 1,
-    unk_token: str = "[UNK]",
-    use_amp: bool = True,
-    loss_type: str = 'focal',
-    beam_width: int = 10,
-    length_bonus: float = 0.5,
-) -> Tuple[str, float]:
-    """
-    ONNX 모델을 사용한 예측 (PyTorchModel.predict와 동일한 전처리/디코딩 사용)
-    """
-    from PIL import Image
-    from captchaResolver.backend.pytorch.core import ctc_beam_decode_fixed_length
-    
-    train_data: TrainData = model.train_data
-    onnx_model_path = train_data.get_model_path() + '.onnx'
-    
-    # 1. 모델 파일 경로 정의
-    if verbose:
-        print(f"ONNX 모델 경로: {onnx_model_path}")
-    
-    # 2. InferenceSession 생성 (모델 로드)
-    sess = onnxruntime.InferenceSession(onnx_model_path)
-    if verbose:
-        print(f"available_providers : {onnxruntime.get_available_providers()}")
-    
-    # 3. 모델의 입력 및 출력 정보 확인
-    input_names = [input.name for input in sess.get_inputs()]
-    output_names = [output.name for output in sess.get_outputs()]
-    input_shape = sess.get_inputs()[0].shape
-    input_type = sess.get_inputs()[0].type
-    
-    if verbose:
-        print(f"모델 입력 이름: {input_names}")
-        print(f"모델 출력 이름: {output_names}")
-        print(f"예상 입력 shape: {input_shape}, 자료형: {input_type}")
-
-    # 4. 실제 이미지 로드 및 전처리 (PyTorchModel.predict와 동일하게 image_pre_process 사용)
-    image = Image.open(image_path)
-    
-    # train_data.image_pre_process 사용 (RGBA 처리, captcha_id별 특수 전처리, threshold, resize 포함)
-    image = train_data.image_pre_process(image)
-    
-    # PIL Image -> numpy array 변환 후 정규화
-    img = np.array(image, dtype=np.float32) / 255.0
-    
-    # 형태 변환: (H, W) -> (1, 1, H, W)
-    img = np.expand_dims(img, axis=0)  # (1, H, W)
-    img = np.expand_dims(img, axis=0)  # (1, 1, H, W)
-    
-    if verbose:
-        print(f"입력 이미지 shape: {img.shape}")
-
-    # 5. 추론 실행 (Inference)
-    input_feed = {input_names[0]: img}
-    results = sess.run(output_names, input_feed)
-    
-    if verbose:
-        print(f"추론 결과 shape: {results[0].shape}")
-
-    # 6. 출력 디코딩 (PyTorchModel.predict와 동일하게 Beam Search CTC 디코딩 사용)
-    output = results[0]  # ONNX 출력: (T, batch, num_classes) 또는 (batch, T, num_classes)
-    
-    # shape 확인 후 (T, C) 형태로 변환
-    if len(output.shape) == 3:
-        # (T, batch, num_classes) -> (T, num_classes) for batch=0
-        if output.shape[1] == 1:  # (T, 1, C) 형태
-            output = output[:, 0, :]  # (T, C)
-        else:  # (batch, T, C) 형태
-            output = output[0]  # (T, C)
-    
-    # log_softmax 적용 (모델 출력이 logits인 경우)
-    # softmax -> log 변환 (numerically stable)
-    output_max = np.max(output, axis=-1, keepdims=True)
-    exp_output = np.exp(output - output_max)
-    softmax_output = exp_output / np.sum(exp_output, axis=-1, keepdims=True)
-    log_probs_np = np.log(softmax_output + 1e-10)  # (T, C)
-    
-    # idx_to_char 매핑 생성 (blank=0, characters는 1부터)
-    # PyTorchModel과 동일한 매핑 사용
-    idx_to_char = {i + 1: char for i, char in enumerate(train_data.characters)}
-    
-    # 고정 길이 Beam Search 디코딩
-    expected_length = train_data.label_length
-    pred_text, confidence = ctc_beam_decode_fixed_length(
-        log_probs_np,
-        idx_to_char,
-        expected_length=expected_length,
-        beam_width=beam_width,
-        unk_token=unk_token,
-        length_bonus=length_bonus
-    )
-    
-    if verbose:
-        print(f"예측 결과: {pred_text} (신뢰도: {confidence:.4f})")
-    
-    return pred_text, confidence
 
 def predict(
     model: PyTorchModel,
