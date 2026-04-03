@@ -20,16 +20,16 @@ COPY . .
 # 실행 스크립트에 실행 권한 부여
 RUN chmod +x ./run_web.sh
 
-# Flask 포트 노출
+# 앱 포트 노출 (Uvicorn/ASGI 앱과 호환)
 EXPOSE 5000
 
 # 헬스체크 추가
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD curl -f http://localhost:5000/health/ || exit 1
 
-# Flask 환경 변수 설정
-ENV FLASK_APP=web.py
-ENV FLASK_RUN_HOST=0.0.0.0
+# 앱 환경 변수 설정 (환경 변수 접두사: WEB_ 로 변경됨)
+ENV WEB_APP=web.py
+ENV WEB_RUN_HOST=0.0.0.0
 
 # 애플리케이션 실행
 CMD ["./run_web.sh", "start"]

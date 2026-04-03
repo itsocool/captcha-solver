@@ -10,7 +10,7 @@ services:
       - "5001:5000"
     environment:
       - HOST_PORT=5001
-      - FLASK_ENV=production
+      - WEB_ENV=production
       - DEVICE=cpu
       - CAPTCHA_ID=gov24
       - BACKEND=pytorch

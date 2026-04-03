@@ -1,22 +1,22 @@
 import tempfile
 import os
 import captchaResolver.engine as engine
-from flask import Flask, request, jsonify, render_template_string
-from werkzeug.utils import secure_filename
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi.responses import JSONResponse, HTMLResponse
 from dotenv import load_dotenv
 
 load_dotenv()
 
-app = Flask(__name__)
+app = FastAPI(title="Captcha Predictor")
 
 # 간단한 모델 캐시: captcha_id -> PyTorchModel
 _MODEL_CACHE = {}
 
-# 환경 변수 기본값
+# 환경 변수 기본값 (환경 변수 접두사를 WEB_로 변경했습니다)
 DEFAULT_CAPTCHA_ID = os.environ.get('DEFAULT_CAPTCHA_ID', 'supreme_court')
-FLASK_HOST = os.environ.get('FLASK_HOST', '0.0.0.0')
-FLASK_PORT = int(os.environ.get('FLASK_PORT', '5000'))
-FLASK_DEBUG = os.environ.get('FLASK_DEBUG', 'true').lower() in ('1', 'true', 'yes')
+APP_HOST = os.environ.get('WEB_HOST', '0.0.0.0')
+APP_PORT = int(os.environ.get('WEB_PORT', '5000'))
+APP_DEBUG = os.environ.get('WEB_DEBUG', 'true').lower() in ('1', 'true', 'yes')
 
 INDEX_HTML = """
 <!doctype html>
@@ -43,43 +43,40 @@ def get_model(captcha_id: str):
 	return model
 
 
-@app.route('/')
-def index():
-	return render_template_string(INDEX_HTML)
+@app.get('/', response_class=HTMLResponse)
+async def index():
+	return HTMLResponse(content=INDEX_HTML)
 
 
-@app.route('/health')
-def health():
-	return jsonify({'status': 'ok'})
+@app.get('/health')
+@app.get('/health/')
+async def health():
+	return JSONResponse({'status': 'ok'})
 
 
-@app.route('/predict', methods=['POST'])
-def predict():
-	if 'image' not in request.files:
-		return jsonify({'error': 'no image file provided'}), 400
+@app.post('/predict')
+async def predict(captcha_id: str = Form(DEFAULT_CAPTCHA_ID), image: UploadFile = File(...)):
+	if not image or not image.filename:
+		raise HTTPException(status_code=400, detail='no image file provided')
 
-	f = request.files['image']
-	if f.filename == '':
-		return jsonify({'error': 'empty filename'}), 400
-
-	captcha_id = request.form.get('captcha_id', DEFAULT_CAPTCHA_ID)
-
-	filename = secure_filename(f.filename)
+	filename = os.path.basename(image.filename)
 	with tempfile.TemporaryDirectory() as td:
 		tmp_path = os.path.join(td, filename)
-		f.save(tmp_path)
-
+		contents = await image.read()
 		try:
+			with open(tmp_path, 'wb') as out_f:
+				out_f.write(contents)
 			model = get_model(captcha_id)
 			# engine.predict returns (pred_text, confidence)
 			pred_text, confidence = engine.predict(model=model, image_path=tmp_path, verbose=0)
 		except Exception as e:
-			return jsonify({'error': str(e)}), 500
+			raise HTTPException(status_code=500, detail=str(e))
 
-	return jsonify({'captcha_id': captcha_id, 'prediction': pred_text, 'confidence': float(confidence)})
+	return JSONResponse({'captcha_id': captcha_id, 'prediction': pred_text, 'confidence': float(confidence)})
 
 
 if __name__ == '__main__':
-	# 개발용 실행: 환경변수로 제어 가능합니다.
-	app.run(host=FLASK_HOST, port=FLASK_PORT, debug=FLASK_DEBUG)
+	# 개발용 실행: uvicorn으로 실행됩니다.
+	import uvicorn
+	uvicorn.run(app, host=APP_HOST, port=APP_PORT, reload=APP_DEBUG)
 
