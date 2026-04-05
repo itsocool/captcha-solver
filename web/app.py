@@ -1,6 +1,6 @@
 import tempfile
 import os
-import captchaResolver.engine as engine
+import engine
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse, HTMLResponse
 from dotenv import load_dotenv
@@ -79,4 +79,3 @@ if __name__ == '__main__':
 	# 개발용 실행: uvicorn으로 실행됩니다.
 	import uvicorn
 	uvicorn.run(app, host=APP_HOST, port=APP_PORT, reload=APP_DEBUG)
-

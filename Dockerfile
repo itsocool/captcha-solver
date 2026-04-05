@@ -3,7 +3,7 @@ FROM pytorch/pytorch:2.9.0-cuda12.6-cudnn9-runtime
 # 작업 디렉토리 설정
 WORKDIR /app
 
-# 시스템 의존성 설치 (TensorFlow 및 이미지 처리를 위한 라이브러리)
+# 시스템 의존성 설치 (이미지 처리를 위한 라이브러리)
 RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 

@@ -1,6 +1,6 @@
 import os
-import captchaResolver.engine as engine
-from captchaResolver.backend.pytorch.core import PyTorchModel
+import engine
+from core import PyTorchModel
 
 captcha_id = 'supreme_court'
 loss_type = 'focal'

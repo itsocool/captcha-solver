@@ -4,7 +4,7 @@ import argparse
 import logging
 import time
 import json
-import captchaResolver.engine as engine
+import engine
 
 def get_base_path():
     """PyInstaller 번들 환경에서 기본 경로를 반환합니다."""
