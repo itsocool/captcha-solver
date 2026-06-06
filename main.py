@@ -91,7 +91,6 @@ def main():
         model=model,
         image_path=image_path,
         verbose=verbose_level,
-        captcha_data_base_dir=train_data_base_dir,
     )
     elapsed_time = time.perf_counter() - start_time
 

@@ -1,13 +1,12 @@
 import os
-from pyexpat import model
 import numpy as np
 import torch
-import collections
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
-from time import sleep
-from torch.amp import autocast, GradScaler
-from torchvision.transforms import v2 as T  # v2 transforms API (최신)
+from torch.amp.autocast_mode import autocast
+from torch.amp.grad_scaler import GradScaler
+from torchvision.transforms import v2 as T
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 from typing import List, Tuple, Dict
@@ -33,6 +32,7 @@ class FocalCTCLoss(nn.Module):
     
     - gamma > 0: 쉬운 샘플의 가중치 감소
     - alpha: 클래스 불균형 보정
+    - per-sample weighting: 각 샘플의 loss를 개별적으로 계산
     """
     def __init__(self, blank: int = 0, gamma: float = 2.0, alpha: float = 0.25, 
                  reduction: str = 'mean', zero_infinity: bool = True):
@@ -43,13 +43,12 @@ class FocalCTCLoss(nn.Module):
         self.reduction = reduction
     
     def forward(self, log_probs, targets, input_lengths, target_lengths):
-        ctc_loss = self.ctc(log_probs, targets, input_lengths, target_lengths)
+        per_sample_loss = self.ctc(log_probs, targets, input_lengths, target_lengths)
         
-        # Focal 가중치: (1 - p)^gamma
-        # p는 정답 확률의 근사치 (exp(-loss))
-        p = torch.exp(-ctc_loss)
+        # per-sample loss를 확률로 변환 후 focal 가중치 계산
+        p = torch.exp(-per_sample_loss)
         focal_weight = self.alpha * (1 - p) ** self.gamma
-        focal_loss = focal_weight * ctc_loss
+        focal_loss = focal_weight * per_sample_loss
         
         if self.reduction == 'mean':
             return focal_loss.mean()
@@ -63,6 +62,7 @@ class LabelSmoothingCTCLoss(nn.Module):
     
     - 과적합 방지
     - 모델이 너무 확신하는 것을 방지
+    - log_probs에 KL divergence 적용
     """
     def __init__(self, num_classes: int, blank: int = 0, smoothing: float = 0.1,
                  reduction: str = 'mean', zero_infinity: bool = True):
@@ -76,44 +76,103 @@ class LabelSmoothingCTCLoss(nn.Module):
         ctc_loss = self.ctc(log_probs, targets, input_lengths, target_lengths)
         
         if self.smoothing > 0:
-            # Uniform distribution으로 smoothing
-            uniform = torch.full_like(log_probs, 1.0 / self.num_classes)
-            kl_loss = self.kl(log_probs, uniform)
+            # log_probs에 KL divergence 적용
+            uniform_dist = torch.full_like(log_probs, np.log(self.num_classes))
+            kl_loss = self.kl(
+                F.log_softmax(log_probs.view(-1, self.num_classes), dim=-1),
+                uniform_dist.view(-1, self.num_classes)
+            )
             return (1 - self.smoothing) * ctc_loss + self.smoothing * kl_loss
         
         return ctc_loss
+
+class SpecAugment(nn.Module):
+    """
+    SpecAugment: 시계열 특징에 시간/주파수 마스크 적용
+    
+    CTC 기반 OCR 모델에 효과적인 정규화 기법:
+    - Time Masking: 시간 축 따라 일정 구간 지우기
+    - Frequency Masking: 주파수 축 따라 일정 구간 지우기
+    - 과적합 방지 및 일반화 성능 향상
+    """
+    def __init__(self, time_mask_max_size: int = 15, time_mask_count: int = 2,
+                 freq_mask_max_size: int = 8, freq_mask_count: int = 2):
+        super().__init__()
+        self.time_mask_max_size = time_mask_max_size
+        self.time_mask_count = time_mask_count
+        self.freq_mask_max_size = freq_mask_max_size
+        self.freq_mask_count = freq_mask_count
+    
+    def forward(self, features: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            features: (N, T, C) or (T, N, C) 특징 맵
+        """
+        if features.dim() != 3:
+            return features
+        
+        if self.training and features.shape[-1] > 1:
+            N, T, C = features.shape
+            
+            # Time masking
+            for _ in range(self.time_mask_count):
+                max_t = min(self.time_mask_max_size, T // 2)
+                if max_t <= 0:
+                    continue
+                t = torch.randint(1, max_t + 1, (1,), device=features.device).item()
+                t_start = torch.randint(0, T - t + 1, (1,), device=features.device).item()
+                features[:, t_start:t_start+t, :] = 0
+            
+            # Frequency masking
+            for _ in range(self.freq_mask_count):
+                max_f = min(self.freq_mask_max_size, C // 2)
+                if max_f <= 0:
+                    continue
+                f = torch.randint(1, max_f + 1, (1,), device=features.device).item()
+                f_start = torch.randint(0, C - f + 1, (1,), device=features.device).item()
+                features[:, :, f_start:f_start+f] = 0
+        
+        return features
+
 
 def get_train_transform(train_data: TrainData):
     """
     학습용 Transform (Data Augmentation 포함) - torchvision.transforms.v2 사용
     
     CAPTCHA 인식에 효과적인 증강 기법:
-    - 회전/이동/스케일/기울임: 문자 변형 대응
-    - 가우시안 블러: 노이즈 대응
-    - ColorJitter: 밝기/대비 변화 대응
+    - Rotation/Affine/Scale/Shear: 문자 변형/회전 대응
+    - RandomPerspective: 왜곡 대응
+    - RandomGrayscale: 색상 변화 대응
+    - RandomAffine 확대 + 가우시안 블러: 노이즈/흐림 대응
+    - ColorJitter 확대: 밝기/대비 변화 대응
+    - RandomErasing: 일부 영역 누락 대응
     """
     return T.Compose([
         T.Lambda(lambda img: train_data.image_pre_process(img)),
-        # Affine 변환: 약간의 회전, 이동, 스케일, 기울임
         T.RandomAffine(
-            degrees=3,              # 회전 범위 (도)
-            translate=(0.03, 0.03), # 이동 범위 (비율)
-            scale=(0.97, 1.03),     # 스케일 범위
-            shear=2,                # 기울임 범위 (도)
-            fill=255                # 배경 흰색
+            degrees=5,
+            translate=(0.05, 0.05),
+            scale=(0.95, 1.05),
+            shear=[0, 3],
+            fill=255
         ),
-        # 가우시안 블러 (30% 확률)
+        T.RandomPerspective(
+            distortion_scale=0.1,
+            p=0.3,
+            fill=255
+        ),
+        T.RandomApply([
+            T.RandomGrayscale(p=0.1)
+        ], p=0.2),
         T.RandomApply([
             T.GaussianBlur(kernel_size=3, sigma=(0.1, 0.5))
         ], p=0.3),
-        # 밝기/대비 조정 (20% 확률)
         T.RandomApply([
-            T.ColorJitter(brightness=0.2, contrast=0.2)
-        ], p=0.2),
+            T.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2)
+        ], p=0.3),
         T.ToImage(),
         T.ToDtype(torch.float32, scale=True),
-        # Random Erasing: 일부 영역 지우기 (10% 확률) - 노이즈/선 대응
-        T.RandomErasing(p=0.1, scale=(0.01, 0.05), ratio=(0.3, 3.0), value=1.0),
+        T.RandomErasing(p=0.15, scale=(0.01, 0.05), ratio=(0.3, 3.0), value=1.0),
     ])
 
 def get_eval_transform(train_data: TrainData):
@@ -140,7 +199,8 @@ class CRNN(nn.Module):
     """
     
     def __init__(self, in_channels: int, output: int, img_height: int, img_width: int, 
-                 label_length: int = None, dropout: float = 0.1):
+                 label_length: int = None, dropout: float = 0.1, spec_augment: bool = True,
+                 spec_time_mask_size: int = 15, spec_freq_mask_size: int = 8):
         super(CRNN, self).__init__()
         
         # CNN Feature Extractor (현대화된 구조)
@@ -217,6 +277,16 @@ class CRNN(nn.Module):
             nn.Linear(128, output + 1),  # +1 for blank
         )
         
+        # SpecAugment
+        self.spec_augment = spec_augment
+        if spec_augment:
+            self.spec_augment_processor = SpecAugment(
+                time_mask_max_size=spec_time_mask_size,
+                freq_mask_max_size=spec_freq_mask_size
+            )
+        else:
+            self.spec_augment_processor = None
+        
         # 고정 길이 레이블 저장
         self.label_length = label_length
         
@@ -225,6 +295,8 @@ class CRNN(nn.Module):
     
     def _init_weights(self):
         """가중치 초기화 (Xavier/Kaiming)"""
+        if self.spec_augment_processor is not None:
+            pass
         for name, param in self.named_parameters():
             if 'weight' in name:
                 if 'lstm' in name.lower() or 'rnn' in name.lower():
@@ -264,6 +336,10 @@ class CRNN(nn.Module):
         
         # Feature projection
         features = self.feature_proj(features)  # (N, T, 256)
+        
+        # SpecAugment (training only)
+        if self.spec_augment_processor is not None:
+            features = self.spec_augment_processor(features)
         
         # Bidirectional LSTM (batch_first=True)
         rnn_out, _ = self.rnn(features)  # (N, T, 256)
@@ -312,82 +388,6 @@ class CaptchaDataset(Dataset):
         
         return image, label
 
-class Engine:
-    """학습/평가/예측 엔진 """
-    
-    def __init__(self, model: nn.Module, optimizer: optim.Optimizer,
-                 criterion: nn.Module, epochs: int = 50,
-                 early_stop: bool = False, device: str = 'cpu'):
-        self.model = model
-        self.optimizer = optimizer
-        self.criterion = criterion
-        self.epochs = epochs
-        self.early_stop = early_stop
-        self.device = device
-    
-    def fit(self, dataloader: DataLoader) -> List[float]:
-        """학습 실행 및 손실 히스토리 반환."""
-        hist_loss = []
-        for epoch in range(self.epochs):
-            self.model.train()
-            tk = tqdm(dataloader, total=len(dataloader))
-            for data, target in tk:
-                data = data.to(device=self.device)
-                target = target.to(device=self.device)
-                
-                self.optimizer.zero_grad()
-                
-                out, loss = self.model(data, target, criterion=self.criterion)
-                
-                loss.backward()
-                self.optimizer.step()
-                
-                loss_val = loss.item() if isinstance(loss, torch.Tensor) else float(loss)
-                hist_loss.append(loss_val)
-                
-                tk.set_postfix({'Epoch': epoch + 1, 'Loss': loss_val})
-        
-        return hist_loss
-    
-    def evaluate(self, dataloader: DataLoader) -> Tuple[Dict[str, List], List[float]]:
-        """평가 실행 및 출력/손실 반환."""
-        self.model.eval()
-        hist_loss = []
-        outs = collections.defaultdict(list)
-        tk = tqdm(dataloader, total=len(dataloader))
-        
-        with torch.no_grad():
-            for data, target in tk:
-                data = data.to(device=self.device)
-                target = target.to(device=self.device)
-                
-                out, loss = self.model(data, target, criterion=self.criterion)
-                
-                outs['pred'].append(out)
-                outs['target'].append(target)
-                
-                hist_loss.append(loss.item() if isinstance(loss, torch.Tensor) else float(loss))
-                
-                tk.set_postfix({'Loss': loss.item()})
-        
-        return outs, hist_loss
-    
-    def predict(self, image_path: str) -> np.ndarray:
-        """단일 이미지 예측."""
-        image = Image.open(image_path).convert('L')
-        image_tensor = T.ToTensor()(image)
-        image_tensor = image_tensor.unsqueeze(0)
-        
-        self.model.eval()
-        with torch.no_grad():
-            out, _ = self.model(image_tensor.to(device=self.device))
-            out = out.permute(1, 0, 2)
-            out = out.log_softmax(2)
-            out = out.argmax(2)
-            out = out.cpu().detach().numpy()
-        
-        return out
-
 class PyTorchModel(BaseModel):
     """
     PyTorch 기반 CAPTCHA 인식 모델
@@ -404,12 +404,14 @@ class PyTorchModel(BaseModel):
         use_amp: bool = True,
         loss_type: str = 'focal',
         model_dir: str | None = None,
+        model_type: str = 'crnn',
         # model_type: str = 'default',
     ):
         super().__init__(captcha_type, verbose)
         self.use_compile = use_compile
         self.use_amp = use_amp
         self.loss_type = loss_type
+        self.model_type = model_type
         # self.model_type = model_type
         
         if device is None:
@@ -429,8 +431,9 @@ class PyTorchModel(BaseModel):
                 print("Mixed Precision: Enabled")
         
         # Character mappings (1-based, 0 = blank)
-        # self.characters는 BaseModel의 property 사용
-        self._char_list = list(self.train_data.characters)
+        # BaseModel의 characters property 사용 (detected_characters 우선)
+        char_set = self.characters  # BaseModel.property
+        self._char_list = list(char_set) if isinstance(char_set, str) else list("".join(char_set))
         self.char_to_idx = {char: idx + 1 for idx, char in enumerate(self._char_list)}
         self.idx_to_char = {idx: char for char, idx in self.char_to_idx.items()}
         self.idx_to_char[0] = ''  # blank
@@ -557,22 +560,44 @@ class PyTorchModel(BaseModel):
         
         return pred_loader
     
-    def build_model(self, dropout: float = 0.1) -> nn.Module:
+    def build_model(self, dropout: float = 0.1, model_type: str = None) -> nn.Module:
         """
-        CRNN 모델 생성 (PyTorch 2.0+ 최적화)
+        모델 생성 (CRNN 또는 Conformer 선택 가능)
         
         Args:
             dropout: Dropout 비율 (기본: 0.1)
+            model_type: 'crnn' 또는 'conformer' (기본: self.model_type)
         """
+        model_type = model_type or self.model_type
         img_width, img_height = self.train_data.image_width, self.train_data.image_height
-        model = CRNN(
-            in_channels=1,
-            output=self.num_classes,
-            img_height=img_height,
-            img_width=img_width,
-            label_length=self.train_data.label_length,
-            dropout=dropout,
-        )
+        
+        if model_type == 'conformer':
+            from conformer import ConformerModelWrapper
+            if self.verbose > 0:
+                print(f"Building Conformer model (layers=6, embed_dim=256, heads=4)")
+            model = ConformerModelWrapper(
+                in_channels=1,
+                output=self.num_classes,
+                img_height=img_height,
+                img_width=img_width,
+                label_length=self.train_data.label_length,
+                embed_dim=256,
+                num_heads=4,
+                num_layers=6,
+                dropout=dropout,
+            )
+        else:
+            if self.verbose > 0:
+                print(f"Building CRNN model (dropout={dropout})")
+            model = CRNN(
+                in_channels=1,
+                output=self.num_classes,
+                img_height=img_height,
+                img_width=img_width,
+                label_length=self.train_data.label_length,
+                dropout=dropout,
+                spec_augment=True,
+            )
         model.to(self.device)
         
         # torch.compile 지원 (PyTorch 2.0+)
@@ -647,26 +672,17 @@ class PyTorchModel(BaseModel):
         scaler = GradScaler(device=self.device.type) if self.use_amp and self.device.type == 'cuda' else None
         amp_dtype = torch.float16 if self.device.type == 'cuda' else torch.bfloat16
         
-        # Learning Rate Scheduler 설정
-        warmup_scheduler = None
-        plateau_scheduler = None
+        # Learning Rate Scheduler: Cosine Annealing with Linear Warmup
+        total_steps = epochs
+        warmup_steps = warmup_epochs
         
-        if warmup_epochs > 0:
-            def lr_lambda(epoch):
-                if epoch < warmup_epochs:
-                    return (epoch + 1) / warmup_epochs
-                return 1.0
-            warmup_scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+        def lr_lambda(step):
+            if step < warmup_steps:
+                return (step + 1) / warmup_steps
+            progress = min((step - warmup_steps) / max(total_steps - warmup_steps, 1), 1.0)
+            return 0.5 * (1.0 + np.cos(np.pi * progress))
         
-        # ReduceLROnPlateau: validation loss 기반 학습률 감소
-        if val_loader is not None:
-            plateau_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer, 
-                mode='min', 
-                factor=0.5,
-                patience=3,
-                min_lr=1e-7
-            )
+        lr_scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
         
         # Early stopping 초기화
         best_val_loss = float('inf')
@@ -687,8 +703,7 @@ class PyTorchModel(BaseModel):
             print(f"  - Loss function: {self.loss_type if self.loss_type else 'CTCLoss'}")
             if warmup_epochs > 0:
                 print(f"  - Warmup epochs: {warmup_epochs}")
-            if val_loader is not None:
-                print(f"  - LR Scheduler: ReduceLROnPlateau (factor=0.5, patience=3)")
+            print(f"  - LR Scheduler: Cosine Annealing with Linear Warmup")
             if early_stopping_patience > 0:
                 print(f"  - Early stopping patience: {early_stopping_patience}")
             print("=" * 70)
@@ -772,13 +787,8 @@ class PyTorchModel(BaseModel):
             # === Learning Rate Scheduler Step ===
             current_lr = optimizer.param_groups[0]['lr']
             
-            if warmup_scheduler is not None and epoch < warmup_epochs:
-                warmup_scheduler.step()
-                current_lr = optimizer.param_groups[0]['lr']
-            
-            if plateau_scheduler is not None and val_loss is not None and epoch >= warmup_epochs:
-                plateau_scheduler.step(val_loss)
-                current_lr = optimizer.param_groups[0]['lr']
+            lr_scheduler.step()
+            current_lr = optimizer.param_groups[0]['lr']
             
             # 로깅
             if self.verbose > 0:
@@ -841,7 +851,6 @@ class PyTorchModel(BaseModel):
     
     def save_model(self, model_path: str, temp: bool = False):
         """모델 저장 (PyTorch 규약 - dev.ipynb 스타일)."""
-        sleep(0.1)  # 파일 시스템 안정화 대기
         model_dir = os.path.dirname(model_path)
         os.makedirs(model_dir, exist_ok=True)
         temp_path = model_path + '.tmp'
@@ -850,12 +859,10 @@ class PyTorchModel(BaseModel):
             if temp:
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
-                    sleep(0.1)  # 파일 시스템 안정화 대기
                 torch.save(self.model.state_dict(), temp_path)
             else:
                 if os.path.exists(model_path):
                     os.remove(model_path)
-                    sleep(0.1)  # 파일 시스템 안정화 대기
                 torch.save(self.model.state_dict(), model_path)
                 
         except Exception as e:
@@ -981,7 +988,7 @@ class PyTorchModel(BaseModel):
         #     return self.model
 
         self.model = self.build_model()
-        self.model.load_state_dict(torch.load(model_path))
+        self.model.load_state_dict(torch.load(model_path, map_location=self.device, weights_only=False))
         self.model.eval()
         
         if self.verbose > 0:
@@ -1021,9 +1028,6 @@ class PyTorchModel(BaseModel):
         
         # torch.inference_mode: no_grad보다 더 빠름 (gradient 추적 완전 비활성화)
         with torch.inference_mode():
-            # if self.model_type == 'jit':
-            #     out = self.model(image_tensor)
-            # else:
             # AMP 추론 (선택적)
             if self.use_amp and self.device.type == 'cuda':
                 with autocast(device_type=self.device.type, dtype=torch.float16):
@@ -1128,6 +1132,11 @@ def ctc_beam_decode_fixed_length(
     
     예상 길이에 맞는 결과에 보너스를 부여하여 정확도를 향상시킵니다.
     
+    Length normalization과 improved scoring을 적용:
+    - score / len(prefix)로 정규화하여 길이에 따른 편향 제거
+    - expected_length에 정확히匹配的 on에 보너스 부여
+    - 평균 log-probability 기반으로 신뢰도 계산
+    
     Args:
         log_probs: (T, num_classes) log probabilities
         mapping_inv: index -> character 매핑
@@ -1141,24 +1150,14 @@ def ctc_beam_decode_fixed_length(
     """
     T, num_classes = log_probs.shape
     
-    # Beam: (prefix, last_char_idx, log_score)
-    beams = [('', -1, 0.0)]
+    # Beam: (prefix, last_char_idx, log_score, length)
+    beams = [('', -1, 0.0, 0)]
     
     for t in range(T):
         new_beams = {}
         remaining_time = T - t - 1
         
-        for prefix, last_char, score in beams:
-            current_len = len(prefix)
-            
-            # 가지치기: 이미 예상 길이를 초과하면 blank만 허용
-            if current_len > expected_length:
-                # blank만 진행
-                new_score = score + float(log_probs[t, 0])
-                key = (prefix, -1)
-                if key not in new_beams or new_beams[key] < new_score:
-                    new_beams[key] = new_score
-                continue
+        for prefix, last_char, score, length in beams:
             
             for c in range(num_classes):
                 new_score = score + float(log_probs[t, c])
@@ -1176,44 +1175,64 @@ def ctc_beam_decode_fixed_length(
                     # 새 문자 추가
                     char = mapping_inv.get(c, unk_token)
                     new_prefix = prefix + char
-                    new_len = len(new_prefix)
+                    new_len = length + 1
                     
-                    # 길이 기반 가지치기: 남은 시간보다 부족한 문자가 많으면 제외
+                    # 길이 기반 가지치기: 너무 길면 blank만 허용하고, 예측보다 길면 제외
+                    if new_len > expected_length:
+                        blank_key = (prefix, -1)
+                        blank_score = new_score
+                        if blank_key not in new_beams or new_beams[blank_key] < blank_score:
+                            new_beams[blank_key] = blank_score
+                        continue
+                    
+                    # 남은 시간보다 부족한 문자가 많으면 제외
                     min_chars_needed = expected_length - new_len
                     if min_chars_needed > remaining_time:
-                        continue  # 시간 내에 채울 수 없음
+                        continue
                     
                     key = (new_prefix, c)
                     if key not in new_beams or new_beams[key] < new_score:
                         new_beams[key] = new_score
         
-        # 상위 beam_width개 유지 (길이가 맞는 것에 보너스)
+        # 상위 beam_width개 유지 (length normalization + bonus)
         scored_beams = []
         for (prefix, last_char), score in new_beams.items():
-            adjusted_score = score
-            # 예상 길이와 가까울수록 보너스
-            len_diff = abs(len(prefix) - expected_length)
-            if len_diff == 0:
+            length = len(prefix)
+            # Length normalization: 평균 log-probability 사용
+            if length > 0:
+                normalized_score = score / length
+            else:
+                # 빈 prefix는 점수 0으로 처리 (아직 문자 없음)
+                normalized_score = 0.0
+            
+            # 길이 보너스
+            adjusted_score = normalized_score
+            if length == expected_length:
                 adjusted_score += length_bonus
-            scored_beams.append((prefix, last_char, score, adjusted_score))
+            elif length > 0:
+                adjusted_score += length_bonus * (1.0 - (expected_length - length) / expected_length)
+            
+            scored_beams.append((prefix, last_char, score, adjusted_score, length))
         
         sorted_beams = sorted(scored_beams, key=lambda x: x[3], reverse=True)[:beam_width]
-        beams = [(prefix, last_char, score) for prefix, last_char, score, _ in sorted_beams]
+        beams = [(prefix, last_char, score, _) for prefix, last_char, score, _, _ in sorted_beams]
     
     if not beams:
         return '', 0.0
     
     # 예상 길이에 정확히 맞는 것 우선 선택
-    matching_beams = [(p, lc, s) for p, lc, s in beams if len(p) == expected_length]
+    matching_beams = [(p, lc, s, sl) for p, lc, s, sl in beams if len(p) == expected_length]
     if matching_beams:
-        best_prefix, _, best_score = max(matching_beams, key=lambda x: x[2])
+        best_prefix, _, best_score, _ = max(matching_beams, key=lambda x: x[2])
     else:
         # 없으면 가장 가까운 것 선택
-        best_prefix, _, best_score = min(beams, key=lambda x: (abs(len(x[0]) - expected_length), -x[2]))
+        best_prefix, _, best_score, best_length = min(beams, key=lambda x: (abs(len(x[0]) - expected_length), -x[2]))
     
-    # 신뢰도 계산
-    if len(best_prefix) > 0:
-        confidence = float(np.exp(best_score / max(len(best_prefix), 1)))
+    best_length = len(best_prefix)
+    
+    # 신뢰도 계산: 평균 log-probability 기반으로
+    if best_length > 0:
+        confidence = float(np.exp(best_score / max(best_length, 1)))
     else:
         confidence = 0.0
     

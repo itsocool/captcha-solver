@@ -1,13 +1,14 @@
 import os
 import glob
-from pyexpat import model
+import functools
 import random
 import struct
 import shutil
 import string
 from PIL import Image
 from typing import Final, List, Tuple
-from dataclasses import dataclass, field
+from pydantic import BaseModel, Field, ConfigDict, PrivateAttr
+
 
 DIGITS: Final = string.digits
 LOWER_CASE: Final = string.ascii_lowercase
@@ -17,8 +18,26 @@ ALPHA_NUMERIC: Final = string.digits + string.ascii_letters
 CAPTCHA_CHAR_SETS: Final = "2345678bcdefgmnpwxy"
 DEV_CHAR_SETS: Final = "2345678ABCDEFGHKLMNPRSTUVWYZabcdefhklmnoprstuvwyz"
 
-@dataclass
-class TrainData:
+
+class _TrainInfo(BaseModel):
+    """Auto-detected training information."""
+    model_config = ConfigDict(frozen=True)
+
+    image_width: int
+    image_height: int
+    label_length: int
+    characters: str
+    threshold: int
+
+
+class CaptchaType(BaseModel):
+    captcha_id: str = "default"
+    name: str = "기본캡챠"
+    desc: str = "기본 캡챠"
+    train_data: "TrainData" = Field(default_factory=lambda: TrainData(captcha_id="default"))
+
+
+class TrainData(BaseModel):
     captcha_id: str
     backend: str = "pytorch"
     rev: int = 0
@@ -26,100 +45,126 @@ class TrainData:
     image_width: int = 200
     image_height: int = 50
     label_length: int = 6
-    characters: List[str] = field(default_factory=lambda: list(DIGITS))
+    characters: List[str] = Field(default_factory=list)
     threshold: int = 255
-    init: bool = False
+    _train_info: _TrainInfo | None = PrivateAttr(default=None)
 
-    def __post_init__(self) -> None:
-        if self.init:
-            (
-                self.train_image_path,
-                self.pred_image_path,
-                self.model_path,
-                self.image_width,
-                self.image_height,
-                self.label_length,
-                self.characters,
-                self.threshold,
-            ) = self.get_train_info()
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    def get_train_info(self) -> Tuple[str, str, str, int, int, int, List[str], int]:
-        train_image_path = self.get_image_dir(train=True)
-        pred_image_path = self.get_image_dir(train=False)
-        model_path = self.get_model_path()
-        train_files = self.get_data_files(train=True)
-        iw, ih = self.image_width, self.image_height
-        labels: List[str] = []
-        characters: List[str] = list(ALPHA_NUMERIC)
+    def __init__(self, **data) -> None:
+        super().__init__(**data)
+        self._detect_and_cache()
 
-        if train_files:
-            last = train_files[-1]
-            # Try Pillow first for robust detection
+    def _detect_and_cache(self) -> None:
+        """Detect train info from files and cache as a _train_info attribute."""
+        train_dir = self.get_image_dir(train=True)
+        all_files = sorted(glob.glob(os.path.join(train_dir, "*.png")))
+        labels = [os.path.basename(p).split(".")[0] for p in all_files]
+
+        if not labels:
+            self._train_info = None
+            return
+
+        # Detect image size from the last file
+        iw, ih, threshold = self.image_width, self.image_height, self.threshold
+        last = all_files[-1]
+        try:
+            with Image.open(last) as im:
+                iw, ih = im.size
+        except Exception:
             try:
-                from PIL import Image
-
-                with Image.open(last) as im:
-                    iw, ih = im.size
-            except Exception:
                 with open(last, "rb") as f:
                     f.seek(16)
-                    data = f.read(8)
-                    if len(data) >= 8:
-                        iw, ih = struct.unpack("!II", data)
+                    data_bytes = f.read(8)
+                    if len(data_bytes) >= 8:
+                        iw, ih = struct.unpack("!II", data_bytes)
+            except Exception:
+                pass
 
-            labels = [os.path.basename(p).split(".")[0] for p in train_files]
-            if labels:
-                label_length = max(len(l) for l in labels)
-                characters = sorted(set(ch for l in labels for ch in l))
-            else:
-                label_length = self.label_length
-        else:
-            label_length = self.label_length
+        max_len = max(len(l) for l in labels)
+        chars = "".join(sorted(set(ch for l in labels for ch in l)))
 
-        return (
-            os.path.abspath(train_image_path),
-            os.path.abspath(pred_image_path),
-            os.path.abspath(model_path),
-            int(iw),
-            int(ih),
-            int(label_length),
-            characters,
-            int(self.threshold),
+        info = _TrainInfo(
+            image_width=int(iw),
+            image_height=int(ih),
+            label_length=int(max_len),
+            characters=chars,
+            threshold=int(threshold)
         )
+        self._train_info = info
+
+    # --- detected values (auto from files, fallback to constructor default) ---
+
+    @property
+    def info(self) -> _TrainInfo | None:
+        """Cached detection result, or None if no training files exist."""
+        return getattr(self, "_train_info", None)
+
+    @property
+    def detected_image_width(self) -> int:
+        return self.info.image_width if self.info else self.image_width
+
+    @property
+    def detected_image_height(self) -> int:
+        return self.info.image_height if self.info else self.image_height
+
+    @property
+    def detected_label_length(self) -> int:
+        return self.info.label_length if self.info else self.label_length
+
+    @property
+    def detected_characters(self) -> str:
+        return self.info.characters if self.info else "".join(self.characters)
+
+    # --- paths ---
 
     def get_image_dir(self, train: bool = True) -> str:
-        image_dir = os.path.join(
-            self.train_data_base_dir,
-            self.captcha_id,
-            str(self.rev),
-            "images",
-            "train" if train else "pred",
+        return os.path.abspath(
+            os.path.join(
+                self.train_data_base_dir,
+                self.captcha_id,
+                str(self.rev),
+                "images",
+                "train" if train else "pred",
+            )
         )
-        return os.path.abspath(image_dir)
 
     def get_data_files(self, train: bool = True) -> List[str]:
-        label_length = self.label_length
         image_dir = self.get_image_dir(train)
         if not os.path.exists(image_dir):
             return []
         all_files = sorted(glob.glob(os.path.join(image_dir, "*.png")))
-        # 파일명(확장자 제외) 길이가 label_length와 일치하는 것만 반환
+        label_length = self.detected_label_length
         return [f for f in all_files if len(os.path.basename(f).split(".")[0]) == label_length]
 
     def get_labels(self, train: bool = True) -> List[str]:
         return [os.path.basename(p).split(".")[0] for p in self.get_data_files(train)]
 
     def get_model_base_dir(self) -> str:
-        model_base_dir = os.path.join(self.train_data_base_dir, self.captcha_id, str(self.rev), "model")
-        model_base_dir = os.path.abspath(model_base_dir)
+        model_base_dir = os.path.abspath(
+            os.path.join(self.train_data_base_dir, self.captcha_id, str(self.rev), "model")
+        )
         os.makedirs(model_base_dir, exist_ok=True)
         return model_base_dir
 
     def get_model_path(self) -> str:
-        model_base_dir = self.get_model_base_dir()
-        # 현재는 PyTorch 모델 저장 규약을 기본으로 사용합니다.
-        model_file_name = "model_full.pt"
-        return os.path.join(os.path.abspath(model_base_dir), model_file_name)
+        return os.path.join(self.get_model_base_dir(), "model_full.pt")
+
+    def get_train_info(self) -> Tuple[str, str, str, int, int, int, List[str], int]:
+        iw = self.detected_image_width
+        ih = self.detected_image_height
+        ll = self.detected_label_length
+        chars = list(self.detected_characters)
+        return (
+            os.path.abspath(self.get_image_dir(train=True)),
+            os.path.abspath(self.get_image_dir(train=False)),
+            os.path.abspath(self.get_model_path()),
+            iw,
+            ih,
+            ll,
+            chars,
+            self.detected_label_length,
+        )
 
     def choice_pred_image(self) -> str:
         image_dir = self.get_image_dir(train=False)
@@ -130,7 +175,7 @@ class TrainData:
             raise RuntimeError(f"No images found in {image_dir}")
         return random.choice(candidates)
 
-    def shuffle_train_data(self, train_size=0.9) -> None:
+    def shuffle_train_data(self, train_size: float = 0.9) -> None:
         """Shuffle PNG files between train/pred directories on disk."""
         train_dir = self.get_image_dir(train=True)
         pred_dir = self.get_image_dir(train=False)
@@ -172,63 +217,52 @@ class TrainData:
         print(f"셔플 완료: 훈련 {len(train_images)}개, 추론 {len(pred_images)}개")
 
     def image_pre_process(self, image: Image.Image) -> Image.Image:
-        """
-        이미지 전처리 (train/predict 공통 사용)
-        - captcha_id별 특수 전처리 포함
-        """
-        # captcha_id별 특수 전처리
-        if self.captcha_id == 'supreme_court':
+        if self.captcha_id == "supreme_court":
             return self._supreme_court_preprocess(image)
-        
-        # 기본 전처리
         return self._default_preprocess(image)
-    
+
     def _default_preprocess(self, image: Image.Image) -> Image.Image:
-        """기본 이미지 전처리"""
-        # 1. Transparent background -> White
-        if image.mode == 'RGBA':
-            background = Image.new('RGBA', image.size, (255, 255, 255, 255))
-            image = Image.alpha_composite(background, image).convert('RGB')
-        
-        # 2. Grayscale
-        image = image.convert('L')
-        
-        # 3. Threshold (밝은 값은 흰색으로)
+        if image.mode == "RGBA":
+            background = Image.new("RGBA", image.size, (255, 255, 255, 255))
+            image = Image.alpha_composite(background, image).convert("RGB")
+        image = image.convert("L")
         if 0 < self.threshold < 255:
             image = image.point(lambda p: 255 if p > self.threshold else p)
-            
-        # 4. Resize to target size
-        image = image.resize((self.image_width, self.image_height))            
-
+        image = self._remove_border(image)
+        image = self._make_background_white(image)
+        image = image.resize((self.detected_image_width, self.detected_image_height))
         return image
 
     def _supreme_court_preprocess(self, image: Image.Image) -> Image.Image:
-        """대법원 캡챠 전용 전처리"""
-        if image.mode == 'RGBA':
-            background = Image.new('RGBA', image.size, (255, 255, 255, 255))
+        if image.mode == "RGBA":
+            background = Image.new("RGBA", image.size, (255, 255, 255, 255))
             result = Image.alpha_composite(background, image)
-        elif image.size[0] > self.image_width and image.size[1] > self.image_height:
-            bg_color = 255
-            crop = (3, 1, self.image_width-1, self.image_height-7)
+        elif image.size[0] > self.detected_image_width and image.size[1] > self.detected_image_height:
+            crop = (3, 1, self.detected_image_width - 1, self.detected_image_height - 7)
             crop_image = image.crop(crop)
-            result = Image.new("RGBA", (self.image_width, self.image_height), bg_color)
+            result = Image.new("RGBA", (self.detected_image_width, self.detected_image_height), 255)
             result.paste(crop_image, (1, 1))
         else:
             result = image
-        
-        result = result.convert('RGB').convert('L')
-        
-        # 4. Resize to target size
-        result = result.resize((self.image_width, self.image_height)) 
-        
+        result = result.convert("RGB").convert("L")
+        result = self._remove_border(result)
+        result = self._make_background_white(result)
+        result = result.resize((self.detected_image_width, self.detected_image_height))
         return result
 
-@dataclass
-class CaptchaType:
-    captcha_id: str = 'default'
-    name: str = '기본캡챠'
-    desc: str = '기본 캡챠'
-    train_data: TrainData = field(default_factory=lambda: TrainData(captcha_id='default'))
+    def _remove_border(self, image: Image.Image, margin: int = 2) -> Image.Image:
+        w, h = image.size
+        left, top = margin, margin
+        right, bottom = w - margin, h - margin
+        if right <= left or bottom <= top:
+            return image
+        return image.crop((left, top, right, bottom))
 
-    def __post_init__(self) -> None:
-        self.captcha_id=self.train_data.captcha_id
+    def _make_background_white(self, image: Image.Image) -> Image.Image:
+        pixels = image.load()
+        w, h = image.size
+        for y in range(h):
+            for x in range(w):
+                if pixels[x, y] > 128:
+                    pixels[x, y] = 255
+        return image

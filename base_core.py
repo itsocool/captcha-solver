@@ -99,8 +99,9 @@ class BaseModel(ABC):
     
     @property
     def characters(self) -> str:
-        """사용 가능한 문자 집합"""
-        return self.train_data.characters
+        """사용 가능한 문자 집합 (감지된 값을 우선 사용)"""
+        detected = self.train_data.detected_characters
+        return "".join(detected) if isinstance(detected, list) else detected
     
     @property
     def label_length(self) -> int:

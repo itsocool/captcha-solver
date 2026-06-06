@@ -7,7 +7,7 @@
 이 문서는 코드를 빠르게 이해하고 생산적으로 작업하기 위한 핵심 정보만 간결하게 정리합니다. 변경 전후에는 `train.py` / `pred.py` 같은 스크립트를 참고하세요.
 
 ### 한눈에 보는 아키텍처
-- 주요 모듈: `captchaSolver/engine.py` (학습/추론 엔트리), `captchaSolver/dataclass.py` (데이터/경로 규약), `captchaSolver/pytorch_core.py` (PyTorch 호환 레이어), `captchaSolver/base_core.py` (공통 인터페이스)
+- 주요 모듈: `engine.py` (학습/추론 엔트리), `dataclass.py` (데이터/경로 규약), `base_core.py` (공통 인터페이스)
 - 데이터 레이아웃: `captcha_data/<captcha_id>/<rev>/images/{train,pred}` — 이미지 파일명(확장자 제외)이 레이블입니다. 예: `captcha_data/kshop/0/images/train/abc12.png` → 레이블 `abc12`.
 - 모델 파일: PyTorch 기반 모델은 `captcha_data/<id>/<rev>/model/model_full.pt` (전체 모델), 필요시 `model_full.pt.onnx` 또는 `model_jit.pt`를 사용합니다. 기존 Keras 포맷(`weights.keras`)은 더 이상 사용하지 않습니다.
 
@@ -32,9 +32,9 @@
 - 모델 저장 규약: PyTorch 모델은 `model_full.pt`를 기본으로 사용합니다.
 
 ### 예시 참조(파일/함수)
-- 데이터 클래스: `captchaSolver/dataclass.py::TrainData` — `get_image_dir`, `get_data_files`, `get_model_path`
-- 모델 루틴: `captchaSolver/pytorch_core.py` 및 `captchaSolver/engine.py` — 학습/추론 진입점
-- 상수: `captchaSolver/consts.py::ALPHA_NUMERIC`
+- 데이터 클래스: `dataclass.py::TrainData` — `get_image_dir`, `get_data_files`, `get_model_path`
+- 모델 루틴: `core.py` 및 `engine.py` — 학습/추론 진입점
+- 상수: `dataclass.py::ALPHA_NUMERIC`
 - 실행 스크립트: `train.py`, `pred.py`, `main.py`
 
 ### 빠른 체크리스트(문제 상황에서)

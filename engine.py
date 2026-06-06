@@ -60,22 +60,17 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data") -> Dict[s
         "kshop": kshop,
     }
 
-def get_captcha_model(train_data_base_dir: str = "./captcha_data", captcha_id: str = "default", verbose: int = 1) -> PyTorchModel:
+def get_captcha_model(train_data_base_dir: str = "./captcha_data", captcha_id: str = "default", verbose: int = 1, model_type: str = 'crnn') -> PyTorchModel:
     captcha_type_list: Dict[str, CaptchaType] = get_captcha_type_list(train_data_base_dir=train_data_base_dir)
 
     if captcha_id not in captcha_type_list:
         raise ValueError(f"Unsupported captcha_id: {captcha_id}")
 
     captcha_type = captcha_type_list[captcha_id]
-    return PyTorchModel(captcha_type=captcha_type, verbose=verbose)
-
-def get_captcha_pred_model_list(captcha_id_list: List[str]) -> Dict[str, BaseModel]:
-    models = {captcha_id : get_captcha_model(captcha_id=captcha_id) for captcha_id in captcha_id_list}
-    return models
+    return PyTorchModel(captcha_type=captcha_type, verbose=verbose, model_type=model_type)
 
 def train_model(
     model: BaseModel,
-    backend: str = 'pytorch',
     epochs: int = 60,
     batch_size: int = 32,
     earlystopping: bool = True,
@@ -86,11 +81,7 @@ def train_model(
     loss_type: str = 'focal',
     use_amp: bool = True,
 ):
-    # use_amp 인수가 명시적으로 전달되면 모델 설정 업데이트
-    if use_amp is not None:
-        model.use_amp = use_amp
-
-    # model.model_type = model_type
+    model.use_amp = use_amp
     
     model.build_model()
 
@@ -117,106 +108,18 @@ def train_model(
         loss_type=loss_type,
     )
 
-def batch_predict_model_onnx(
-    model: PyTorchModel,
-    pred_image_dir: str = None,
-    unk_token: str = "[UNK]",
-    use_amp: bool = True,
-    loss_type: str = 'focal',
-) -> Dict[str, float]:
-    start = time.time()
-    torch_model: PyTorchModel = model
-    train_data: TrainData = torch_model.train_data
-    torch_model.loss_type = loss_type
-
-    if use_amp is not None:
-        torch_model.use_amp = use_amp
-
-    torch_model.model_type = 'onnx'    
-    torch_model.load_prediction_model()
-    
-    if pred_image_dir is not None:
-        pred_image_files = sorted(glob.glob(os.path.join(pred_image_dir, "*.*")))
-    else:
-        pred_image_files = train_data.get_data_files(train=False)
-
-    results = []
-    mismatches = []
-    total = 0
-    match_count = 0
-
-    # 단순화된 루프: core.PyTorchModel.predict()를 호출하여 예측 및 신뢰도 획득
-    torch_model.model.eval()
-    with torch.no_grad():
-        for image_path in tqdm(pred_image_files, desc="Predicting"):
-            image_name = os.path.basename(image_path)
-            expected = os.path.splitext(image_name)[0]
-            pred_text, confidence = torch_model.predict(
-                image_path=image_path,
-                unk_token=unk_token,
-                use_amp=use_amp,
-                loss_type=loss_type,
-            )
-            is_match = (pred_text == expected and len(pred_text) == train_data.label_length)
-            if is_match:
-                match_count += 1
-            else:
-                mismatches.append({'image': image_name, 'expected': expected, 'pred': pred_text, 'confidence': confidence})
-
-            results.append({'image': image_name, 'expected': expected, 'pred': pred_text, 'confidence': confidence, 'match': is_match})
-            total += 1
-
-    end = time.time()
-    accuracy = (match_count / total * 100) if total > 0 else 0.0
-
-    for r in results:
-        status = "✅" if r['match'] else "❌"
-        print(f"  {status} {r['image']}: {r['expected']} ➡️ {r['pred']} (conf: {r['confidence']:.4f})")
-
-    if mismatches:
-        print(f"\nMismatch samples ({len(mismatches)}):")
-        for m in mismatches:
-            print(f"  ❌ {m['image']}: {m['expected']} ➡️ {m['pred']} (conf: {m['confidence']:.4f})")
-
-    print("\n" + "=" * 70)
-    print(f"Prediction Results:")
-    print(f"  Loss Type: {loss_type}")
-    print(f"  Total: {total}")
-    print(f"  Match: {match_count}")
-    print(f"  Mismatch: {total - match_count}")
-    print(f"  Accuracy: {accuracy:.2f}%")
-    print(f"  pred time: {end - start:.2f} sec")
-    print("=" * 70)
-    print("\nPrediction completed!")
-
 def batch_predict_model(
     model: PyTorchModel,
     pred_image_dir: str = None,
     unk_token: str = "[UNK]",
-    use_amp: bool = True,
     loss_type: str = 'focal',
-    model_type: str = 'default',
 ) -> Dict[str, float]:
     start = time.time()
     torch_model: PyTorchModel = model
     train_data: TrainData = torch_model.train_data
     torch_model.loss_type = loss_type
-
-    if model_type == 'onnx':
-        batch_predict_model_onnx(
-            model=torch_model,
-            pred_image_dir=pred_image_dir,
-            unk_token=unk_token,
-            use_amp=use_amp,
-            loss_type=loss_type,
-            model_type=model_type,
-        )
-        return
-
-    if use_amp is not None:
-        torch_model.use_amp = use_amp
-
-    torch_model.model_type = model_type    
+    torch_model.use_amp = True
+    
     torch_model.load_prediction_model()
     
     if pred_image_dir is not None:
@@ -238,7 +141,6 @@ def batch_predict_model(
             pred_text, confidence = torch_model.predict(
                 image_path=image_path,
                 unk_token=unk_token,
-                use_amp=use_amp,
                 loss_type=loss_type,
             )
             is_match = (pred_text == expected and len(pred_text) == train_data.label_length)
@@ -264,7 +166,6 @@ def batch_predict_model(
 
     print("\n" + "=" * 70)
     print(f"Prediction Results:")
-    print(f"  Model Type: {model_type}")
     print(f"  Loss Type: {loss_type}")
     print(f"  Total: {total}")
     print(f"  Match: {match_count}")
@@ -279,25 +180,17 @@ def predict(
     image_path: str,
     verbose: int = 1,
     unk_token: str = "[UNK]",
-    use_amp: bool = True,
     loss_type: str = 'focal',
-    model_type: str = 'default',
 ) -> Tuple[str, float]:
     
-    if model_type == 'onnx':
-        torch_model: PyTorchModel = model
-    else:
-        torch_model: PyTorchModel = model
-        
+    torch_model: PyTorchModel = model
     torch_model.loss_type = loss_type
-    
-    if use_amp is not None:
-        torch_model.use_amp = use_amp
+    torch_model.use_amp = True
     
     if torch_model.model is None:
         torch_model.load_prediction_model()
     
-    pred_text, confidence = torch_model.predict(image_path=image_path, unk_token=unk_token, use_amp=use_amp, loss_type=loss_type)
+    pred_text, confidence = torch_model.predict(image_path=image_path, unk_token=unk_token, loss_type=loss_type)
     
     if verbose:
         print(f"image_path: {image_path}")

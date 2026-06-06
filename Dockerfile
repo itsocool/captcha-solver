@@ -1,4 +1,4 @@
-FROM pytorch/pytorch:2.9.0-cuda12.6-cudnn9-runtime
+FROM pytorch/pytorch:2.11.0-cuda12.8-cudnn9-runtime
 
 # 작업 디렉토리 설정
 WORKDIR /app
