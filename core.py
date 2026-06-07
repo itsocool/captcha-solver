@@ -2,7 +2,6 @@ import os
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 from torch.amp.autocast_mode import autocast
 from torch.amp.grad_scaler import GradScaler
@@ -55,36 +54,6 @@ class FocalCTCLoss(nn.Module):
         elif self.reduction == 'sum':
             return focal_loss.sum()
         return focal_loss
-
-class LabelSmoothingCTCLoss(nn.Module):
-    """
-    Label Smoothing이 적용된 CTC Loss
-    
-    - 과적합 방지
-    - 모델이 너무 확신하는 것을 방지
-    - log_probs에 KL divergence 적용
-    """
-    def __init__(self, num_classes: int, blank: int = 0, smoothing: float = 0.1,
-                 reduction: str = 'mean', zero_infinity: bool = True):
-        super().__init__()
-        self.num_classes = num_classes
-        self.smoothing = smoothing
-        self.ctc = nn.CTCLoss(blank=blank, reduction=reduction, zero_infinity=zero_infinity)
-        self.kl = nn.KLDivLoss(reduction='batchmean')
-    
-    def forward(self, log_probs, targets, input_lengths, target_lengths):
-        ctc_loss = self.ctc(log_probs, targets, input_lengths, target_lengths)
-        
-        if self.smoothing > 0:
-            # log_probs에 KL divergence 적용
-            uniform_dist = torch.full_like(log_probs, np.log(self.num_classes))
-            kl_loss = self.kl(
-                F.log_softmax(log_probs.view(-1, self.num_classes), dim=-1),
-                uniform_dist.view(-1, self.num_classes)
-            )
-            return (1 - self.smoothing) * ctc_loss + self.smoothing * kl_loss
-        
-        return ctc_loss
 
 class SpecAugment(nn.Module):
     """
@@ -404,15 +373,11 @@ class PyTorchModel(BaseModel):
         use_amp: bool = True,
         loss_type: str = 'focal',
         model_dir: str | None = None,
-        model_type: str = 'crnn',
-        # model_type: str = 'default',
     ):
         super().__init__(captcha_type, verbose)
         self.use_compile = use_compile
         self.use_amp = use_amp
         self.loss_type = loss_type
-        self.model_type = model_type
-        # self.model_type = model_type
         
         if device is None:
             self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -560,44 +525,26 @@ class PyTorchModel(BaseModel):
         
         return pred_loader
     
-    def build_model(self, dropout: float = 0.1, model_type: str = None) -> nn.Module:
+    def build_model(self, dropout: float = 0.1) -> nn.Module:
         """
-        모델 생성 (CRNN 또는 Conformer 선택 가능)
+        CRNN 모델 생성
         
         Args:
             dropout: Dropout 비율 (기본: 0.1)
-            model_type: 'crnn' 또는 'conformer' (기본: self.model_type)
         """
-        model_type = model_type or self.model_type
         img_width, img_height = self.train_data.image_width, self.train_data.image_height
         
-        if model_type == 'conformer':
-            from conformer import ConformerModelWrapper
-            if self.verbose > 0:
-                print(f"Building Conformer model (layers=6, embed_dim=256, heads=4)")
-            model = ConformerModelWrapper(
-                in_channels=1,
-                output=self.num_classes,
-                img_height=img_height,
-                img_width=img_width,
-                label_length=self.train_data.label_length,
-                embed_dim=256,
-                num_heads=4,
-                num_layers=6,
-                dropout=dropout,
-            )
-        else:
-            if self.verbose > 0:
-                print(f"Building CRNN model (dropout={dropout})")
-            model = CRNN(
-                in_channels=1,
-                output=self.num_classes,
-                img_height=img_height,
-                img_width=img_width,
-                label_length=self.train_data.label_length,
-                dropout=dropout,
-                spec_augment=True,
-            )
+        if self.verbose > 0:
+            print(f"Building CRNN model (dropout={dropout})")
+        model = CRNN(
+            in_channels=1,
+            output=self.num_classes,
+            img_height=img_height,
+            img_width=img_width,
+            label_length=self.train_data.label_length,
+            dropout=dropout,
+            spec_augment=True,
+        )
         model.to(self.device)
         
         # torch.compile 지원 (PyTorch 2.0+)
@@ -633,7 +580,7 @@ class PyTorchModel(BaseModel):
             early_stopping_patience: 조기 종료 patience (0이면 비활성화)
             weight_decay: L2 정규화 가중치 (기본: 1e-4)
             grad_clip: Gradient Clipping 최대값 (기본: 5.0)
-            loss_type: 손실 함수 유형 ('ctc', 'focal', 'label_smoothing')
+            loss_type: 손실 함수 유형 ('ctc', 'focal')
             dropout: 모델 Dropout 비율 (기본: 0.1)
         """
         if self.model is None:
@@ -651,15 +598,13 @@ class PyTorchModel(BaseModel):
         )
 
         # Loss 함수 선택
+        loss_type = loss_type or self.loss_type or 'ctc'
+        self.loss_type = loss_type
         if loss_type == 'focal':
             criterion = FocalCTCLoss(gamma=2.0)
             if self.verbose > 0:
                 print(f"Using FocalCTCLoss (gamma=2.0)")
-        elif loss_type == 'label_smoothing':
-            criterion = LabelSmoothingCTCLoss(num_classes=self.num_classes + 1, smoothing=0.1)
-            if self.verbose > 0:
-                print(f"Using LabelSmoothingCTCLoss (smoothing=0.1)")
-        else:
+        elif loss_type == 'ctc':
             criterion = nn.CTCLoss(
                 blank=0,           # blank 인덱스 명시
                 reduction='mean',  # 배치 평균
@@ -667,6 +612,8 @@ class PyTorchModel(BaseModel):
             )
             if self.verbose > 0:
                 print(f"Using standard CTCLoss")
+        else:
+            raise ValueError("Unsupported loss_type: {0}. Use 'ctc' or 'focal'.".format(loss_type))
         
         # AMP GradScaler (Mixed Precision Training)
         scaler = GradScaler(device=self.device.type) if self.use_amp and self.device.type == 'cuda' else None
@@ -979,14 +926,6 @@ class PyTorchModel(BaseModel):
         if model_path is None:
             model_path = self.train_data.get_model_path()
         
-        # # 모델 로드 (전체 모델 또는 state_dict)
-        # if self.model_type == 'jit':
-        #     model_path = model_path.replace('_full.pt', '_jit.pt')
-        #     if self.verbose > 0:
-        #         print(f"Loading TorchScript model from {model_path}")
-        #     self.model = torch.jit.load(model_path, map_location=self.device)
-        #     return self.model
-
         self.model = self.build_model()
         self.model.load_state_dict(torch.load(model_path, map_location=self.device, weights_only=False))
         self.model.eval()

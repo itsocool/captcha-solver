@@ -16,7 +16,7 @@ Single-repo PyTorch captcha solver. No package — all code lives at root as fla
 | File | Description |
 |------|-------------|
 | `engine.py` | Entrypoints: `get_captcha_model()`, `train_model()`, `predict()`, `batch_predict_model()`, `redistribute_train_pred()` |
-| `core.py` | `PyTorchModel` (CRNN build/train/eval), `FocalCTCLoss`, `LabelSmoothingCTCLoss`, transforms, dataset |
+| `core.py` | `PyTorchModel` (CRNN build/train/eval), `FocalCTCLoss`, transforms, dataset |
 | `dataclass.py` | `TrainData`, `CaptchaType` (Pydantic models); paths, char sets, image preprocessing |
 | `base_core.py` | `BaseModel` abstract interface |
 | `web/app.py` | FastAPI + Uvicorn (`/health`, `/predict` endpoints), model cached in memory |
@@ -54,7 +54,7 @@ captcha_data/<captcha_id>/<rev>/images/{train,pred}/
 5. **Background white** — pixels > 128 become 255
 6. **Resize** — to captcha-type-specific dimensions
 
-### Training transforms (core.py:93-115)
+### Training transforms
 
 | Transform | Parameters |
 |-----------|-----------|
@@ -71,8 +71,9 @@ captcha_data/<captcha_id>/<rev>/images/{train,pred}/
 
 - Label length and character set are **auto-extracted** from training file names in `TrainData`.
 - `train.py` and `pred.py` are **not argument-driven** — edit hardcoded vars at top.
-- PyTorch cuDNN benchmarking is enabled globally in `core.py:20-23`. Never import `core.py` just to check imports — it triggers GPU setup.
-- Loss types: `'ctc'` (default), `'focal'`, `'label_smoothing'`. Pass via `engine.predict()`.
+- PyTorch cuDNN benchmarking is enabled globally in `core.py`. Never import `core.py` just to check imports — it triggers GPU setup.
+- Model architecture is CRNN only.
+- Training loss types: `'ctc'`, `'focal'`.
 - Loss type defaults to `'focal'` in `train.py` / `pred.py`.
 
 ## Image Size & CTC Constraints
@@ -103,7 +104,7 @@ Endpoints: `GET /health`, `POST /predict`
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **captcha-solver** (544 symbols, 851 relationships, 28 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **captcha-solver** (661 symbols, 1089 relationships, 35 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

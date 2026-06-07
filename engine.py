@@ -60,14 +60,14 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data") -> Dict[s
         "kshop": kshop,
     }
 
-def get_captcha_model(train_data_base_dir: str = "./captcha_data", captcha_id: str = "default", verbose: int = 1, model_type: str = 'crnn') -> PyTorchModel:
+def get_captcha_model(train_data_base_dir: str = "./captcha_data", captcha_id: str = "default", verbose: int = 1) -> PyTorchModel:
     captcha_type_list: Dict[str, CaptchaType] = get_captcha_type_list(train_data_base_dir=train_data_base_dir)
 
     if captcha_id not in captcha_type_list:
         raise ValueError(f"Unsupported captcha_id: {captcha_id}")
 
     captcha_type = captcha_type_list[captcha_id]
-    return PyTorchModel(captcha_type=captcha_type, verbose=verbose, model_type=model_type)
+    return PyTorchModel(captcha_type=captcha_type, verbose=verbose)
 
 def train_model(
     model: BaseModel,

@@ -9,3 +9,6 @@ wheels/
 # Virtual environments
 .venv
 .history
+
+# Local environment files
+.env

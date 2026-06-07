@@ -5,7 +5,7 @@ from core import PyTorchModel
 captcha_id = 'supreme_court'
 loss_type = 'focal'
 use_amp = True
-model: PyTorchModel = engine.get_captcha_model(captcha_id=captcha_id, model_type='crnn')
+model: PyTorchModel = engine.get_captcha_model(captcha_id=captcha_id)
 train_ratio = 0.6
 shuffle = False
 batch_size = 64

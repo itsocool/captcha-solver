@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>Captcha Predictor</title>
+		<link rel="stylesheet" href="{{ url_for('static', path='/css/app.css') }}">
+	</head>
+	<body>
+		<header class="topbar">
+			<h1>Captcha Predictor</h1>
+			<span class="version">v{{ app_version }}</span>
+		</header>
+		<main class="workspace">
+			<section class="predictor" aria-label="Captcha prediction">
+				<div class="tabs" role="tablist" aria-label="Prediction mode">
+					<button class="tab active" type="button" data-target="image-panel">Image</button>
+					<button class="tab" type="button" data-target="json-panel">JSON</button>
+				</div>
+
+				<form id="image-panel" class="panel active" action="{{ predict_image_url }}" method="post" enctype="multipart/form-data">
+					<label>
+						Captcha ID
+						<input name="captcha_id" type="text" value="{{ default_captcha_id }}" autocomplete="off">
+					</label>
+					<label>
+						Image
+						<input name="image" type="file" accept="image/*" required>
+					</label>
+					<button type="submit">Predict</button>
+				</form>
+
+				<form id="json-panel" class="panel" action="{{ predict_json_url }}" method="post">
+					<label>
+						Captcha ID
+						<input name="captcha_id" type="text" value="{{ default_captcha_id }}" autocomplete="off">
+					</label>
+					<label>
+						Image Data
+						<textarea name="image_data" rows="8" spellcheck="false" required></textarea>
+					</label>
+					<button type="submit">Predict</button>
+				</form>
+			</section>
+			<section class="output" aria-live="polite">
+				<pre id="result">{}</pre>
+			</section>
+		</main>
+		<script src="{{ url_for('static', path='/js/app.js') }}"></script>
+	</body>
+</html>

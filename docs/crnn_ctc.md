@@ -27,13 +27,13 @@
     └──────┬──────┘
            │
     ┌─────────────┐
-    │   CTC Loss  │  Focal / Label Smoothing / Standard
+    │   CTC Loss  │  Focal / Standard
     └─────────────┘
 ```
 
 ---
 
-## 1. CRNN 모델 (core.py:129-288)
+## 1. CRNN 모델
 
 CRNN는 **CNN**로 이미지를 특징 벡터로 변환하고, **RNN(BiLSTM)**로 시퀀스를 모델링한後, **CTC**로 텍스트를 출력하는 아키텍처입니다.
 
@@ -106,7 +106,7 @@ self.rnn = nn.LSTM(
 
 ---
 
-## 2. CTC Loss (core.py:30-84)
+## 2. CTC Loss
 
 CTC (Connectionist Temporal Sequence) Loss는 이미지와 텍스트 레이블 간 **정렬 없이** 학습할 수 있는 손실 함수입니다.
 
@@ -127,9 +127,9 @@ criterion = nn.CTCLoss(blank=0, reduction='mean', zero_infinity=True)
 - blank는 연속된 동일 문자를 분리하거나 반복 문자를 처리
 - `log_probs.log_softmax(2) → CTC Loss` 구조
 
-### 2.2 Focal CTC Loss (core.py:30-58)
+### 2.2 Focal CTC Loss
 
-어린(학습 어려운) 샘플에 더 높은 가중치를 부여하는 손실 함수입니다.
+어려운 샘플에 더 높은 가중치를 부여하는 손실 함수입니다.
 
 ```python
 class FocalCTCLoss(nn.Module):
@@ -147,36 +147,16 @@ class FocalCTCLoss(nn.Module):
 | `gamma` | 2.0 | 쉬운 샘플 가중치 감소 정도 |
 | `alpha` | 0.25 | 클래스 불균형 보정 |
 
-### 2.3 Label Smoothing CTC Loss (core.py:60-84)
-
-과적합을 방지하고 모델의 과도한 확신을 완화합니다.
-
-```python
-class LabelSmoothingCTCLoss(nn.Module):
-    def __init__(self, num_classes, blank=0, smoothing=0.1, ...):
-        ...
-    def forward(self, log_probs, targets, input_lengths, target_lengths):
-        ctc_loss = self.ctc(log_probs, targets, input_lengths, target_lengths)
-        uniform = torch.full_like(log_probs, 1.0 / num_classes)
-        kl_loss = self.kl(log_probs, uniform)
-        return (1 - smoothing) * ctc_loss + smoothing * kl_loss
-```
-
-| 파라미터 | 기본값 | 설명 |
-|----------|--------|-----|
-| `smoothing` | 0.1 | Label Smoothing 비율 |
-
-### 2.4 Loss 함수 비교
+### 2.3 Loss 함수 비교
 
 | Loss | 과적합 방지 | 어려운 샘플 강조 | 권장 시나리오 |
 |------|------------|-----------------|--------------|
 | `ctc` (기본) | - | - | 기본, 소규모 데이터 |
 | `focal` | - | O | 클래스 불균형, 학습 어려움 |
-| `label_smoothing` | O | - | 대용량 데이터, 과적합 시 |
 
 ---
 
-## 3. PyTorchModel (core.py:391-1116)
+## 3. PyTorchModel
 
 PyTorch 기반 CAPTCHA 인식 모델 클래스. `BaseModel`을 상속받습니다.
 
@@ -189,11 +169,11 @@ model = PyTorchModel(
     device=None,              # None=auto (CUDA 우선)
     use_compile=False,        # torch.compile 사용 여부
     use_amp=True,             # Mixed Precision Training (AMP)
-    loss_type='focal'         # 'ctc', 'focal', 'label_smoothing'
+    loss_type='focal'         # 'ctc', 'focal'
 )
 ```
 
-**PyTorch 최적화 설정** (`core.py:22-25`):
+**PyTorch 최적화 설정** (`core.py`):
 ```python
 torch.backends.cudnn.benchmark = True  # 고정 입력 크기 기반 자동 튜닝
 torch.backends.cuda.matmul.allow_tf32 = True  # Ampere GPU TF32 가속
@@ -261,7 +241,7 @@ results = model.predict_batch(image_paths, batch_size=32)
 
 ---
 
-## 4. CTC Beam Search 디코딩 (core.py:1118-1220)
+## 4. CTC Beam Search 디코딩
 
 CTC의 빈번한 중복 문자 문제를 해결하고, 고정 길이를 위한 보너스 시스템을 제공합니다.
 
@@ -299,7 +279,7 @@ confidence = exp(best_score / max(len(best_prefix), 1))
 - **기본 전처리**: 투명 → 흰색 배경, grayscale, thresholding, 리사이즈
 - **대법원 캡차**: crop + padding + grayscale + resize (120x40 고정)
 
-### 5.2 학습 Transform (core.py:86-117)
+### 5.2 학습 Transform
 
 ```python
 get_train_transform(train_data)
@@ -312,7 +292,7 @@ get_train_transform(train_data)
 # ])
 ```
 
-### 5.3 데이터셋 (core.py:290-313)
+### 5.3 데이터셋
 
 ```python
 dataset = CaptchaDataset(df, path, mapping, transform)
@@ -320,7 +300,7 @@ dataset = CaptchaDataset(df, path, mapping, transform)
 # 레이블 = 파일명(확장자 제외)을 char_to_idx로 매핑한 토큰 시퀀스
 ```
 
-### 5.4 데이터 분할 (core.py:444-520)
+### 5.4 데이터 분할
 
 ```python
 train_loader, val_loader = model.split_dataset(
@@ -360,7 +340,7 @@ train_model(
     epochs=60,
     batch_size=32,
     learning_rate=1e-4,
-    loss_type='focal',      # 'ctc', 'focal', 'label_smoothing'
+    loss_type='focal',      # 'ctc', 'focal'
     use_amp=True,
 )
 

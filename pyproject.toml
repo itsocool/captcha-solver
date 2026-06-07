@@ -20,6 +20,9 @@ dependencies = [
     "onnx>=1.21.0",
 ]
 
+[project.scripts]
+fastapi = "fastapi_dev:main"
+
 [tool.setuptools]
 include-package-data = true
 
@@ -29,6 +32,14 @@ exclude = ["captcha_data*", "logs*", "*.egg-info*", ".git*"]
 
 [tool.setuptools.package-data]
 # package-level data moved to project root; no package-local data.json
+web = [
+    "templates/*.html",
+    "static/css/*.css",
+    "static/js/*.js",
+]
+
+[tool.fastapi]
+entrypoint = "web.app:app"
 
 [[tool.uv.index]]
 url = "https://pypi.org/simple"
