@@ -1,0 +1,12 @@
+{
+  "captcha_id": "default",
+  "name": "기본 캡챠",
+  "rev": 0,
+  "image_width": 200,
+  "image_height": 50,
+  "label_length": 5,
+  "characters": "2345678bcdefgmnpwxy",
+  "threshold": 255,
+  "preprocess": "default",
+  "blank_index": 0
+}

@@ -12,3 +12,6 @@ wheels/
 
 # Local environment files
 .env
+
+# Rust CLI 빌드 산출물
+apps/cli/target/

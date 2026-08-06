@@ -1,0 +1,12 @@
+{
+  "captcha_id": "dev",
+  "name": "개발중",
+  "rev": 0,
+  "image_width": 250,
+  "image_height": 50,
+  "label_length": 6,
+  "characters": "2345678ABCDEFGHKLMNPRSTUVWYZabcdefhklmnoprstuvwyz",
+  "threshold": 255,
+  "preprocess": "default",
+  "blank_index": 0
+}

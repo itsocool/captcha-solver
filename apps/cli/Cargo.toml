@@ -1,0 +1,18 @@
+[package]
+name = "captcha-cli"
+version = "0.1.0"
+edition = "2021"
+description = "ONNX 캡차 추론 CLI"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp"] }
+ort = "2.0.0-rc.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true

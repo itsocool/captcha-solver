@@ -1,0 +1,12 @@
+{
+  "captcha_id": "gov24",
+  "name": "정부 24",
+  "rev": 1,
+  "image_width": 200,
+  "image_height": 50,
+  "label_length": 6,
+  "characters": "0123456789",
+  "threshold": 60,
+  "preprocess": "default",
+  "blank_index": 0
+}
