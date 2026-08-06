@@ -4,20 +4,22 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "captcha-solver"
-version = "0.1.0"
+version = "0.2.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = "==3.12.*"
 dependencies = [
     "fastapi[standard]>=0.135.3",
     "numpy>=2.4.4",
-    "scikit-learn>=1.2.2",
+    "onnx>=1.21.0",
+    "pandas>=3.0.2",
+    "pillow>=12.2.0",
+    "pydantic-settings>=2.13.1",
     "python-multipart>=0.0.22",
-    "streamlit>=1.50.0",
+    "scikit-learn>=1.2.2",
     "torch>=2.12.0",
     "torchvision>=0.27.0",
     "tqdm>=4.67.3",
-    "onnx>=1.21.0",
 ]
 
 [project.scripts]
@@ -25,6 +27,16 @@ fastapi = "fastapi_dev:main"
 
 [tool.setuptools]
 include-package-data = true
+py-modules = [
+    "base_core",
+    "core",
+    "dataclass",
+    "engine",
+    "fastapi_dev",
+    "main",
+    "pred",
+    "train",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -34,8 +46,9 @@ exclude = ["captcha_data*", "logs*", "*.egg-info*", ".git*"]
 # package-level data moved to project root; no package-local data.json
 web = [
     "templates/*.html",
-    "static/css/*.css",
+    "static/*.ico",
     "static/js/*.js",
+    "static/vendor/*.js",
 ]
 
 [tool.fastapi]

@@ -5,20 +5,13 @@ services:
       dockerfile: Dockerfile
     image: hyper-captcha-resolver:latest
     container_name: hyper-captcha-resolver-web
-    command: ["./run_web.sh", "start"]
     ports:
-      - "5001:5000"
+      - "5001:8000"
     environment:
-      - HOST_PORT=5001
-      - WEB_ENV=production
-      - DEVICE=cpu
-      - CAPTCHA_ID=gov24
-      - BACKEND=pytorch
-      - REV=1
-      - IMAGE_WIDTH=200
-      - IMAGE_HEIGHT=50
+      - DEFAULT_CAPTCHA_ID=gov24
+    volumes:
+      - ./captcha_data:/app/captcha_data:ro
     restart: unless-stopped
-    tty: true
 networks:
   default:
     name: hyper-captcha-resolver-net

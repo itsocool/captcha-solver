@@ -2,7 +2,7 @@
 
 기본 언어: 한국어
 
-패키지/프로젝트 매니저: uv (프로젝트는 `pyproject.toml`을 사용합니다; `uv`로 의존성/lock 관리가 가능하면 우선 사용하고, 없을 경우 `requirements.txt`/pip를 대체 수단으로 사용하세요.)
+패키지/프로젝트 매니저: uv (의존성은 `pyproject.toml` + `uv.lock`이 유일한 소스입니다. `uv sync`로 설치하고, 의존성 추가는 `uv add`를 사용하세요.)
 
 이 문서는 코드를 빠르게 이해하고 생산적으로 작업하기 위한 핵심 정보만 간결하게 정리합니다. 변경 전후에는 `train.py` / `pred.py` 같은 스크립트를 참고하세요.
 
@@ -17,14 +17,14 @@
 - 레이블 처리와 모델 저장 규약은 PyTorch 중심입니다. 모델 저장은 `model_full.pt` 형식을 기본으로 하며, 호환성을 위해 ONNX/JIT 형식도 사용됩니다.
 
 ### 개발자 워크플로(빠른 예시)
-- 환경 요구: `pyproject.toml`에 `requires-python = ">=3.12"`가 설정되어 있습니다.
-- 의존성 설치: 프로젝트 루트의 `requirements.txt` 또는 `uv`를 사용하세요.
+- 환경 요구: `pyproject.toml`에 `requires-python = "==3.12.*"`가 설정되어 있습니다.
+- 의존성 설치: `uv sync` (락파일 고정 설치는 `uv sync --frozen`).
 - GPU 체크: `python main.py` 출력과 `nvidia-smi`를 확인하세요.
 - 학습: `python train.py` (스크립트에서 `captcha_id`, 하이퍼파라미터를 수정하여 실행).
 - 검증/추론: `python pred.py` (기본적으로 `captcha_id='kshop'`).
 
 ※ 패키지 매니저(권장)
-- `uv` 사용 권장: `pyproject.toml` 기반 의존성 관리를 위해 `uv`가 지원되면 `uv install`을 사용하세요. 대체로 `python -m pip install -r requirements.txt`로 설치할 수 있습니다.
+- `uv` 필수: 설치는 `uv sync`, 실행은 `uv run <cmd>`, 의존성 추가는 `uv add <pkg>`. pip/requirements.txt는 사용하지 않습니다.
 
 ### 코드 패턴과 주의사항(에이전트가 알면 좋은 것)
 - 파일명 기반 라벨: 모든 이미지 파일명(확장자 제외)이 레이블이므로, 파일명 규칙을 지키세요.
@@ -43,7 +43,7 @@
 
 ### 작업 제안(작업을 시작할 때 우선순위)
 1. 작은 변경(예: 전처리/threshold 실험) 시 `pred.py`로 빠르게 검증
-2. 모델 구조 변경 시 `pytorch_core.py`와 `engine.py` 연결을 확인
+2. 모델 구조 변경 시 `core.py`와 `engine.py` 연결을 확인
 3. 모델 배포는 `model_full.pt` 또는 ONNX/JIT 형식을 사용
 
 더 필요한 섹션이나 예제가 있으면 알려주세요. 불명확한 부분(환경, 데이터 형식 등)이 있으면 구체적으로 질문하겠습니다.

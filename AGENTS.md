@@ -2,10 +2,10 @@
 
 ## Quick Start
 
-- Python 3.12, package manager: **uv** (lockfile: `uv.lock`). Fallback: `pip install -r requirements.txt`
-- Run web API (dev): `cd web && uvicorn app:app --reload`
-- Run web API (prod): `docker compose up` (port 5001) or the Dockerfile targets port 5000
-- Run CLI: `python main.py -c supreme_court -i captcha_data/<id>/images/<path>.png`
+- Python 3.12 (`requires-python = "==3.12.*"`), package manager: **uv** (lockfile: `uv.lock`). 설치: `uv sync`
+- Run web API (dev): `uv run fastapi dev web/app.py --host 0.0.0.0 --port 8000`
+- Run web API (prod): `docker compose up` (호스트 5001 → 컨테이너 8000)
+- Run CLI: `uv run python main.py -c supreme_court -i captcha_data/<id>/images/<path>.png`
 
 ## Architecture
 
@@ -96,7 +96,7 @@ Endpoints: `GET /health`, `POST /predict`
 ## Gotchas
 
 - **No test suite** — verify by running `train.py` or `pred.py` with small dataset.
-- No lint/typecheck config (`setup.cfg` lists `py_modules` but no ruff, mypy, or flake8).
+- No lint/typecheck config (ruff, mypy, flake8 모두 없음). 패키징 설정은 `pyproject.toml` 한 곳에 있음.
 - PyInstaller spec exists (`main.spec`) but no build script visible.
 - `web/app.py` imports `engine` directly (root-level, not a package).
 - `dev.ipynb` exists but no execution commands documented.
