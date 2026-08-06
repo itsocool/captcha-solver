@@ -29,6 +29,8 @@
 	<properties>
 		<java.version>25</java.version>
 		<onnxruntime.version>1.23.0</onnxruntime.version>
+		<!-- 3.x 가 Spring Boot 4 (Spring Framework 7) 대응 라인이다. 2.x 는 기동하지 않는다. -->
+		<springdoc.version>3.1.0</springdoc.version>
 	</properties>
 	<dependencies>
 		<!-- JdbcClient 만 쓴다. Spring Data JDBC 는 SQLite Dialect 가 없어 기동에 실패한다. -->
@@ -43,6 +45,12 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-thymeleaf</artifactId>
+		</dependency>
+		<!-- FastAPI 의 /docs 와 같은 Swagger UI + /openapi.json -->
+		<dependency>
+			<groupId>org.springdoc</groupId>
+			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+			<version>${springdoc.version}</version>
 		</dependency>
 		<!-- 추론: apps/cli 가 쓰는 것과 같은 ONNX 모델을 그대로 읽는다 -->
 		<dependency>

@@ -16,6 +16,18 @@ spring:
 server:
   port: 5000
 
+springdoc:
+  # FastAPI 와 같은 경로로 맞춘다 (/docs, /openapi.json)
+  api-docs:
+    path: /openapi.json
+  # 안 주면 응답 미디어 타입이 */* 로 나온다
+  default-produces-media-type: application/json
+  swagger-ui:
+    path: /docs
+    disable-swagger-default-url: true
+    display-request-duration: true
+    tags-sorter: alpha
+
 captcha:
   # 저장소 자산을 그대로 참조한다 (apps/cli 와 모델 공유). 배포 시 절대경로로 덮어쓰면 된다.
   models-dir: ../../apps/cli/models

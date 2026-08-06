@@ -53,6 +53,8 @@ java -jar target\captchaSolver-0.0.1-SNAPSHOT.jar
 |---|---|---|
 | GET | `/` | 예측 화면 |
 | GET | `/status` | 모델 상태 화면 |
+| GET | `/docs` | Swagger UI (`/swagger-ui/index.html` 로 리다이렉트) |
+| GET | `/openapi.json` | OpenAPI 3.1 문서 |
 | GET | `/health` | 서비스/로드 상태 |
 | GET | `/ping`, `/version` | |
 | POST | `/api/v1/predictImage` | multipart (`captcha_id`, `image`) |
@@ -63,6 +65,25 @@ java -jar target\captchaSolver-0.0.1-SNAPSHOT.jar
 ```
 
 오류는 FastAPI 와 같이 `{"detail": "..."}` 로 돌려줍니다 (400 / 500).
+
+### `/docs`
+
+springdoc-openapi 3.x(Spring Boot 4 대응 라인)를 씁니다. 2.x 는 Spring Framework 6 용이라
+기동하지 않습니다. 경로는 `application.yml` 의 `springdoc.*` 에서 FastAPI 와 같게 맞춰 두었습니다.
+
+문서를 실제 응답과 맞추기 위해 `config/OpenApiConfig` 에서 두 가지를 손봅니다.
+
+- **스키마 이름** — 런타임 직렬화는 Jackson 3 이 `spring.jackson.property-naming-strategy` 로
+  처리하지만 swagger-core 는 자체 Jackson 2 매퍼를 써서 그 설정이 닿지 않습니다. 그대로 두면
+  문서만 `captchaId` 로 나옵니다. 그래서 `ModelResolver` 를 snake_case 로 등록합니다.
+- **`type: object`** — 위 `ModelResolver` 를 새 `ObjectMapper` 로 만들면 OpenAPI 3.1 설정이
+  빠져 스키마에서 `type` 이 사라집니다. springdoc 의 매퍼를 복사해서 써야 합니다.
+
+`predictImage` 의 `captcha_id` 는 springdoc 기본값으로는 query 파라미터로 문서화되는데,
+FastAPI 는 `Form(...)` 으로 받으므로 `PredictImageForm` 스키마를 직접 줘서 multipart 필드로
+표시합니다(런타임 바인딩은 그대로입니다).
+
+`OpenApiDocsTests` 가 위 네 가지를 모두 검증합니다.
 
 ---
 
@@ -90,6 +111,6 @@ java -jar target\captchaSolver-0.0.1-SNAPSHOT.jar
 
 ## 아직 없는 것
 
-- `/docs` (FastAPI 의 Swagger UI). springdoc 을 붙이면 되지만 Spring Boot 4 대응 버전
-  확인이 필요해 넣지 않았습니다. 사이드바 링크도 빼 두었습니다.
+- FastAPI 의 `/docs` 는 프런트 라우트(`/`, `/status`)까지 목록에 넣지만, springdoc 은
+  `@RestController` 만 훑어서 API 만 나옵니다.
 - 학습 관련 기능. 이 서비스는 추론만 합니다.
