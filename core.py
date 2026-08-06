@@ -13,6 +13,8 @@ from tqdm import tqdm
 from dataclass import CaptchaType, TrainData
 from base_core import BaseModel
 
+NEG_INF = float('-inf')
+
 # ============================================================
 # PyTorch 2.0+ 최적화 설정
 # ============================================================
@@ -21,6 +23,19 @@ torch.backends.cudnn.benchmark = True
 # TF32 활성화 (Ampere GPU 이상에서 성능 향상)
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
+
+# venv 휠 cuDNN(9.20)과 시스템 cuDNN(9.25)이 섞여 로드되면 conv에서
+# CUDNN_STATUS_SUBLIBRARY_VERSION_MISMATCH로 죽는다. 한 번 찔러보고 실패하면 끈다.
+# ponytail: cuDNN 없이도 conv는 돌지만 느려진다. 두 cuDNN 버전을 맞추면 이 블록은 지워도 된다.
+if torch.cuda.is_available():
+    try:
+        torch.nn.functional.conv2d(
+            torch.zeros(1, 1, 8, 8, device='cuda'),
+            torch.zeros(1, 1, 3, 3, device='cuda'),
+        )
+    except RuntimeError as e:
+        torch.backends.cudnn.enabled = False
+        print(f"cuDNN disabled, falling back to native CUDA kernels: {e}")
 
 # ============================================================
 # Custom Loss Functions
@@ -936,7 +951,7 @@ class PyTorchModel(BaseModel):
         return self.model
     
     def predict(self, image_path: str, unk_token: str = "[UNK]", beam_width: int = 10,
-                 length_bonus: float = 0.5, loss_type: str = 'focal', use_amp: bool = True) -> Tuple[str, float]:
+                 loss_type: str = 'focal', use_amp: bool = True) -> Tuple[str, float]:
         """
         단일 이미지 예측 (고정 길이 Beam Search 전용, 최적화됨).
         
@@ -944,7 +959,6 @@ class PyTorchModel(BaseModel):
             image_path: 이미지 파일 경로
             unk_token: 알 수 없는 문자 대체 토큰
             beam_width: Beam Search 너비 (기본: 10)
-            length_bonus: 길이가 맞을 때 부여할 점수 보너스 (기본: 0.5)
             
         Returns:
             (예측 텍스트, 신뢰도)
@@ -987,13 +1001,12 @@ class PyTorchModel(BaseModel):
                 expected_length=expected_length,
                 beam_width=beam_width,
                 unk_token=unk_token,
-                length_bonus=length_bonus
             )
 
         return pred_text, confidence
     
     def predict_batch(self, image_paths: List[str], unk_token: str = "[UNK]", 
-                      beam_width: int = 10, length_bonus: float = 0.5,
+                      beam_width: int = 10,
                       batch_size: int = 32) -> List[Tuple[str, float]]:
         """
         배치 이미지 예측 (처리량 최적화).
@@ -1002,7 +1015,6 @@ class PyTorchModel(BaseModel):
             image_paths: 이미지 파일 경로 리스트
             unk_token: 알 수 없는 문자 대체 토큰
             beam_width: Beam Search 너비 (기본: 10)
-            length_bonus: 길이가 맞을 때 부여할 점수 보너스 (기본: 0.5)
             batch_size: 배치 크기 (기본: 32)
             
         Returns:
@@ -1052,11 +1064,20 @@ class PyTorchModel(BaseModel):
                     expected_length=expected_length,
                     beam_width=beam_width,
                     unk_token=unk_token,
-                    length_bonus=length_bonus
                 )
                 results.append((pred_text, confidence))
         
         return results
+
+def _log_add(a: float, b: float) -> float:
+    """log(e^a + e^b). -inf 안전."""
+    if a == NEG_INF:
+        return b
+    if b == NEG_INF:
+        return a
+    hi, lo = (a, b) if a > b else (b, a)
+    return hi + float(np.log1p(np.exp(lo - hi)))
+
 
 def ctc_beam_decode_fixed_length(
     log_probs: np.ndarray,
@@ -1064,115 +1085,120 @@ def ctc_beam_decode_fixed_length(
     expected_length: int,
     beam_width: int = 10,
     unk_token: str = "[UNK]",
-    length_bonus: float = 0.5
+    top_k: int = 0,
 ) -> Tuple[str, float]:
     """
-    고정 길이 레이블을 위한 Beam Search CTC 디코딩.
-    
-    예상 길이에 맞는 결과에 보너스를 부여하여 정확도를 향상시킵니다.
-    
-    Length normalization과 improved scoring을 적용:
-    - score / len(prefix)로 정규화하여 길이에 따른 편향 제거
-    - expected_length에 정확히匹配的 on에 보너스 부여
-    - 평균 log-probability 기반으로 신뢰도 계산
-    
+    고정 길이 레이블을 위한 CTC Prefix Beam Search 디코딩.
+
+    각 prefix에 대해 blank로 끝나는 경로(p_b)와 문자로 끝나는 경로(p_nb)의 확률을
+    log-sum-exp로 **합산**합니다. 즉 beam 점수가 곧 P(문자열 | 이미지)이며,
+    단일 정렬(alignment) 경로 확률이 아닙니다.
+
+    신뢰도 = 최종 beam 집합 안에서 정규화한 사후확률
+             exp(best - logsumexp(all)). 1위 후보가 압도적이면 1.0에 가깝고,
+             2위와 접전이면 0.5 부근으로 떨어집니다.
+
     Args:
-        log_probs: (T, num_classes) log probabilities
+        log_probs: (T, num_classes) log 확률. 인덱스 0은 blank
         mapping_inv: index -> character 매핑
-        expected_length: 예상 레이블 길이
-        beam_width: beam 크기
-        unk_token: 알 수 없는 문자 대체 토큰
-        length_bonus: 길이가 맞을 때 부여할 점수 보너스
-        
+        expected_length: 기대 레이블 길이 (하드 제약으로 사용)
+        beam_width: 유지할 prefix 수
+        unk_token: 매핑에 없는 인덱스 대체 토큰
+        top_k: 프레임당 후보 문자 수 (0이면 beam_width * 2). blank는 항상 포함
+
     Returns:
         (디코딩된 문자열, 신뢰도)
     """
     T, num_classes = log_probs.shape
-    
-    # Beam: (prefix, last_char_idx, log_score, length)
-    beams = [('', -1, 0.0, 0)]
-    
+    if T == 0 or expected_length <= 0:
+        return '', 0.0
+
+    candidates_per_frame = top_k if top_k > 0 else min(num_classes, beam_width * 2)
+
+    # prefix(문자 인덱스 튜플) -> [p_blank, p_nonblank] (log 확률)
+    beams: Dict[Tuple[int, ...], List[float]] = {(): [0.0, NEG_INF]}
+
     for t in range(T):
-        new_beams = {}
-        remaining_time = T - t - 1
-        
-        for prefix, last_char, score, length in beams:
-            
-            for c in range(num_classes):
-                new_score = score + float(log_probs[t, c])
-                
-                if c == 0:  # blank
-                    key = (prefix, -1)
-                    if key not in new_beams or new_beams[key] < new_score:
-                        new_beams[key] = new_score
-                elif c == last_char:
-                    # 중복 문자: prefix 유지
-                    key = (prefix, c)
-                    if key not in new_beams or new_beams[key] < new_score:
-                        new_beams[key] = new_score
+        frame = log_probs[t]
+        remaining = T - t - 1
+
+        # 프레임별 상위 후보만 확장 (나머지는 확률이 무시할 수준)
+        if candidates_per_frame < num_classes:
+            top = np.argpartition(frame, -candidates_per_frame)[-candidates_per_frame:]
+            classes = set(int(c) for c in top)
+            classes.add(0)
+        else:
+            classes = set(range(num_classes))
+
+        next_beams: Dict[Tuple[int, ...], List[float]] = {}
+
+        def bump(prefix: Tuple[int, ...], blank_score: float, nonblank_score: float) -> None:
+            entry = next_beams.get(prefix)
+            if entry is None:
+                next_beams[prefix] = [blank_score, nonblank_score]
+                return
+            entry[0] = _log_add(entry[0], blank_score)
+            entry[1] = _log_add(entry[1], nonblank_score)
+
+        for prefix, (p_b, p_nb) in beams.items():
+            p_total = _log_add(p_b, p_nb)
+            last = prefix[-1] if prefix else -1
+
+            # 1) blank: prefix 유지
+            bump(prefix, p_total + float(frame[0]), NEG_INF)
+
+            for c in classes:
+                if c == 0:
+                    continue
+                lp = float(frame[c])
+
+                if c == last:
+                    # 같은 문자 반복: blank 없이 이어지면 같은 prefix, blank를 거쳤으면 새 문자
+                    bump(prefix, NEG_INF, p_nb + lp)
+                    extended_score = p_b + lp
                 else:
-                    # 새 문자 추가
-                    char = mapping_inv.get(c, unk_token)
-                    new_prefix = prefix + char
-                    new_len = length + 1
-                    
-                    # 길이 기반 가지치기: 너무 길면 blank만 허용하고, 예측보다 길면 제외
-                    if new_len > expected_length:
-                        blank_key = (prefix, -1)
-                        blank_score = new_score
-                        if blank_key not in new_beams or new_beams[blank_key] < blank_score:
-                            new_beams[blank_key] = blank_score
-                        continue
-                    
-                    # 남은 시간보다 부족한 문자가 많으면 제외
-                    min_chars_needed = expected_length - new_len
-                    if min_chars_needed > remaining_time:
-                        continue
-                    
-                    key = (new_prefix, c)
-                    if key not in new_beams or new_beams[key] < new_score:
-                        new_beams[key] = new_score
-        
-        # 상위 beam_width개 유지 (length normalization + bonus)
-        scored_beams = []
-        for (prefix, last_char), score in new_beams.items():
-            length = len(prefix)
-            # Length normalization: 평균 log-probability 사용
-            if length > 0:
-                normalized_score = score / length
-            else:
-                # 빈 prefix는 점수 0으로 처리 (아직 문자 없음)
-                normalized_score = 0.0
-            
-            # 길이 보너스
-            adjusted_score = normalized_score
-            if length == expected_length:
-                adjusted_score += length_bonus
-            elif length > 0:
-                adjusted_score += length_bonus * (1.0 - (expected_length - length) / expected_length)
-            
-            scored_beams.append((prefix, last_char, score, adjusted_score, length))
-        
-        sorted_beams = sorted(scored_beams, key=lambda x: x[3], reverse=True)[:beam_width]
-        beams = [(prefix, last_char, score, _) for prefix, last_char, score, _, _ in sorted_beams]
-    
+                    extended_score = p_total + lp
+
+                if extended_score == NEG_INF:
+                    continue
+
+                new_prefix = prefix + (c,)
+                # 고정 길이 제약: 초과 금지 + 남은 프레임으로 도달 불가하면 버림
+                if len(new_prefix) > expected_length:
+                    continue
+                if expected_length - len(new_prefix) > remaining:
+                    continue
+
+                bump(new_prefix, NEG_INF, extended_score)
+
+        # 남은 프레임 안에 기대 길이를 채울 수 없는 prefix 제거
+        beams = {
+            prefix: scores
+            for prefix, scores in next_beams.items()
+            if expected_length - len(prefix) <= remaining
+        }
+        if not beams:
+            beams = next_beams
+
+        if len(beams) > beam_width:
+            ranked = sorted(beams.items(), key=lambda kv: _log_add(kv[1][0], kv[1][1]), reverse=True)
+            beams = dict(ranked[:beam_width])
+
     if not beams:
         return '', 0.0
-    
-    # 예상 길이에 정확히 맞는 것 우선 선택
-    matching_beams = [(p, lc, s, sl) for p, lc, s, sl in beams if len(p) == expected_length]
-    if matching_beams:
-        best_prefix, _, best_score, _ = max(matching_beams, key=lambda x: x[2])
-    else:
-        # 없으면 가장 가까운 것 선택
-        best_prefix, _, best_score, best_length = min(beams, key=lambda x: (abs(len(x[0]) - expected_length), -x[2]))
-    
-    best_length = len(best_prefix)
-    
-    # 신뢰도 계산: 평균 log-probability 기반으로
-    if best_length > 0:
-        confidence = float(np.exp(best_score / max(best_length, 1)))
-    else:
-        confidence = 0.0
-    
-    return best_prefix, confidence
+
+    scored = [(prefix, _log_add(p_b, p_nb)) for prefix, (p_b, p_nb) in beams.items()]
+
+    # 기대 길이에 맞는 후보 우선, 없으면 길이가 가장 가까운 후보
+    exact = [item for item in scored if len(item[0]) == expected_length]
+    pool = exact if exact else scored
+    best_prefix, best_score = max(pool, key=lambda item: item[1])
+
+    # 신뢰도: 살아남은 후보들 사이에서 정규화한 사후확률
+    total = NEG_INF
+    for _, score in scored:
+        total = _log_add(total, score)
+    confidence = float(np.exp(best_score - total)) if total > NEG_INF else 0.0
+
+    text = ''.join(mapping_inv.get(c, unk_token) for c in best_prefix)
+    return text, min(1.0, max(0.0, confidence))
