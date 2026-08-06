@@ -1,0 +1,31 @@
+spring:
+  application:
+    name: captchaSolver
+  datasource:
+    # 파이썬 서비스와 같은 SQLite 파일을 본다
+    url: jdbc:sqlite:${captcha.db-path}
+    driver-class-name: org.sqlite.JDBC
+  jackson:
+    # FastAPI 응답과 같은 snake_case 로 맞춘다 (prediction / confidence / elapsed_ms)
+    property-naming-strategy: SNAKE_CASE
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+server:
+  port: 5000
+
+captcha:
+  # 저장소 자산을 그대로 참조한다 (apps/cli 와 모델 공유). 배포 시 절대경로로 덮어쓰면 된다.
+  models-dir: ../../apps/cli/models
+  db-path: ../../db/captchaSolver.sqlite3
+  schema-path: ../../db/schema.sql
+  default-captcha-id: supreme_court
+  beam-width: 10
+  intra-op-threads: 1
+  app-version: 0.2.0
+
+logging:
+  level:
+    kr.co.hyperinfo.captchaSolver: INFO

@@ -18,7 +18,7 @@ rm -rf "$STAGE"
 mkdir -p "$STAGE"
 
 cp target/release/captcha-cli "$STAGE/"
-cp README.md pred.sh pred.cmd "$STAGE/"
+cp README.md pred.sh pred.cmd pred.ps1 "$STAGE/"
 cp -r models "$STAGE/"
 cp -r samples "$STAGE/"
 

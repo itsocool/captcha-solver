@@ -1,0 +1,4 @@
+# cmd.exe 는 LF 줄바꿈 배치 파일에서 멀티바이트 구간을 만나면 파싱 위치를 잃는다.
+# (pred.cmd 의 한글 출력이 조각난 명령으로 깨지는 원인) → 항상 CRLF 로 체크아웃한다.
+*.cmd text eol=crlf
+*.bat text eol=crlf

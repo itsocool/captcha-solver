@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org"
+	th:replace="~{layout :: page('Captcha Solver', 'Hyper Captcha Solver', ~{:: content}, ~{:: scripts})}">
+<body>
+
+<div th:fragment="content" class="grid gap-6 xl:grid-cols-2">
+	<form id="predict-form" class="rounded-2xl border border-border bg-card" th:action="${predictImageUrl}" method="post" enctype="multipart/form-data">
+		<div class="flex items-center justify-between border-b border-border px-6 py-5">
+			<h3 class="font-semibold">이미지 예측</h3>
+			<span class="text-sm text-muted-foreground">PNG · JPG</span>
+		</div>
+
+		<div class="space-y-5 p-6">
+			<div>
+				<label class="mb-2 block text-sm font-medium" for="captcha-id">Captcha ID</label>
+				<div class="relative">
+					<select
+						id="captcha-id"
+						name="captcha_id"
+						class="h-11 w-full appearance-none rounded-lg border border-border bg-transparent pr-10 pl-4 text-sm outline-none focus:border-brand focus:ring-3 focus:ring-brand/10"
+					>
+						<option th:each="type : ${captchaTypes}"
+							th:value="${type.key}"
+							th:selected="${type.key == defaultCaptchaId}"
+							th:text="${type.value} + ' · ' + ${type.key}"
+							class="bg-card">대법원 · supreme_court</option>
+					</select>
+					<svg class="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="m6 9 6 6 6-6"></path>
+					</svg>
+				</div>
+			</div>
+
+			<label
+				id="dropzone"
+				for="image-input"
+				class="flex min-h-56 cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-border bg-background p-8 text-center transition-colors hover:border-brand"
+			>
+				<input id="image-input" name="image" type="file" accept="image/*" required class="sr-only">
+				<img id="preview" alt="선택한 이미지 미리보기" class="hidden max-h-28 rounded-lg border border-border bg-surface">
+				<span id="upload-icon" class="flex size-14 items-center justify-center rounded-full bg-surface text-muted-foreground shadow-xs">
+					<svg class="size-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="M12 13v8"></path>
+						<path d="m8 17 4-4 4 4"></path>
+						<path d="M20.4 14.9A5 5 0 0 0 18 5.5h-1.3A8 8 0 1 0 4 13.3"></path>
+					</svg>
+				</span>
+				<span id="file-name" class="text-sm text-muted-foreground">이미지를 끌어다 놓거나 <span class="font-medium text-brand">클릭해서 선택</span>하세요</span>
+			</label>
+
+			<button type="submit" class="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-medium text-white transition-colors hover:bg-brand-hover disabled:opacity-60 sm:w-auto">
+				<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+					<path d="m5 12 5 5L20 7"></path>
+				</svg>
+				Predict
+			</button>
+		</div>
+	</form>
+
+	<section class="rounded-2xl border border-border bg-card" aria-live="polite">
+		<div class="border-b border-border px-6 py-5">
+			<h3 class="font-semibold">결과</h3>
+		</div>
+		<div class="space-y-5 p-6">
+			<div class="rounded-xl border border-border bg-background p-5">
+				<p class="text-sm text-muted-foreground">Prediction</p>
+				<p id="prediction" class="mt-1 font-mono text-2xl font-semibold tracking-wider">—</p>
+				<p class="mt-4 text-sm text-muted-foreground">Confidence</p>
+				<p id="confidence" class="mt-1 text-sm font-medium">—</p>
+				<div class="mt-2 h-2 w-full overflow-hidden rounded-full bg-border">
+					<div id="confidence-bar" class="h-full w-0 rounded-full bg-brand transition-[width] duration-300"></div>
+				</div>
+				<p class="mt-4 text-sm text-muted-foreground">소요 시간</p>
+				<p id="elapsed" class="mt-1 text-sm font-medium">—</p>
+			</div>
+			<pre id="result" class="overflow-x-auto rounded-xl bg-background p-4 font-mono text-[13px] leading-relaxed break-words whitespace-pre-wrap text-muted-foreground">{}</pre>
+		</div>
+	</section>
+</div>
+
+<th:block th:fragment="scripts">
+	<script src="/js/app.js"></script>
+</th:block>
+
+</body>
+</html>

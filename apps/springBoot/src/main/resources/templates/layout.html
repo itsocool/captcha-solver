@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org"
+	th:fragment="page(pageTitle, docTitle, content, scripts)">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title th:text="${docTitle}">Hyper Captcha Solver</title>
+		<link rel="icon" href="/favicon.ico">
+		<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+		<script src="/vendor/tailwind.browser.js"></script>
+		<style type="text/tailwindcss">
+			@custom-variant dark (&:where(.dark, .dark *));
+
+			@theme inline {
+				--font-sans: "Pretendard Variable", Pretendard, ui-sans-serif, system-ui, sans-serif;
+				--color-background: var(--background);
+				--color-surface: var(--surface);
+				--color-card: var(--card);
+				--color-foreground: var(--foreground);
+				--color-muted-foreground: var(--muted-foreground);
+				--color-border: var(--border);
+				--color-brand: var(--brand);
+				--color-brand-hover: var(--brand-hover);
+				--color-brand-soft: var(--brand-soft);
+				--color-success: var(--success);
+				--color-success-soft: var(--success-soft);
+				--color-warning: var(--warning);
+				--color-warning-soft: var(--warning-soft);
+			}
+
+			/* TailAdmin 팔레트 (gray-50/200/800/900, brand-500) */
+			:root {
+				--background: #f9fafb;
+				--surface: #ffffff;
+				--card: #ffffff;
+				--foreground: #1d2939;
+				--muted-foreground: #667085;
+				--border: #e4e7ec;
+				--brand: #465fff;
+				--brand-hover: #3641f5;
+				--brand-soft: #ecf3ff;
+				--success: #039855;
+				--success-soft: #ecfdf3;
+				--warning: #b54708;
+				--warning-soft: #fffaeb;
+			}
+
+			.dark {
+				--background: #101828;
+				--surface: #101828;
+				--card: #171f2e;
+				--foreground: #e8eaef;
+				--muted-foreground: #98a2b3;
+				--border: #1d2939;
+				--brand: #465fff;
+				--brand-hover: #3641f5;
+				--brand-soft: #1c2440;
+				--success: #32d583;
+				--success-soft: #05301f;
+				--warning: #fdb022;
+				--warning-soft: #34240a;
+			}
+		</style>
+		<script>
+			// FOUC 방지: 페인트 전에 저장된 테마를 적용합니다.
+			(() => {
+				const theme = localStorage.getItem("theme") || "system";
+				const dark = theme === "dark" || (theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+				document.documentElement.classList.toggle("dark", dark);
+				document.documentElement.style.colorScheme = dark ? "dark" : "light";
+			})();
+		</script>
+	</head>
+	<body class="bg-background font-sans text-foreground antialiased">
+		<div class="flex min-h-screen">
+			<aside id="sidebar" class="fixed inset-y-0 left-0 z-50 w-[290px] -translate-x-full border-r border-border bg-surface px-5 transition-transform duration-200 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0">
+				<div class="flex h-16 items-center gap-3">
+					<span class="flex size-10 items-center justify-center rounded-xl bg-brand text-white">
+						<svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+							<path d="M12 3 4 6v6c0 5 3.4 8.2 8 9 4.6-.8 8-4 8-9V6l-8-3Z"></path>
+							<path d="m9 12 2 2 4-4"></path>
+						</svg>
+					</span>
+					<span class="text-base font-semibold tracking-tight">Hyper Captcha</span>
+				</div>
+
+				<p class="mt-6 mb-3 text-xs font-medium tracking-wider text-muted-foreground uppercase">Menu</p>
+				<nav class="flex flex-col gap-1 text-sm font-medium"
+					th:with="navActive='flex items-center gap-3 rounded-lg bg-brand-soft px-3 py-2.5 text-brand',
+					         navIdle='flex items-center gap-3 rounded-lg px-3 py-2.5 text-muted-foreground hover:bg-background hover:text-foreground'">
+					<a href="/" th:class="${activeNav == 'predict'} ? ${navActive} : ${navIdle}"
+						th:attrappend="aria-current=${activeNav == 'predict'} ? 'page' : null">
+						<svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+							<rect x="3" y="3" width="18" height="18" rx="2"></rect>
+							<path d="m3 15 5-5 4 4 3-3 6 6"></path>
+							<circle cx="8.5" cy="8.5" r="1.5"></circle>
+						</svg>
+						Captcha Solver
+					</a>
+					<a href="/status" th:class="${activeNav == 'status'} ? ${navActive} : ${navIdle}"
+						th:attrappend="aria-current=${activeNav == 'status'} ? 'page' : null">
+						<svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+							<path d="M3 12h4l2 6 4-14 2 8h6"></path>
+						</svg>
+						Model Status
+					</a>
+				</nav>
+			</aside>
+
+			<div id="overlay" class="fixed inset-0 z-40 hidden bg-black/40 lg:hidden"></div>
+
+			<div class="flex min-w-0 flex-1 flex-col">
+				<header class="sticky top-0 z-30 border-b border-border bg-surface">
+					<div class="flex h-16 items-center gap-3 px-4 lg:px-6">
+						<button id="sidebar-toggle" type="button" aria-label="메뉴 열기" class="flex size-10 items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-foreground lg:hidden">
+							<svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true">
+								<path d="M4 6h16M4 12h16M4 18h16"></path>
+							</svg>
+						</button>
+
+						<span class="rounded-full border border-border px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
+							th:text="'v' + ${appVersion}">v0.2.0</span>
+
+						<div id="theme-switch" class="ml-auto flex gap-1 rounded-lg border border-border bg-background p-1" role="group" aria-label="테마 모드">
+							<button type="button" data-theme="light" title="라이트" aria-label="라이트" class="flex size-8 items-center justify-center rounded-md text-muted-foreground">
+								<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+									<circle cx="12" cy="12" r="4"></circle>
+									<path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4"></path>
+								</svg>
+							</button>
+							<button type="button" data-theme="dark" title="다크" aria-label="다크" class="flex size-8 items-center justify-center rounded-md text-muted-foreground">
+								<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+									<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path>
+								</svg>
+							</button>
+							<button type="button" data-theme="system" title="시스템" aria-label="시스템" class="flex size-8 items-center justify-center rounded-md text-muted-foreground">
+								<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+									<rect x="2" y="4" width="20" height="13" rx="2"></rect>
+									<path d="M8 21h8M12 17v4"></path>
+								</svg>
+							</button>
+						</div>
+					</div>
+				</header>
+
+				<main class="mx-auto w-full max-w-[1440px] p-4 lg:p-6">
+					<div class="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+						<h2 class="text-xl font-semibold tracking-tight" th:text="${pageTitle}">Captcha Solver</h2>
+						<nav class="flex items-center gap-2 text-sm text-muted-foreground" aria-label="Breadcrumb">
+							<a href="/" class="hover:text-foreground">Home</a>
+							<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+								<path d="m9 6 6 6-6 6"></path>
+							</svg>
+							<span class="text-foreground" th:text="${pageTitle}">Captcha Solver</span>
+						</nav>
+					</div>
+
+					<div th:replace="${content}">페이지 본문</div>
+				</main>
+			</div>
+		</div>
+
+		<script src="/js/theme.js"></script>
+		<th:block th:replace="${scripts}"></th:block>
+	</body>
+</html>

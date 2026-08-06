@@ -66,8 +66,17 @@ apps/cli/models/
 ```bash
 ./pred.sh                # supreme_court 샘플 전체 인식 + 정답 대조
 ./pred.sh kshop          # 다른 캡차
-pred.cmd                 # Windows
 ```
+
+```powershell
+.\pred.ps1               # Windows (pred.cmd 는 이걸 부르는 런처)
+.\pred.ps1 kshop
+```
+
+> Windows 출력은 `pred.ps1` 이 담당합니다. `.cmd` 는 콘솔 코드페이지로 읽히기 때문에
+> 배치 파일 안의 한글이 CP949/CP437 에서 깨지고, `chcp 65001` 로도 고쳐지지 않습니다
+> (파일 중간에 코드페이지를 바꾸면 cmd 파서가 깨지고, 65001→949 복원은 콘솔 버퍼를 지웁니다).
+> `pred.ps1` 은 UTF-8 BOM 으로 저장되어 있어야 Windows PowerShell 5.1 이 한글을 제대로 읽습니다.
 
 ```
 이미지              정답        예측        신뢰도     시간
@@ -116,13 +125,18 @@ rustup target add x86_64-pc-windows-msvc
 cargo xwin build --release --target x86_64-pc-windows-msvc
 ```
 
-> Windows용 프리빌트에는 DirectML 등이 포함되어 있어 빌드 산출물 디렉터리에 `*.dll`이 함께 생성될 수 있습니다. 생성되었다면 **exe와 같은 폴더에 담아 배포**하세요. (이 저장소에서는 Linux 빌드만 실제로 검증했습니다.)
+> Windows용 프리빌트에는 DirectML 등이 포함되어 있어 빌드 산출물 디렉터리에 `*.dll`이 함께 생성됩니다(`DirectML.dll`, 약 18MB). **exe와 같은 폴더에 담아 배포**하세요. 아래 패키징 스크립트가 자동으로 챙깁니다.
 
 ### 배포 패키지 만들기
 
 ```bash
 tools/package.sh
 # → dist/captcha-cli-0.1.0-linux-x86_64.tar.gz (약 60MB)
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\package.ps1
+# → dist\captcha-cli-0.1.0-windows-x86_64.zip (약 67MB)
 ```
 
 실행 파일 + `models/` + `samples/` + `README.md` + `pred.sh`/`pred.cmd`를 묶습니다.
