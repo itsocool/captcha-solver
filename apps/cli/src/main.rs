@@ -126,6 +126,26 @@ fn run_onnx(model_path: &Path, shape: [usize; 4], input: &[f32], threads: usize)
 		.commit_from_file(model_path)
 		.map_err(|e| anyhow!("모델을 로드할 수 없습니다 ({}): {e}", model_path.display()))?;
 
+	// 모델이 기대하는 입력 크기와 메타데이터가 다르면 여기서 알아보기 쉽게 끊는다.
+	if let Some(model_shape) = session.inputs().first().map(|input| input.dtype().tensor_shape()) {
+		if let Some(dims) = model_shape {
+			let dims: &[i64] = &**dims;
+			if dims.len() == 4 && dims[2] > 0 && dims[3] > 0 {
+				let (model_h, model_w) = (dims[2] as usize, dims[3] as usize);
+				if (model_h, model_w) != (shape[2], shape[3]) {
+					bail!(
+						"모델 입력 크기({}×{})와 메타데이터 크기({}×{})가 다릅니다.\n\
+						 메타데이터를 고치거나 해당 크기로 ONNX를 다시 export하세요.",
+						model_w,
+						model_h,
+						shape[3],
+						shape[2]
+					);
+				}
+			}
+		}
+	}
+
 	let tensor = TensorRef::from_array_view((shape, input)).map_err(|e| anyhow!("입력 텐서 생성 실패: {e}"))?;
 	let outputs = session.run(ort::inputs![tensor]).map_err(|e| anyhow!("추론 실패: {e}"))?;
 	let output = outputs[0]

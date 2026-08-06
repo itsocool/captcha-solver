@@ -59,6 +59,28 @@ apps/cli/models/
 
 ---
 
+## 샘플 이미지와 배치 확인
+
+`samples/<captcha_id>/`에 캡차별 검증용 이미지 10장씩을 담아 두었습니다(파일명 = 정답).
+
+```bash
+./pred.sh                # supreme_court 샘플 전체 인식 + 정답 대조
+./pred.sh kshop          # 다른 캡차
+pred.cmd                 # Windows
+```
+
+```
+이미지              정답        예측        신뢰도     시간
+--------------------------------------------------------------
+001741.png       001741     001741     0.9995     48 ms  O
+...
+supreme_court: 10/10 일치
+```
+
+모두 일치하면 종료 코드 0, 하나라도 틀리면 1입니다(CI에 그대로 물릴 수 있습니다).
+
+---
+
 ## 빌드
 
 타깃은 **Linux (x86_64/aarch64 glibc)** 와 **Windows 11 (x86_64)** 입니다.
@@ -95,6 +117,25 @@ cargo xwin build --release --target x86_64-pc-windows-msvc
 ```
 
 > Windows용 프리빌트에는 DirectML 등이 포함되어 있어 빌드 산출물 디렉터리에 `*.dll`이 함께 생성될 수 있습니다. 생성되었다면 **exe와 같은 폴더에 담아 배포**하세요. (이 저장소에서는 Linux 빌드만 실제로 검증했습니다.)
+
+### 배포 패키지 만들기
+
+```bash
+tools/package.sh
+# → dist/captcha-cli-0.1.0-linux-x86_64.tar.gz (약 60MB)
+```
+
+실행 파일 + `models/` + `samples/` + `README.md` + `pred.sh`/`pred.cmd`를 묶습니다.
+압축을 풀면 그 자리에서 바로 동작합니다.
+
+```bash
+tar -xzf captcha-cli-0.1.0-linux-x86_64.tar.gz
+cd captcha-cli-0.1.0-linux-x86_64
+./pred.sh          # supreme_court: 10/10 일치
+```
+
+용량 대부분은 모델(6종 55MB)입니다. 서비스 대상만 담으려면 패키징 전에 불필요한
+`models/<id>.onnx`, `models/<id>.meta.json`을 지우면 됩니다.
 
 ### 배포 레이아웃
 
@@ -133,6 +174,22 @@ uv run python apps/cli/tools/compare_with_python.py --limit 100   # 파이썬 �
 | gov24 | 100/100 | 0.0066 |
 | wetax | 100/100 | 0.0019 |
 | kshop | 70/100 | 0.7757 |
+
+`samples/` 10장 기준으로는 supreme_court·gov24·wetax·kshop 모두 10/10입니다.
+
+### dev 모델은 현재 ONNX로 추론할 수 없습니다
+
+`dev`는 ONNX가 200×50으로 export되어 있는데 메타데이터(학습 이미지에서 감지한 크기)는 250×50입니다.
+`build_model()`이 생성자 기본값(200)으로 모델을 만들고 전처리는 감지값(250)으로 리사이즈하기 때문인데,
+PyTorch는 CNN이 폭에 유연해서 그냥 동작하지만 ONNX는 입력 크기가 고정이라 거부합니다.
+CLI는 이 경우 아래처럼 원인을 짚어 줍니다.
+
+```
+Error: 모델 입력 크기(200×50)와 메타데이터 크기(250×50)가 다릅니다.
+메타데이터를 고치거나 해당 크기로 ONNX를 다시 export하세요.
+```
+
+서비스 대상 4종(supreme_court, gov24, wetax, kshop)은 영향이 없습니다.
 
 전처리 텐서 자체의 차이는 픽셀당 최대 0.10, 평균 0.0004~0.0015 수준입니다(리사이즈 필터 구현 차이).
 
