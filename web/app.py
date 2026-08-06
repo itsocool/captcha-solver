@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -5,12 +7,25 @@ from fastapi.templating import Jinja2Templates
 from web.api.system import router as system_router
 from web.api.v1.router import router as api_v1_router
 from web.core.config import get_settings
+from web.core.db import get_service_config, init_db
 from web.frontend.router import create_router as create_frontend_router
+from web.services.captcha import preload_models
+
+
+@asynccontextmanager
+async def lifespan(fastapi_app: FastAPI):
+	# 서비스 정보(기본/서비스 대상 캡차)를 DB에서 읽고, 그 대상만 로드/워밍업한다.
+	init_db()
+	config = get_service_config(reload=True)
+	print(f"[service] default={config['default_captcha_id']} serviced={config['serviced']} ({config['source']})")
+	for captcha_id, state in preload_models().items():
+		print(f"[preload] {captcha_id}: {state}")
+	yield
 
 
 def create_app() -> FastAPI:
 	settings = get_settings()
-	fastapi_app = FastAPI(title=settings.app_title)
+	fastapi_app = FastAPI(title=settings.app_title, lifespan=lifespan)
 	fastapi_app.mount(
 		"/static",
 		StaticFiles(directory=str(settings.static_dir)),

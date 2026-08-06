@@ -15,7 +15,7 @@ class Settings(BaseSettings):
 		extra="ignore",
 	)
 
-	app_title: str = "Captcha Predictor"
+	app_title: str = "Captcha Solver"
 	default_captcha_id: str = "supreme_court"
 	web_host: str = "0.0.0.0"
 	web_port: int = 5000

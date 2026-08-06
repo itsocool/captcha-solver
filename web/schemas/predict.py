@@ -10,3 +10,4 @@ class PredictResponse(BaseModel):
 	captcha_id: str
 	prediction: str
 	confidence: float
+	elapsed_ms: int

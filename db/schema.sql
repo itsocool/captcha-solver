@@ -56,3 +56,26 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 
 INSERT OR IGNORE INTO schema_migrations(version, name)
 VALUES (1, 'initial_dataclass_schema');
+
+-- 서비스 정보: 어떤 캡차를 서비스할지, 그중 기본값은 무엇인지
+CREATE TABLE IF NOT EXISTS service_captchas (
+	captcha_id TEXT PRIMARY KEY,
+	enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+	is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
+	sort_order INTEGER NOT NULL DEFAULT 0,
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 기본 캡차는 하나만 존재할 수 있다
+CREATE UNIQUE INDEX IF NOT EXISTS idx_service_captchas_default
+	ON service_captchas(is_default) WHERE is_default = 1;
+
+INSERT OR IGNORE INTO service_captchas(captcha_id, enabled, is_default, sort_order) VALUES
+	('supreme_court', 1, 1, 0),
+	('gov24', 1, 0, 1),
+	('wetax', 1, 0, 2),
+	('kshop', 1, 0, 3);
+
+INSERT OR IGNORE INTO schema_migrations(version, name)
+VALUES (2, 'service_captchas');
