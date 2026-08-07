@@ -47,7 +47,33 @@ captcha.exe -c="gov24" -i="a.png" -m="D:\models\gov24.model" --meta="D:\models\g
 CMake 3.24+ 와 C++17 컴파일러(**MSVC v143** 또는 **GCC 9+ / Clang 9+** — `<filesystem>` 때문)가 필요합니다.
 **최초 configure 때 네트워크**를 씁니다 (ONNX Runtime 프리빌트, stb 헤더를 FetchContent로 받음).
 
-### Windows
+### Windows — PowerShell 스크립트 (권장)
+
+```powershell
+cd apps\ConsoleApp
+.\ctest.ps1          # configure -> build -> test 전부
+```
+
+| 스크립트 | 하는 일 |
+|----------|---------|
+| `config.ps1` | cmake를 찾아 PATH에 얹고 `build/` 생성 |
+| `build.ps1` | `config.ps1` 호출 후 빌드 |
+| `ctest.ps1` | `build.ps1` 호출 후 테스트 |
+| `pred.ps1` | 빌드된 exe로 이미지를 대량 인식해 정답(파일명)과 대조 |
+
+CMake가 PATH에 없어도 됩니다 — `config.ps1`이 `vswhere`로 Visual Studio를 찾아 번들 CMake를
+**이 프로세스의 PATH에만** 추가합니다(전역 PATH는 건드리지 않음).
+
+```powershell
+.\build.ps1 -Config Debug     # Debug 빌드
+.\ctest.ps1 -Filter decode    # 특정 테스트만
+.\config.ps1 -Clean           # build/ 지우고 처음부터 (제너레이터 변경 시 필요)
+```
+
+제너레이터는 지정하지 않아 CMake가 **설치된 최신 Visual Studio**를 고릅니다. VS를 업그레이드해도
+스크립트를 고칠 필요가 없습니다.
+
+### Windows — 직접 실행
 
 ```cmd
 cd apps\ConsoleApp
@@ -85,10 +111,59 @@ ctest --test-dir build --output-on-failure               # Linux
 ```
 
 - `decode` — CTC prefix beam search 단위 테스트 7개
-- `samples` — `apps/cli/samples/<id>/` 40장을 인식해 파일명(정답)과 대조.
-  대상은 `gov24`, `supreme_court`, `kshop`, `wetax` (`tests/samples.cmake` 의 `IDS`)
+- `samples` — `apps/cli/samples/<id>/` 50장을 인식해 파일명(정답)과 대조.
+  대상은 `gov24`, `supreme_court`, `kshop`, `wetax`, `default` (`tests/samples.cmake` 의 `IDS`)
 
-실측: Windows(MSVC 17.14 / x64), Linux(GCC 13.3 / x64) 양쪽 **40/40 일치**, 예측 바이트 동일.
+실측: Windows(MSVC 17.14 / x64), Linux(GCC 13.3 / x64) 양쪽 **전부 일치**, 예측 바이트 동일.
+
+### pred.ps1 — 대량 정확도 확인 (Windows)
+
+`captcha_data/<id>/<rev>/images/pred/` 에서 **100장을 무작위로 뽑아** 인식하고 파일명(정답)과 대조합니다.
+`captcha_data` 가 없으면 `apps/cli/samples/<id>` 10장으로 폴백합니다.
+
+```powershell
+.\pred.ps1                        # supreme_court, 100장
+.\pred.ps1 gov24                  # 다른 캡차
+.\pred.ps1 kshop -Count 50        # 장수 지정
+.\pred.ps1 -Seed 42               # 같은 표본 재현
+```
+
+```
+출처 : ...\captcha_data\supreme_court\0\images\pred  (1061장 중 100장 무작위)
+
+이미지           정답       예측       시간     결과
+------------------------------------------------------
+073575.png       073575     073575     126 ms   ✅
+825890.png       825890     825890     103 ms   ✅
+...
+------------------------------------------------------
+캡차        supreme_court
+일치        100/100
+일치율      100.0%
+총 소요     12.4초  (평균 124 ms)
+```
+
+전부 일치하면 종료 코드 0, 하나라도 틀리면 1입니다. 시간은 **프로세스 전체 실행 시간**이라
+ONNX 세션 초기화가 포함됩니다(Rust CLI의 내부 측정값보다 큽니다).
+
+추론 자체가 실패한 행은 예측이 `-` 로 나오고 오류 메시지가 뒤에 붙습니다.
+
+```
+WpcDdu.png       WpcDdu     -          129 ms   ❌  Error: model input 200x50 != metadata 250x50
+```
+
+실측 (`-Seed 42`, 각 100장):
+
+| captcha | 일치 |
+|---------|------|
+| supreme_court | 100/100 |
+| gov24 | 100/100 |
+| wetax | 100/100 |
+| default | 100/100 |
+| kshop | 86/100 |
+
+kshop 86%는 `apps/cli/README.md` 에 기록된 ONNX 기준 정확도와 같은 수치입니다(모델 문제이며 포팅 문제가 아닙니다).
+`dev` 는 입력 크기 불일치로 전부 추론 실패합니다.
 
 ---
 
