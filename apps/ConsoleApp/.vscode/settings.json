@@ -1,0 +1,21 @@
+{
+	// VS에 번들된 CMake는 PATH에 없다. 통합 터미널과 태스크에만 얹는다(전역 PATH는 건드리지 않음).
+	// 독립 CMake를 설치했다면(winget install Kitware.CMake) 이 블록은 지워도 된다.
+	"terminal.integrated.env.windows": {
+		"PATH": "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\bin;${env:PATH}"
+	},
+
+	// CMake Tools 확장을 쓸 때만 의미 있음 (태스크로만 빌드한다면 무시됨)
+	"cmake.cmakePath": "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe",
+	"cmake.generator": "Visual Studio 17 2022",
+	"cmake.buildDirectory": "${workspaceFolder}/build",
+	"cmake.configureOnOpen": false,
+
+	// ONNX Runtime/stb 헤더 경로를 CMake가 알려주게 한다 (C/C++ 확장 IntelliSense)
+	"C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+
+	"files.encoding": "utf8",
+	"files.associations": {
+		"*.hpp": "cpp"
+	}
+}
