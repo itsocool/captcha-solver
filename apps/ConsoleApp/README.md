@@ -84,7 +84,38 @@ cmake --build build --config Release
 
 VS에 딸린 CMake는 `%ProgramFiles(x86)%\Microsoft Visual Studio\<버전>\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin` 에 있습니다.
 
-### Linux
+### Linux — 셸 스크립트 (권장)
+
+```bash
+cd apps/ConsoleApp
+./ctest.sh           # configure -> build -> test 전부
+```
+
+| 스크립트 | 하는 일 | Windows 대응 |
+|----------|---------|--------------|
+| `config.sh` | cmake를 찾아 PATH에 얹고 `build/` 생성 | `config.ps1` |
+| `build.sh` | `config.sh` 호출 후 빌드 | `build.ps1` |
+| `ctest.sh` | `build.sh` 호출 후 테스트 | `ctest.ps1` |
+| `pred.sh` | 빌드된 실행 파일로 이미지를 대량 인식해 정답(파일명)과 대조 | `pred.ps1` |
+
+```bash
+./build.sh --config Debug     # Debug 빌드
+./build.sh --jobs 4           # 동시 컴파일 잡 수 (기본: nproc)
+./ctest.sh --filter decode    # 특정 테스트만
+./config.sh --clean           # build/ 지우고 처음부터
+```
+
+PowerShell 판과 다른 점 두 가지:
+
+- 리눅스 기본 제너레이터(Unix Makefiles / Ninja)는 **단일 구성**이라 빌드 타입을 configure
+  시점에 정해야 합니다. 그래서 `config.ps1`에 없는 `--config`를 `config.sh`가 받습니다.
+- `build.sh`/`ctest.sh`는 하위 스크립트를 `source`로 부릅니다. 그래야 `config.sh`가
+  PATH에 얹은 cmake가 뒤따르는 `cmake --build`/`ctest`에도 유효합니다
+  (PowerShell의 `& script`가 같은 프로세스에서 도는 것과 같은 효과).
+
+`-Config Debug` 처럼 PowerShell식 인자도 그대로 받습니다.
+
+### Linux — 직접 실행
 
 ```bash
 cd apps/ConsoleApp
@@ -107,7 +138,7 @@ ONNX Runtime 버전은 `-DORT_VERSION=1.20.1` 로 바꿀 수 있습니다(모델
 ctest --test-dir build -C Release --output-on-failure    :: Windows
 ```
 ```bash
-ctest --test-dir build --output-on-failure               # Linux
+ctest --test-dir build --output-on-failure               # Linux (./ctest.sh 가 빌드까지 해준다)
 ```
 
 - `decode` — CTC prefix beam search 단위 테스트 7개
@@ -116,9 +147,10 @@ ctest --test-dir build --output-on-failure               # Linux
 
 실측: Windows(MSVC 17.14 / x64), Linux(GCC 13.3 / x64) 양쪽 **전부 일치**, 예측 바이트 동일.
 
-### pred.ps1 — 대량 정확도 확인 (Windows)
+### pred — 대량 정확도 확인
 
 `captcha_data/<id>/<rev>/images/pred/` 에서 **100장을 무작위로 뽑아** 인식하고 파일명(정답)과 대조합니다.
+`rev` 는 `apps/cli/models/<id>.meta.json` 에 적힌 것을 쓰고, 없으면 가장 큰 번호를 고릅니다.
 `captcha_data` 가 없으면 `apps/cli/samples/<id>` 10장으로 폴백합니다.
 
 ```powershell
@@ -126,6 +158,13 @@ ctest --test-dir build --output-on-failure               # Linux
 .\pred.ps1 gov24                  # 다른 캡차
 .\pred.ps1 kshop -Count 50        # 장수 지정
 .\pred.ps1 -Seed 42               # 같은 표본 재현
+```
+
+```bash
+./pred.sh                         # supreme_court, 100장
+./pred.sh gov24                   # 다른 캡차
+./pred.sh kshop --count 50        # 장수 지정
+./pred.sh --seed 42               # 같은 표본 재현
 ```
 
 ```
