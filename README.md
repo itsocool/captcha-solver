@@ -23,7 +23,9 @@ uv sync
 cp .env.example .env       # 선택: 설정을 덮어쓸 때
 ```
 
-PyTorch 휠은 `pyproject.toml`의 CUDA 13 인덱스를 사용합니다. CPU 전용 설치가 필요하면 해당 인덱스를 조정한 뒤 `uv lock`을 갱신하세요.
+`pyproject.toml`에는 CUDA 13용 추가 인덱스가 있지만, 현재 `uv.lock`의 `torch`/`torchvision` 배포 URL은 PyPI를 가리킵니다. 따라서 추가 인덱스의 존재만으로 CUDA 휠이 선택됐다고 볼 수 없습니다. 설치 후에는 실제 `torch.version.cuda`와 설치된 휠을 확인하세요.
+
+알려진 이슈(2026-08-09): 현재 `uv lock --check`는 `uv.lock` 갱신이 필요하다고 실패합니다. 의존성 변경을 검토하지 않은 상태에서 잠금 파일을 임의로 다시 만들지 마세요. 이미 의존성이 설치된 작업 트리에서 CTC 디코더를 확인할 때는 그 `.venv`의 인터프리터로 `test_ctc_decode.py`를 실행할 수 있습니다.
 
 ## 5분 빠른 시작
 
@@ -69,7 +71,7 @@ models/
 └── <captcha_id>.meta.json  # image_width, image_height, label_length, characters, threshold, preprocess
 ```
 
-등록된 CAPTCHA ID는 `default`, `dev`, `supreme_court`, `gov24`, `wetax`, `kshop` 여섯 가지입니다. DB의 기본 서비스 대상은 `supreme_court`, `gov24`, `wetax`, `kshop` 네 가지입니다. 학습 데이터가 있으면 이미지 크기·레이블 길이·문자 집합을 파일명에서 감지합니다.
+등록된 CAPTCHA ID는 `default`, `dev`, `supreme_court`, `gov24`, `wetax`, `kshop` 여섯 가지입니다. DB의 기본 서비스 대상은 `supreme_court`, `gov24`, `wetax`, `kshop` 네 가지입니다. 학습 데이터가 있으면 정렬된 `images/train/*.png` 목록의 마지막 PNG를 열어 이미지 크기를 감지하고, 파일명에서 레이블 길이와 문자 집합을 감지합니다.
 
 CRNN은 입력에서 특징 맵 높이 `H/8`, 시간축 너비 `W/4`를 출력합니다. 고정 길이 CTC 디코딩은 `W/4 >= label_length`를 요구하므로 모델 입력 폭을 레이블 길이보다 충분히 크게 유지하세요.
 
@@ -87,8 +89,9 @@ uv run python test_ctc_decode.py    # CTC 디코더 단위 검증
 
 ```python
 import engine
-engine.train_model(captcha_id="supreme_court")
-engine.batch_predict_model(captcha_id="supreme_court")
+model = engine.get_captcha_model(captcha_id="supreme_court")
+engine.train_model(model=model)
+engine.batch_predict_model(model=model)
 engine.redistribute_train_pred("captcha_data/supreme_court/0/images", train_ratio=0.9)
 ```
 
@@ -108,7 +111,7 @@ uv run python main.py -c <captcha_id> -i <image_path> [-v]
 uv run fastapi dev web/app.py --host 0.0.0.0 --port 8000
 ```
 
-`/`는 웹 UI, `/status`는 모델 상태, `/health`, `/ping`, `/version`은 상태·버전 엔드포인트입니다. 서버 기동 시 서비스 대상 모델을 preload/warm-up하고 `_MODEL_CACHE`에 보관하므로 모델 파일을 바꾼 뒤에는 프로세스를 재시작해야 합니다.
+`/`는 웹 UI, `/status`는 모델 상태, `/health`, `/ping`, `/version`은 상태·버전 엔드포인트입니다. 서버 기동 시 서비스 대상 모델을 preload/warm-up하고 `_MODEL_CACHE`에 보관하므로 모델 파일을 바꾼 뒤에는 프로세스를 재시작해야 합니다. `/health`는 서비스 대상 ID가 모두 로드됐을 때 `status: "ok"`, 하나라도 누락됐을 때 `status: "degraded"`를 반환합니다. `degraded`도 응답 자체는 HTTP 200이며 `serviced_captcha_ids`와 `loaded_captcha_ids`로 누락 항목을 확인합니다.
 
 ## Rust ONNX CLI
 
@@ -116,7 +119,7 @@ uv run fastapi dev web/app.py --host 0.0.0.0 --port 8000
 uv run python apps/cli/tools/sync_models.py       # 전체 ONNX + meta.json 동기화
 Push-Location apps/cli; cargo build --release; Pop-Location
 Push-Location apps/cli; cargo test; Pop-Location
-Push-Location apps/cli; .\target\release\captcha-cli.exe -c supreme_court -i ..\..\captcha.png --json; Pop-Location
+Push-Location apps/cli; .\target\release\captcha-cli.exe -c supreme_court -i .\samples\supreme_court\001741.png --json; Pop-Location
 ```
 
 재학습 후 `sync_models.py`를 다시 실행하세요. `--models-dir`, `--meta`, `--beam-width`, `--threads`, `--list`, stdin(`-i -`) 옵션과 Windows 빌드는 [Rust CLI 문서](apps/cli/README.md)에 있습니다.
@@ -134,7 +137,7 @@ Push-Location apps/springBoot; java -jar target\captchaSolver-0.0.1-SNAPSHOT.jar
 
 ## 공통 REST API
 
-FastAPI와 Spring Boot 모두 다음 경로를 제공합니다.
+FastAPI와 Spring Boot 모두 다음 경로를 제공합니다. 아래 예제의 FastAPI 기본 URL은 `http://localhost:8000`이고, Spring Boot의 기본 URL은 `http://localhost:5000`입니다.
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/predictImage \
@@ -146,18 +149,31 @@ curl -X POST http://localhost:8000/api/v1/predictJson \
   -d '{"captcha_id":"supreme_court","image_data":"iVBORw0KGgo..."}'
 ```
 
-JSON 요청은 순수 base64 또는 `data:image/png;base64,...`를 받습니다. 성공 응답은 `{"captcha_id":"supreme_court","prediction":"091082","confidence":0.99,"elapsed_ms":13}` 형태입니다. `captcha_id` 생략 시 DB 기본값을 사용합니다. 잘못된 이미지·base64·미서비스 ID는 400, 모델 로드/추론 실패는 500이며 오류 본문은 `{"detail":"..."}`입니다.
+JSON 요청은 순수 base64 또는 `data:image/png;base64,...`를 받습니다. 성공 응답은 `{"captcha_id":"supreme_court","prediction":"091082","confidence":0.99,"elapsed_ms":13}` 형태입니다. `captcha_id` 생략 시 DB 기본값을 사용합니다.
+
+FastAPI는 누락 필수 필드·형식 불일치를 프레임워크 검증 응답(422)으로 돌려줍니다. 라우터가 처리하는 빈 입력, 잘못된 base64, 미서비스 ID는 400 `{"detail":"..."}`이고, base64로는 풀렸지만 실제 이미지로 디코드되지 않는 바이트는 예측 단계 오류로 감싸져 500 `{"detail":"..."}`입니다. Spring Boot는 자체 `BadRequestException`으로 빈 입력·잘못된 base64·미서비스 ID·이미지 디코드 실패를 400 `{"detail":"..."}`으로, 추론 실패를 500으로 응답합니다. 다만 Spring의 요청 바인딩·미디어 타입 오류와 `ResponseStatusException` 등 프레임워크 단계 오류는 상태 코드나 본문이 이 커스텀 `detail` 본문과 다를 수 있습니다.
 
 ## 서비스 설정과 환경 변수
 
-`db/schema.sql`의 `service_captchas`가 활성화된 ID와 기본 ID를 결정하며, 유효한 DB 값이 환경 변수보다 우선합니다. DB가 비어 있거나 설정이 없을 때만 `DEFAULT_CAPTCHA_ID`(기본 `supreme_court`)가 폴백으로 사용됩니다. 변경은 기동 시 한 번 읽으므로 DB·`.env`·모델 변경 후 서버를 재시작해야 캐시와 설정에 반영됩니다.
+`db/schema.sql`의 `service_captchas`가 활성화된 ID와 기본 ID를 결정하며, 유효한 DB 값이 환경 변수보다 우선합니다. DB가 비어 있거나 설정이 없을 때만 FastAPI의 `DEFAULT_CAPTCHA_ID`(기본 `supreme_court`)가 폴백으로 사용됩니다. 변경은 기동 시 한 번 읽으므로 DB·FastAPI `.env`·모델 변경 후 서버를 재시작해야 캐시와 설정에 반영됩니다.
+
+### FastAPI (`.env`)
+
+루트 `.env`와 `.env.example`은 Pydantic Settings로 읽는 FastAPI용입니다. Spring Boot는 이 파일을 읽지 않습니다.
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
 | `DEFAULT_CAPTCHA_ID` | `supreme_court` | DB 설정이 없을 때의 기본 ID |
 | `WEB_HOST` / `WEB_PORT` | `0.0.0.0` / `5000` | 직접 실행 시 바인딩 |
 | `WEB_DEBUG` | `false` | reload/debug |
-| `APP_TITLE`, `APP_VERSION`, `DB_PATH` | 앱 기본값 | UI·버전·SQLite 경로 |
+| `APP_TITLE` | `Captcha Solver` | FastAPI 제목 |
+| `DB_PATH`, `DB_SCHEMA_PATH` | SQLite 기본 경로 | 서비스 설정 DB·스키마 |
+
+`APP_VERSION`은 FastAPI 설정 항목이 아닙니다. 버전은 `web/core/version.py`가 `pyproject.toml` 등에서 조회합니다.
+
+### Spring Boot (`application.yml` 또는 Spring 외부 설정)
+
+Spring Boot 기본 포트는 `server.port=5000`입니다. 주요 설정은 `captcha.models-dir`, `captcha.db-path`, `captcha.schema-path`, `captcha.default-captcha-id`, `captcha.beam-width`, `captcha.intra-op-threads`이며, 앱 버전은 `captcha.app-version`(환경 변수 `CAPTCHA_APP_VERSION`)입니다. 루트 `.env`의 `WEB_*`/`APP_*` 이름과 혼용하지 마세요.
 
 ## Docker 배포
 
