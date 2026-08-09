@@ -176,8 +176,9 @@ models/
 ### 검증
 
 ```bash
-cargo test                                                    # 디코더 단위 테스트 6개
+cargo test                                                    # 디코더 단위 테스트
 uv run python apps/cli/tools/compare_with_python.py --limit 100   # 파이썬 결과와 대조
+uv run python apps/cli/tools/verify_pth_onnx.py                   # model.pth 와 model.onnx 동등성
 ```
 
 실측 결과 (각 100장):

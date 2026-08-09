@@ -193,14 +193,15 @@ Push-Location apps/cli; cargo test; Pop-Location
 ```
 
 ```bash
-uv run python apps/cli/tools/compare_with_python.py --limit 100
+uv run python apps/cli/tools/compare_with_python.py --limit 100   # Rust CLI ↔ Python
+uv run python apps/cli/tools/verify_pth_onnx.py                   # model.pth ↔ model.onnx
 ```
 
 ```powershell
 Push-Location apps/springBoot; mvn test; Pop-Location
 ```
 
-모델을 동기화한 뒤 Python·Rust·Spring 샘플 결과와 신뢰도를 비교하세요. PT/JIT/ONNX는 학습 시점의 체크포인트가 다르면 서로 다른 예측을 낼 수 있으므로 export 후 동등성을 확인해야 합니다.
+모델을 동기화한 뒤 Python·Rust·Spring 샘플 결과와 신뢰도를 비교하세요. 체크포인트와 ONNX는 학습 시점이 다르면 서로 다른 예측을 낼 수 있으므로 export 후 동등성을 확인해야 합니다. `verify_pth_onnx.py`는 캡차별 최고 리비전의 `model.pth`와 `model.onnx`를 train+pred 전체 이미지로 대조하며, 디스크의 최고 리비전이 `engine.py` 등록과 어긋나면 경고합니다.
 
 ## 알려진 제약과 주의점
 
