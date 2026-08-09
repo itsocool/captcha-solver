@@ -9,6 +9,7 @@ wheels/
 # Virtual environments
 .venv
 .history
+.worktrees/
 
 # Local environment files
 .env
