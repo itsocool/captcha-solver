@@ -100,7 +100,7 @@ engine.redistribute_train_pred("captcha_data/supreme_court/0/images", train_rati
 uv run python main.py -c <captcha_id> -i <image_path> [-v]
 ```
 
-기본 출력은 예측 문자열이고, `-v`는 `predicted_text`, `confidence`, `execution_time` JSON을 출력합니다. 이미지가 없으면 종료 코드 2, 모델 생성 실패면 3입니다. 상세 사용법은 [Python CLI 문서](apps/cli/README.md)를 참고하세요.
+기본 출력은 예측 문자열이고, `-v`는 `predicted_text`, `confidence`, `execution_time` JSON을 출력합니다. 이미지가 없으면 종료 코드 2, 모델 생성 실패면 3입니다. Rust ONNX CLI의 상세 사용법은 [Rust CLI 문서](apps/cli/README.md)를 참고하세요.
 
 ## FastAPI 웹 서비스
 
@@ -112,12 +112,11 @@ uv run fastapi dev web/app.py --host 0.0.0.0 --port 8000
 
 ## Rust ONNX CLI
 
-```bash
+```powershell
 uv run python apps/cli/tools/sync_models.py       # 전체 ONNX + meta.json 동기화
-cd apps/cli
-cargo build --release
-cargo test
-./target/release/captcha-cli -c supreme_court -i captcha.png --json
+Push-Location apps/cli; cargo build --release; Pop-Location
+Push-Location apps/cli; cargo test; Pop-Location
+Push-Location apps/cli; .\target\release\captcha-cli.exe -c supreme_court -i ..\..\captcha.png --json; Pop-Location
 ```
 
 재학습 후 `sync_models.py`를 다시 실행하세요. `--models-dir`, `--meta`, `--beam-width`, `--threads`, `--list`, stdin(`-i -`) 옵션과 Windows 빌드는 [Rust CLI 문서](apps/cli/README.md)에 있습니다.
@@ -125,9 +124,10 @@ cargo test
 ## Spring Boot ONNX 서비스
 
 ```powershell
-cd apps/springBoot
-mvn spring-boot:run
-# 또는 mvn -DskipTests package; java -jar target\captchaSolver-0.0.1-SNAPSHOT.jar
+Push-Location apps/springBoot; mvn spring-boot:run; Pop-Location
+# 또는 다음 두 명령을 각각 실행합니다.
+Push-Location apps/springBoot; mvn -DskipTests package; Pop-Location
+Push-Location apps/springBoot; java -jar target\captchaSolver-0.0.1-SNAPSHOT.jar; Pop-Location
 ```
 
 기본 포트는 5000이며 모델·DB 기본 상대 경로는 각각 `../../apps/cli/models`, `../../db/captchaSolver.sqlite3`입니다. 상세 설정과 API 문서는 [Spring Boot 문서](apps/springBoot/README.md)를 참고하세요.
@@ -172,9 +172,18 @@ Compose는 호스트 `5001`을 컨테이너 `8000`에 연결하고 `captcha_data
 
 ```bash
 uv run python test_ctc_decode.py
-cd apps/cli && cargo test
+```
+
+```powershell
+Push-Location apps/cli; cargo test; Pop-Location
+```
+
+```bash
 uv run python apps/cli/tools/compare_with_python.py --limit 100
-cd apps/springBoot && mvn test
+```
+
+```powershell
+Push-Location apps/springBoot; mvn test; Pop-Location
 ```
 
 모델을 동기화한 뒤 Python·Rust·Spring 샘플 결과와 신뢰도를 비교하세요. PT/JIT/ONNX는 학습 시점의 체크포인트가 다르면 서로 다른 예측을 낼 수 있으므로 export 후 동등성을 확인해야 합니다.
