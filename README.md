@@ -23,9 +23,7 @@ uv sync
 cp .env.example .env       # 선택: 설정을 덮어쓸 때
 ```
 
-`pyproject.toml`에는 CUDA 13용 추가 인덱스가 있지만, 현재 `uv.lock`의 `torch`/`torchvision` 배포 URL은 PyPI를 가리킵니다. 따라서 추가 인덱스의 존재만으로 CUDA 휠이 선택됐다고 볼 수 없습니다. 설치 후에는 실제 `torch.version.cuda`와 설치된 휠을 확인하세요.
-
-알려진 이슈(2026-08-09): 현재 `uv lock --check`는 `uv.lock` 갱신이 필요하다고 실패합니다. 의존성 변경을 검토하지 않은 상태에서 잠금 파일을 임의로 다시 만들지 마세요. 이미 의존성이 설치된 작업 트리에서 CTC 디코더를 확인할 때는 그 `.venv`의 인터프리터로 `test_ctc_decode.py`를 실행할 수 있습니다.
+`uv lock`을 다시 생성한 현재 `uv.lock`은 `torch 2.12.0`과 `torchvision 0.27.0`을 PyPI 레지스트리(`https://pypi.org/simple`, 휠: `files.pythonhosted.org`)에서 해석합니다. `pyproject.toml`의 CUDA 13 추가 인덱스만으로 CUDA 휠이 선택되는 것은 아니므로, 설치 후 실제 `torch.version.cuda`와 설치된 휠을 확인하세요. CTC 디코더는 잠금 파일을 그대로 사용하는 `uv run --locked python test_ctc_decode.py`로 확인할 수 있습니다.
 
 ## 5분 빠른 시작
 
