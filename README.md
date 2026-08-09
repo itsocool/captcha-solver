@@ -78,7 +78,7 @@ CRNN은 입력에서 특징 맵 높이 `H/8`, 시간축 너비 `W/4`를 출력�
 `train.py`와 `pred.py` 상단 변수를 수정한 뒤 실행합니다(명령 인자를 받는 스크립트가 아닙니다).
 
 ```bash
-uv run python train.py              # 학습, PT/JIT/ONNX 산출물 생성
+uv run python train.py              # 학습, model.pt + model.onnx 생성 및 동등성 검증
 uv run python pred.py               # images/pred 배치 평가
 uv run python test_ctc_decode.py    # CTC 디코더 단위 검증
 ```
@@ -204,8 +204,8 @@ Push-Location apps/springBoot; mvn test; Pop-Location
 
 ## 알려진 제약과 주의점
 
-- ONNX 입력은 고정 차원입니다. 감지된 기본 이미지 크기와 export 차원이 다르면(`dev` 사례) ONNX가 거부합니다.
-- 학습 종료 시 `model_full.pt`, JIT, ONNX가 서로 다른 가중치로 남을 수 있습니다. 배포 전 동일 체크포인트에서 재-export하고 `sync_models.py`를 다시 실행하세요.
+- ONNX 입력은 고정 차원입니다. 감지된 기본 이미지 크기와 export 차원이 다르면 ONNX가 거부합니다.
+- ~~학습 종료 시 `model.pt`와 `model.onnx`가 서로 다른 가중치로 남을 수 있음~~ — 해소됐습니다. `finalize_artifacts()`가 확정된 `.pt`를 디스크에서 다시 읽어 ONNX를 내보내고, 곧바로 학습 샘플로 두 아티팩트의 예측 일치를 검증합니다. 어긋나면 학습이 예외로 중단됩니다.
 - `core.py` import 시 CUDA/cuDNN을 탐색하고 전역 최적화를 설정합니다. 단순 import도 GPU probing을 일으킬 수 있습니다.
 - FastAPI 모델 캐시는 프로세스 로컬입니다. 여러 worker는 각각 모델을 로드하며 파일 변경은 자동 반영되지 않습니다.
 - `redistribute_train_pred`는 이미지를 이동하는 파괴적 작업입니다.

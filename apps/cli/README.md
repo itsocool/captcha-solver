@@ -187,11 +187,13 @@ uv run python apps/cli/tools/compare_with_python.py --limit 100   # 파이썬 �
 | supreme_court | 100/100 | 0.0011 |
 | gov24 | 100/100 | 0.0066 |
 | wetax | 100/100 | 0.0019 |
-| kshop | 70/100 | 0.7757 |
+| kshop | 70/100 † | 0.7757 † |
 
 `samples/` 10장 기준으로는 supreme_court·gov24·wetax·kshop 모두 10/10입니다.
 
-### dev 모델은 현재 ONNX로 추론할 수 없습니다
+> † kshop 수치는 `model.pt` 와 `model.onnx` 의 가중치가 갈려 있던 시점의 측정입니다(아래 절 참고).
+> 그 원인은 해소됐고 현재 파이썬과 ONNX 는 101/101 일치하지만, 이 표는 Rust 바이너리가 필요해
+> 아직 재측정하지 못했습니다. `cargo build --release` 후 `compare_with_python.py` 를 다시 돌리세요.
 
 ### 모델 입력 크기와 메타데이터가 어긋나면 추론이 거부됩니다
 
@@ -239,4 +241,6 @@ Rust CLI(onnx)          → 050862 (0.99)
 `model_jit.pt` 는 어디서도 로드하지 않는 데다 CUDA 로 trace 되어 CPU 에서 실행조차 되지 않아
 제거했습니다.
 
-정합성을 맞추려면 export 직전에 베스트 가중치를 다시 로드해야 합니다.
+코드 쪽 원인도 고쳤습니다. `finalize_artifacts()` 가 `.tmp` 승격이 끝난 뒤 **디스크의 `.pt` 를 다시
+읽어** ONNX 를 내보내고, 학습 샘플 8장으로 두 아티팩트의 예측 일치를 검증합니다. 하나라도
+갈리면 학습이 예외로 중단되므로 어긋난 아티팩트가 배포될 수 없습니다.

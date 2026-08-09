@@ -780,10 +780,8 @@ class PyTorchModel(BaseModel):
                     
                     # Early stopping 체크
                     if early_stopping_patience > 0 and patience_counter >= early_stopping_patience:
-                        # 최종 모델 저장 (early stopping으로 종료되지 않은 경우)
-                        self.save_model(model_path)
-                        self.export_onnx(self.train_data.get_onnx_path())
-
+                        # 저장과 export 는 루프 밖 한 곳에서만 한다.
+                        # 여기서 하면 아래 .tmp 승격이 덮어써 아티팩트가 갈린다.
                         if self.verbose > 0:
                             print(f"\n[Early Stopping] Triggered after {epoch + 1} epochs")
                             print(f"Best validation loss: {best_val_loss:.4f} at epoch {best_epoch}")
@@ -793,14 +791,14 @@ class PyTorchModel(BaseModel):
                 if save_best and (epoch + 1) % 10 == 0:
                     self.save_model(model_path, temp=True)
         
-        # 최종 모델 저장 (early stopping으로 종료되지 않은 경우)
+        # 체크포인트를 먼저 확정한 뒤, 그 파일 하나에서만 파생 아티팩트를 만든다.
         if os.path.exists(model_path + '.tmp'):
             os.replace(model_path + '.tmp', model_path)
         else:
             self.save_model(model_path)
-            
-        self.export_onnx(self.train_data.get_onnx_path())
-        
+
+        self.finalize_artifacts(model_path)
+
         if self.verbose > 0:
             print("=" * 70)
             print("Training completed.")
@@ -810,37 +808,119 @@ class PyTorchModel(BaseModel):
         return train_hist
     
     def save_model(self, model_path: str, temp: bool = False):
-        """모델 저장 (PyTorch 규약 - dev.ipynb 스타일)."""
-        model_dir = os.path.dirname(model_path)
-        os.makedirs(model_dir, exist_ok=True)
-        temp_path = model_path + '.tmp'
-        
+        """state dict 저장.
+
+        스테이징 파일에 먼저 쓰고 os.replace 로 교체한다. 중간에 죽어도 직전 파일이
+        온전히 남는다. 저장 실패는 삼키지 않고 그대로 올린다 — 실패를 성공으로
+        보고하면 학습 결과를 통째로 잃는다.
+        """
+        target = model_path + '.tmp' if temp else model_path
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+
+        staging = target + '.writing'
         try:
-            if temp:
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
-                torch.save(self.model.state_dict(), temp_path)
-            else:
-                if os.path.exists(model_path):
-                    os.remove(model_path)
-                torch.save(self.model.state_dict(), model_path)
-                
-        except Exception as e:
-            # 실패 시 임시파일 정리(있다면) 및 폴백
-            try:
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
-            except Exception:
-                pass
-            
+            torch.save(self.model.state_dict(), staging)
+            os.replace(staging, target)
+        except Exception:
+            if os.path.exists(staging):
+                os.remove(staging)
+            raise
+
         if self.verbose > 0:
-            print(f"Model saved to {model_dir}")
-            
-            if temp:
-                print(f"  - Temp model: {temp_path}")
-            else:
-                print(f"  - Final model: {model_path}")
-                
+            label = "Temp model" if temp else "Final model"
+            print(f"Model saved - {label}: {target}")
+
+    def finalize_artifacts(self, model_path: str, verify: bool = True) -> str:
+        """확정된 체크포인트 하나에서 ONNX 를 내보내고 동등성을 검증한다.
+
+        메모리에 남은 모델이 아니라 **디스크의 체크포인트를 다시 읽어서** export 한다.
+        학습 종료 시 `.tmp` 가 `.pt` 로 승격되는데, 예전에는 메모리 모델에서 export 해
+        `.pt` 와 `.onnx` 가 서로 다른 에폭이 되는 일이 있었다(kshop 사례).
+
+        Returns:
+            생성된 ONNX 경로
+        """
+        self.model.load_state_dict(
+            torch.load(model_path, map_location=self.device, weights_only=False)
+        )
+        self.model.eval()
+
+        onnx_path = self.train_data.get_onnx_path()
+        self.export_onnx(onnx_path)
+
+        if verify:
+            self.verify_onnx_export(onnx_path)
+
+        return onnx_path
+
+    def verify_onnx_export(self, onnx_path: str, num_samples: int = 8,
+                           logit_tol: float = 0.5) -> None:
+        """방금 내보낸 ONNX 가 PyTorch 와 같은 예측을 내는지 확인한다.
+
+        판정 기준은 **디코딩된 예측 문자열의 일치**다. 로짓 오차는 진단용으로 함께 보되,
+        가중치가 뒤바뀐 수준(관측치 7.8)과 float 노이즈(관측치 0.003)를 가르는
+        느슨한 임계값만 둔다.
+
+        Raises:
+            RuntimeError: 예측이 하나라도 갈리거나 로짓 오차가 임계값을 넘으면
+        """
+        import glob
+
+        try:
+            import onnxruntime as ort
+        except ImportError as e:
+            raise RuntimeError(
+                "ONNX export 검증에 onnxruntime 이 필요합니다. `uv sync` 로 설치하세요."
+            ) from e
+
+        images = sorted(glob.glob(os.path.join(
+            self.train_data.get_image_dir(train=True), "*.png")))[:num_samples]
+        transform = get_eval_transform(self.train_data)
+        expected_length = self.train_data.label_length
+
+        sess = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
+        input_name = sess.get_inputs()[0].name
+
+        def decode(logits_TNC: np.ndarray) -> str:
+            out = np.transpose(logits_TNC, (1, 0, 2))[0]
+            out = out - out.max(axis=-1, keepdims=True)
+            log_probs = out - np.log(np.exp(out).sum(axis=-1, keepdims=True))
+            text, _ = ctc_beam_decode_fixed_length(
+                log_probs, self.idx_to_char, expected_length=expected_length,
+                beam_width=10, unk_token="[UNK]",
+            )
+            return text
+
+        mismatches = []
+        worst_diff = 0.0
+
+        for path in images:
+            tensor = transform(Image.open(path)).unsqueeze(0)
+            with torch.inference_mode():
+                torch_logits = self.model(tensor.to(self.device))[0].cpu().numpy()
+            onnx_logits = sess.run(None, {input_name: tensor.numpy().astype(np.float32)})[0]
+
+            worst_diff = max(worst_diff, float(np.abs(torch_logits - onnx_logits).max()))
+            pred_torch, pred_onnx = decode(torch_logits), decode(onnx_logits)
+            if pred_torch != pred_onnx:
+                mismatches.append((os.path.basename(path), pred_torch, pred_onnx))
+
+        if mismatches or worst_diff > logit_tol:
+            detail = "".join(
+                f"\n  {name}: PyTorch={a!r} ONNX={b!r}" for name, a, b in mismatches[:5]
+            )
+            raise RuntimeError(
+                f"ONNX export 검증 실패 — {onnx_path}\n"
+                f"  샘플 {len(images)}장 중 예측 불일치 {len(mismatches)}건, "
+                f"로짓 최대 오차 {worst_diff:.4g} (임계 {logit_tol})"
+                f"{detail}"
+            )
+
+        if self.verbose > 0:
+            print(f"ONNX 검증 통과: 샘플 {len(images)}장 예측 일치, "
+                  f"로짓 최대 오차 {worst_diff:.4g}")
+
+
     def export_onnx(self, onnx_path: str, fixed_batch: bool = True):
         """ONNX 형식으로 모델 내보내기.
         

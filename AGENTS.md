@@ -39,7 +39,7 @@ captcha_data/<captcha_id>/<rev>/images/{train,pred}/
 ```
 
 - Image **filename** (no extension) = label (e.g., `abc12.png` → label `abc12`)
-- Models: `captcha_data/<id>/<rev>/model/model_full.pt` (state dict), `model_jit.pt` (TorchScript), `model_full.pt.onnx` (ONNX)
+- Models: `captcha_data/<id>/<rev>/model/model.pt` (state dict), `model.onnx` (ONNX). `finalize_artifacts()` exports the ONNX from the finalized `.pt` on disk (never the in-memory model) and fails training if their predictions disagree.
 
 ## Image Preprocessing
 
