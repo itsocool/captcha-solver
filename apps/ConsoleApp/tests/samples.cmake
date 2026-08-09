@@ -1,10 +1,9 @@
 # apps/cli/samples/<id>/<정답>.png 를 전부 인식해 파일명과 대조한다.
 # ctest -R samples 로 실행. EXE / SAMPLES 는 CMakeLists가 넘긴다.
 #
-# dev 는 ONNX(200×50)와 메타(250×50) 크기가 어긋나 추론 자체가 안 돼서 뺐다(apps/cli/README.md).
-# 나머지 5종은 샘플 10장씩 전부 일치한다.
+# 서비스 대상 4종. 샘플 10장씩 전부 일치한다.
 if(NOT DEFINED IDS)
-	set(IDS gov24 supreme_court kshop wetax default)
+	set(IDS gov24 supreme_court kshop wetax)
 endif()
 
 set(total 0)

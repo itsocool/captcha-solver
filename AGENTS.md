@@ -27,9 +27,7 @@ Single-repo PyTorch captcha solver. No package — all code lives at root as fla
 
 Hardcoded in `engine.get_captcha_type_list()`:
 
-- `default` — digits only (`2345678bcdefgmnpwxy`), label length 5
-- `dev` — mixed alphanumeric, label length 6
-- `supreme_court` — custom crop preprocess, 120×40
+- `supreme_court` — custom crop preprocess, 120×40 (default `captcha_id`)
 - `gov24` — threshold=60, rev=1
 - `wetax` — height=60
 - `kshop` — 263×54

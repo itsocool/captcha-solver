@@ -6,23 +6,9 @@ from typing import List, Tuple, Optional, Dict
 from tqdm import tqdm
 from core import PyTorchModel
 from base_core import BaseModel
-from dataclass import CAPTCHA_CHAR_SETS, DEV_CHAR_SETS, CaptchaType, TrainData
+from dataclass import CaptchaType, TrainData
 
 def get_captcha_type_list(train_data_base_dir: str = "./captcha_data") -> Dict[str, CaptchaType]:
-
-    default = CaptchaType(name="기본 캡챠", desc="기본 캡챠", train_data=TrainData(
-        captcha_id="default",
-        train_data_base_dir=train_data_base_dir,
-        label_length=5,
-        characters=list(CAPTCHA_CHAR_SETS),
-    ))
-
-    dev = CaptchaType(name="개발중", desc="개발중", train_data=TrainData(
-        captcha_id="dev",
-        train_data_base_dir=train_data_base_dir,
-        label_length=6,
-        characters=list(DEV_CHAR_SETS),
-    ))
 
     supreme_court = CaptchaType(name="대법원", desc="대법원 캡챠", train_data=TrainData(
         captcha_id="supreme_court",
@@ -52,15 +38,13 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data") -> Dict[s
     ))
 
     return {
-        "default": default,
-        "dev": dev,
         "supreme_court": supreme_court,
         "gov24": gov24,
         "wetax": wetax,
         "kshop": kshop,
     }
 
-def get_captcha_model(train_data_base_dir: str = "./captcha_data", captcha_id: str = "default", verbose: int = 1) -> PyTorchModel:
+def get_captcha_model(train_data_base_dir: str = "./captcha_data", captcha_id: str = "supreme_court", verbose: int = 1) -> PyTorchModel:
     captcha_type_list: Dict[str, CaptchaType] = get_captcha_type_list(train_data_base_dir=train_data_base_dir)
 
     if captcha_id not in captcha_type_list:

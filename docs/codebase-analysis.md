@@ -38,7 +38,7 @@ graph TD
 
 ### 2.2 핵심 설계 특성
 
-- 캡차 레지스트리는 `engine.get_captcha_type_list()`에 하드코딩되어 있다. 현재 `default`, `dev`, `supreme_court`, `gov24`, `wetax`, `kshop` 여섯 종류다.
+- 캡차 레지스트리는 `engine.get_captcha_type_list()`에 하드코딩되어 있다. 현재 `supreme_court`, `gov24`, `wetax`, `kshop` 네 종류이며 기본값은 `supreme_court`다.
 - 라벨은 별도 어노테이션 파일 없이 PNG 파일명에서 얻는다. `091082.png`의 정답은 `091082`다.
 - `BaseModel`이 공통 인터페이스를 정의하지만 구현은 `PyTorchModel` 하나뿐이다.
 - 웹 서비스 대상은 모델 레지스트리와 별도로 SQLite `service_captchas`가 결정한다. 등록됐지만 서비스 대상이 아닐 수 있다.
@@ -132,7 +132,7 @@ sequenceDiagram
 
 | 함수/메서드 | 파일 | 설명 |
 | :--- | :--- | :--- |
-| `get_captcha_type_list()` | `engine.py` | 여섯 CAPTCHA 설정을 생성하는 단일 레지스트리 |
+| `get_captcha_type_list()` | `engine.py` | 네 CAPTCHA 설정을 생성하는 단일 레지스트리 |
 | `get_captcha_model()` | `engine.py` | ID를 검증하고 `PyTorchModel`을 생성 |
 | `train_model()` | `engine.py` | 모델 빌드, 80/20 분할, 학습 루프 연결 |
 | `predict()` | `engine.py` | 필요 시 state dict를 지연 로드하고 단건 예측 |
@@ -198,7 +198,7 @@ Spring Boot 4.1.0, Java 25, ONNX Runtime 1.23.0을 사용한다. 기본 서버 �
 
 ### 7.2 감지 설정과 모델 생성 설정이 혼용됨
 
-전처리와 sidecar 생성은 `detected_image_width`, `detected_label_length` 등을 사용하지만 `build_model()`은 생성자 원본 필드인 `image_width`, `label_length`를 사용한다. 학습 이미지 크기가 기본값과 다르면 PyTorch CNN은 일부 폭 변화에 동작해도 fixed-shape ONNX와 sidecar가 충돌한다. 현재 `dev` 모델의 200px ONNX와 250px 메타데이터 불일치가 알려진 사례다.
+전처리와 sidecar 생성은 `detected_image_width`, `detected_label_length` 등을 사용하지만 `build_model()`은 생성자 원본 필드인 `image_width`, `label_length`를 사용한다. 학습 이미지 크기가 기본값과 다르면 PyTorch CNN은 일부 폭 변화에 동작해도 fixed-shape ONNX와 sidecar가 충돌한다.
 
 ### 7.3 제공된 운영 문서 일부가 현재 코드와 다름
 

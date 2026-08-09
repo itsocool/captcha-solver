@@ -4,9 +4,7 @@
     "LOWER_CASE": "abcdefghijklmnopqrstuvwxyz",
     "UPPER_CASE": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
     "ALPHABET": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
-    "ALPHA_NUMERIC": "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
-    "CAPTCHA_CHAR_SETS": "2345678bcdefgmnpwxy",
-    "DEV_CHAR_SETS": "2345678ABCDEFGHKLMNPRSTUVWYZabcdefhklmnoprstuvwyz"
+    "ALPHA_NUMERIC": "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
   },
   "train_data_defaults": {
     "backend": "pytorch",
@@ -19,26 +17,6 @@
     "threshold": 255
   },
   "captcha_types": {
-    "default": {
-      "captcha_id": "default",
-      "name": "기본캡챠",
-      "desc": "기본 캡챠",
-      "train_data": {
-        "captcha_id": "default",
-        "label_length": 5,
-        "characters": "2345678bcdefgmnpwxy"
-      }
-    },
-    "dev": {
-      "captcha_id": "dev",
-      "name": "개발중",
-      "desc": "개발중",
-      "train_data": {
-        "captcha_id": "dev",
-        "label_length": 6,
-        "characters": "2345678ABCDEFGHKLMNPRSTUVWYZabcdefhklmnoprstuvwyz"
-      }
-    },
     "supreme_court": {
       "captcha_id": "supreme_court",
       "name": "대법원",

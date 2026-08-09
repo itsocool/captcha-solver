@@ -69,7 +69,7 @@ models/
 └── <captcha_id>.meta.json  # image_width, image_height, label_length, characters, threshold, preprocess
 ```
 
-등록된 CAPTCHA ID는 `default`, `dev`, `supreme_court`, `gov24`, `wetax`, `kshop` 여섯 가지입니다. DB의 기본 서비스 대상은 `supreme_court`, `gov24`, `wetax`, `kshop` 네 가지입니다. 학습 데이터가 있으면 정렬된 `images/train/*.png` 목록의 마지막 PNG를 열어 이미지 크기를 감지하고, 파일명에서 레이블 길이와 문자 집합을 감지합니다.
+등록된 CAPTCHA ID는 `supreme_court`, `gov24`, `wetax`, `kshop` 네 가지이며, 기본값은 `supreme_court`입니다. DB의 서비스 대상도 같은 네 가지입니다. 학습 데이터가 있으면 정렬된 `images/train/*.png` 목록의 마지막 PNG를 열어 이미지 크기를 감지하고, 파일명에서 레이블 길이와 문자 집합을 감지합니다.
 
 CRNN은 입력에서 특징 맵 높이 `H/8`, 시간축 너비 `W/4`를 출력합니다. 고정 길이 CTC 디코딩은 `W/4 >= label_length`를 요구하므로 모델 입력 폭을 레이블 길이보다 충분히 크게 유지하세요.
 
