@@ -25,4 +25,6 @@ model_base_dir = engine.train_model(
     use_amp=use_amp,
 )
 print(f"Model trained and saved at: {model.train_data.get_model_path()}")
+print(f"  torch.export: {model.train_data.get_export_path()}")
+print(f"  ONNX:         {model.train_data.get_onnx_path()}")
 print("Done!")

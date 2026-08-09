@@ -22,7 +22,8 @@ graph TD
     TD --> Core[core.py / PyTorchModel + CRNN]
     Engine[engine.py / Registry + Orchestration] --> TD
     Engine --> Core
-    Core --> PT[model.pt]
+    Core --> PT[model.pth]
+    Core --> PT2[model.pt2]
     Core --> ONNX[model.onnx]
     PT --> CLIpy[main.py]
     PT --> FastAPI[web / FastAPI]
@@ -73,14 +74,14 @@ graph TD
 4. 파일명의 각 문자는 1부터 시작하는 클래스 인덱스로 변환된다. 0은 CTC blank다.
 5. CRNN은 그레이스케일 이미지를 CNN 특징으로 만들고 너비 방향을 시계열로 바꾼 뒤 2층 양방향 LSTM과 출력 projection을 통과시킨다.
 6. `ctc` 또는 `focal` 손실로 AdamW 학습을 수행한다. CUDA에서 AMP, gradient clipping, 선형 warmup과 cosine decay를 사용한다.
-7. 검증 손실이 개선될 때 `model.pt.tmp`에 state dict를 저장한다. 종료 후 `.tmp`를 `model.pt`로 승격하고 ONNX도 내보낸다.
+7. 검증 손실이 개선될 때 `model.pth.tmp`에 state dict를 저장한다. 종료 후 `.tmp`를 `model.pth`로 승격하고, 그 파일을 다시 읽어 `model.pt2`와 `model.onnx`를 내보낸다.
 
 CNN의 풀링은 `(2,2) → (2,2) → (2,1)`이므로 출력은 대략 `H/8 × W/4`다. 따라서 CTC 시간축 조건은 `floor(image_width / 4) >= label_length`다. 기존 `AGENTS.md`의 `W/16` 설명은 현재 코드와 맞지 않는다.
 
 ### 4.2 Python 단건 예측 흐름
 
 1. CLI나 웹 서비스가 `engine.predict()`를 호출한다.
-2. 모델이 아직 없으면 `model.pt`를 읽어 CRNN에 state dict를 로드하고 eval 모드로 전환한다.
+2. 모델이 아직 없으면 `model.pth`를 읽어 CRNN에 state dict를 로드하고 eval 모드로 전환한다.
 3. PIL 이미지에 CAPTCHA별 전처리와 eval transform을 적용하여 `(1, 1, H, W)` 텐서를 만든다.
 4. CRNN이 `(T, 1, C)` 로짓을 출력하고 log-softmax를 적용한다.
 5. 고정 길이 prefix beam search가 blank/문자 종료 확률을 합산하고 기대 길이를 채울 수 없는 prefix를 제거한다.
@@ -141,7 +142,7 @@ sequenceDiagram
 | `CRNN.forward()` | `core.py` | CNN → feature projection → SpecAugment → BiLSTM → logits/CTC loss |
 | `PyTorchModel.split_dataset()` | `core.py` | 파일명 라벨을 토큰화하고 train/validation loader 생성 |
 | `PyTorchModel.train_model()` | `core.py` | 최적화, 검증, early stopping, 저장 및 export |
-| `PyTorchModel.load_prediction_model()` | `core.py` | CRNN을 만들고 `model.pt` state dict 로드 |
+| `PyTorchModel.load_prediction_model()` | `core.py` | CRNN을 만들고 `model.pth` state dict 로드 |
 | `ctc_beam_decode_fixed_length()` | `core.py` | 하드 길이 제약을 둔 CTC prefix beam search |
 | `preload_models()` | `web/services/captcha.py` | 서비스 모델 로드와 더미 텐서 워밍업, 상태 기록 |
 | `predict_from_bytes()` | `web/services/captcha.py` | 서비스 검증, 임시 파일 생성, Python 엔진 호출 |

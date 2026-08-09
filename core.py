@@ -347,6 +347,18 @@ class CRNN(nn.Module):
         
         return out, None
 
+class _InferenceWrapper(nn.Module):
+    """export 시 추론 전용 forward 만 노출한다 (학습용 y/criterion 인자를 감춘다)."""
+
+    def __init__(self, model: nn.Module):
+        super().__init__()
+        self.model = model
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        out, _ = self.model(x, None, None)
+        return out
+
+
 class CaptchaDataset(Dataset):
     """PyTorch Dataset for CAPTCHA images."""
     
@@ -830,20 +842,28 @@ class PyTorchModel(BaseModel):
             label = "Temp model" if temp else "Final model"
             print(f"Model saved - {label}: {target}")
 
-    def finalize_artifacts(self, model_path: str, verify: bool = True) -> str:
-        """확정된 체크포인트 하나에서 ONNX 를 내보내고 동등성을 검증한다.
+    def finalize_artifacts(self, model_path: str, verify: bool = True) -> Dict[str, str]:
+        """확정된 체크포인트 하나에서 나머지 아티팩트를 내보내고 동등성을 검증한다.
 
         메모리에 남은 모델이 아니라 **디스크의 체크포인트를 다시 읽어서** export 한다.
-        학습 종료 시 `.tmp` 가 `.pt` 로 승격되는데, 예전에는 메모리 모델에서 export 해
-        `.pt` 와 `.onnx` 가 서로 다른 에폭이 되는 일이 있었다(kshop 사례).
+        학습 종료 시 `.tmp` 가 `.pth` 로 승격되는데, 예전에는 메모리 모델에서 export 해
+        체크포인트와 ONNX 가 서로 다른 에폭이 되는 일이 있었다(kshop 사례).
+
+        세 산출물의 역할:
+            model.pth  - state_dict 체크포인트. 파이썬 추론과 재학습의 기준.
+            model.pt2  - torch.export 아카이브. 그래프까지 고정해 파이썬 코드 없이 로드.
+            model.onnx - ONNX. Rust CLI / Spring Boot / ConsoleApp 이 읽는다.
 
         Returns:
-            생성된 ONNX 경로
+            {"checkpoint": ..., "export": ..., "onnx": ...} 경로 매핑
         """
         self.model.load_state_dict(
             torch.load(model_path, map_location=self.device, weights_only=False)
         )
         self.model.eval()
+
+        export_path = self.train_data.get_export_path()
+        self.export_pt2(export_path)
 
         onnx_path = self.train_data.get_onnx_path()
         self.export_onnx(onnx_path)
@@ -851,7 +871,7 @@ class PyTorchModel(BaseModel):
         if verify:
             self.verify_onnx_export(onnx_path)
 
-        return onnx_path
+        return {"checkpoint": model_path, "export": export_path, "onnx": onnx_path}
 
     def verify_onnx_export(self, onnx_path: str, num_samples: int = 8,
                            logit_tol: float = 0.5) -> None:
@@ -921,38 +941,60 @@ class PyTorchModel(BaseModel):
                   f"로짓 최대 오차 {worst_diff:.4g}")
 
 
+    def _export_inputs(self) -> Tuple[nn.Module, torch.Tensor]:
+        """export 용 추론 전용 wrapper 와 더미 입력. ONNX 와 .pt2 가 함께 쓴다."""
+        if self.model is None:
+            raise ValueError("Model not loaded. Call load_prediction_model() first.")
+
+        wrapper = _InferenceWrapper(self.model)
+        wrapper.eval()
+        dummy_input = torch.randn(
+            1, 1, self.train_data.image_height, self.train_data.image_width,
+        ).to(self.device)
+        return wrapper, dummy_input
+
+    def export_pt2(self, export_path: str):
+        """`torch.export` 아카이브(.pt2)로 내보내기.
+
+        state_dict 와 달리 그래프까지 담기므로, 로드하는 쪽에 모델 정의 코드가 없어도
+        된다. 배치 1 고정으로 내보낸다 — ONNX 와 같은 시그니처를 유지한다.
+
+        Args:
+            export_path: .pt2 파일 저장 경로
+        """
+        wrapper, dummy_input = self._export_inputs()
+
+        if self.verbose > 0:
+            print(f"torch.export: {export_path}")
+
+        os.makedirs(os.path.dirname(export_path), exist_ok=True)
+        # torch.export.save 는 확장자가 .pt2 가 아니면 경고하므로 스테이징도 .pt2 로 끝낸다.
+        staging = export_path + '.writing.pt2'
+        try:
+            with torch.inference_mode():
+                exported = torch.export.export(wrapper, (dummy_input,))
+            torch.export.save(exported, staging)
+            os.replace(staging, export_path)
+        except Exception:
+            if os.path.exists(staging):
+                os.remove(staging)
+            raise
+
+        if self.verbose > 0:
+            print(f"torch.export done (fixed batch=1): {export_path}")
+
     def export_onnx(self, onnx_path: str, fixed_batch: bool = True):
         """ONNX 형식으로 모델 내보내기.
-        
+
         Args:
             onnx_path: ONNX 파일 저장 경로
             fixed_batch: 배치 크기를 1로 고정할지 여부 (기본값: True)
                         LSTM의 동적 배치 경고를 방지하려면 True 권장
         """
+        wrapper, dummy_input = self._export_inputs()
 
-        if self.model is None:
-            raise ValueError("Model not loaded. Call load_prediction_model() first.")
-        
         if self.verbose > 0:
             print(f"ONNX export: {onnx_path}")
-        
-        # ONNX export용 wrapper 클래스 - 추론 전용 forward만 노출
-        class ONNXWrapper(nn.Module):
-            def __init__(self, model):
-                super().__init__()
-                self.model = model
-            
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                # 원본 모델의 forward 호출 (y=None, criterion=None)
-                out, _ = self.model(x, None, None)
-                return out
-        
-        wrapper = ONNXWrapper(self.model)
-        wrapper.eval()
-        batch_size = 1
-        dummy_input = torch.randn(
-            batch_size, 1, self.train_data.image_height, self.train_data.image_width,
-        ).to(self.device)
         # 레거시 TorchScript 기반 export
         export_kwargs = {
             'input_names': ['input'],

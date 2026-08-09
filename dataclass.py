@@ -146,9 +146,15 @@ class TrainData(BaseModel):
         return model_base_dir
 
     def get_model_path(self) -> str:
-        return os.path.join(self.get_model_base_dir(), "model.pt")
+        """학습 체크포인트. `torch.save(state_dict)` 로 저장하고 파이썬 추론이 읽는다."""
+        return os.path.join(self.get_model_base_dir(), "model.pth")
+
+    def get_export_path(self) -> str:
+        """`torch.export` 산출물. 그래프와 가중치를 함께 담은 PyTorch 2 아카이브."""
+        return os.path.join(self.get_model_base_dir(), "model.pt2")
 
     def get_onnx_path(self) -> str:
+        """ONNX 산출물. Rust CLI / Spring Boot / ConsoleApp 이 읽는다."""
         return os.path.join(self.get_model_base_dir(), "model.onnx")
 
     def get_train_info(self) -> Tuple[str, str, str, int, int, int, List[str], int]:
