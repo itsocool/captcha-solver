@@ -84,7 +84,7 @@ CNN의 풀링은 `(2,2) → (2,2) → (2,1)`이므로 출력은 대략 `H/8 × W
 3. PIL 이미지에 CAPTCHA별 전처리와 eval transform을 적용하여 `(1, 1, H, W)` 텐서를 만든다.
 4. CRNN이 `(T, 1, C)` 로짓을 출력하고 log-softmax를 적용한다.
 5. 고정 길이 prefix beam search가 blank/문자 종료 확률을 합산하고 기대 길이를 채울 수 없는 prefix를 제거한다.
-6. 최종 후보 중 최고 문자열을 반환한다. confidence는 살아남은 최종 후보들의 합에 대한 최고 후보의 정규화 확률이다.
+6. 최종 후보 중 최고 문자열을 반환한다. confidence는 길이 제약으로 조건부화한 사후확률 `P(문자열 | 이미지, 길이 = label_length)`이며, 분모인 길이 L의 총 확률은 `length_logprob()`의 DP로 정확히 구한다(beam 구성과 무관).
 
 ### 4.3 FastAPI 요청 흐름
 

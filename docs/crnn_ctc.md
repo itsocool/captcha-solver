@@ -251,20 +251,27 @@ def ctc_beam_decode_fixed_length(
     mapping_inv: Dict[int, str], # index -> character
     expected_length: int,        # 예상 레이블 길이
     beam_width: int = 10,
-    length_bonus: float = 0.5
+    unk_token: str = "[UNK]",
+    top_k: int = 0,
 ) -> Tuple[str, float]:
 ```
 
 **디코딩 흐름**:
-1. 빈도별 타임스텝 순으로 beam 확장 (blank, 동일문자, 신규문자)
-2. 남은 시간보다 기대 길이가 크면 가지치기
-3. `length_bonus`로 예상 길이에 맞는 결과점수 상향
+1. 타임스텝 순으로 beam 확장 (blank, 동일문자, 신규문자)
+2. 기대 길이를 초과하거나 남은 프레임으로 채울 수 없는 prefix 가지치기
+3. prefix 점수는 blank 종료 경로와 문자 종료 경로를 log-sum-exp 로 합산한 값
+   — 즉 단일 정렬 경로가 아니라 P(문자열 | 이미지)
 4. 최종 결과에서 예상 길이에 정확히 매칭되는 beam 선택
 
-**신뢰도 계산**:
+**신뢰도 계산**: 길이 제약으로 조건부화한 사후확률
 ```python
-confidence = exp(best_score / max(len(best_prefix), 1))
+confidence = exp(best_score - length_logprob(log_probs, expected_length))
+#           = P(예측 문자열 | 이미지, 길이 = expected_length)
 ```
+
+분모 `length_logprob()` 는 길이가 정확히 L 인 **모든** 문자열의 확률 합을 O(T·L·C) DP 로
+정확히 구한다. 살아남은 beam 집합으로 정규화하면 1위와 2위의 비율만 재게 되어,
+`beam_width` 를 바꿀 때마다 값이 흔들리고 학습 분포 밖 입력에도 0.5 언저리를 돌려준다.
 
 ---
 

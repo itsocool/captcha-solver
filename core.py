@@ -1033,8 +1033,9 @@ class PyTorchModel(BaseModel):
             
             out = out.permute(1, 0, 2)  # (N, T, C)
 
-            # log-probabilities
-            log_probs = out.log_softmax(2)
+            # log-probabilities. AMP를 쓰면 out이 fp16이라 그대로 log_softmax를 태우면
+            # 신뢰도에 양자화 잡음이 섞이고 ONNX 경로와 값이 갈린다. float32로 올려서 계산.
+            log_probs = out.float().log_softmax(2)
             log_probs_np = log_probs.cpu().numpy()[0]  # (T, C)
             
             # 고정 길이 Beam Search 디코딩
@@ -1096,7 +1097,7 @@ class PyTorchModel(BaseModel):
                     out, _ = self.model(batch_input)
                 
                 out = out.permute(1, 0, 2)  # (N, T, C)
-                log_probs = out.log_softmax(2)
+                log_probs = out.float().log_softmax(2)  # AMP fp16 잡음 차단 (predict 주석 참고)
                 log_probs_np = log_probs.cpu().numpy()  # (N, T, C)
             
             # 각 샘플에 대해 디코딩
@@ -1122,6 +1123,67 @@ def _log_add(a: float, b: float) -> float:
     return hi + float(np.log1p(np.exp(lo - hi)))
 
 
+def length_logprob(log_probs: np.ndarray, expected_length: int) -> float:
+    """
+    log P(|y| = expected_length | 이미지). 길이가 정확히 L인 **모든** 라벨열의 확률 합.
+
+    신뢰도를 정규화할 때 쓰는 분모입니다. beam에 무엇이 살아남았는지와 무관하게
+    결정되므로, beam_width를 바꿔도 값이 흔들리지 않습니다.
+
+    상태는 (k = 지금까지 emit한 문자 수, c = 마지막 emit 문자, 0은 "아직 없음"):
+        B[k][c] - 현재 프레임이 blank
+        A[k][c] - 현재 프레임이 문자 c를 emit (c >= 1)
+    프레임마다 전체 합으로 스케일링해 언더플로를 피하고 로그 스케일만 누적합니다.
+    비용은 O(T * L * C)로, beam search에 비하면 무시할 수준입니다.
+
+    Args:
+        log_probs: (T, num_classes) log 확률. 인덱스 0은 blank
+        expected_length: 기대 레이블 길이
+
+    Returns:
+        log 확률. 길이 L이 도달 불가능하면 -inf
+    """
+    T, num_classes = log_probs.shape
+    L = expected_length
+    if L <= 0 or T == 0 or T < L:
+        return NEG_INF
+
+    probs = np.exp(log_probs)
+    A = np.zeros((L + 1, num_classes))
+    B = np.zeros((L + 1, num_classes))
+    B[0, 0] = 1.0
+    log_scale = 0.0
+
+    for t in range(T):
+        frame = probs[t]
+        total = A + B                 # 상태별 총 확률
+        row_sum = total.sum(axis=1)   # k별 총합
+
+        # blank: k와 마지막 문자를 그대로 유지
+        next_B = total * frame[0]
+
+        # 같은 문자를 blank 없이 반복: 문자열이 그대로이므로 k 유지
+        next_A = np.zeros_like(A)
+        next_A[:, 1:] = A[:, 1:] * frame[1:]
+
+        # 새 문자 c로 확장하여 k+1: 마지막 문자가 c가 아닌 모든 경로(row_sum - A[k][c])와
+        # 마지막 문자가 c였지만 blank를 거친 경로(B[k][c])의 합 = row_sum - A[k][c]
+        extend = np.maximum(row_sum[:, None] - A, 0.0) * frame[None, :]
+        next_A[1:, 1:] += extend[:-1, 1:]
+
+        A, B = next_A, next_B
+
+        scale = A.sum() + B.sum()
+        if scale <= 0.0:
+            return NEG_INF
+        A /= scale
+        B /= scale
+        log_scale += float(np.log(scale))
+
+    tail = float((A[L] + B[L]).sum())
+    return float(np.log(tail)) + log_scale if tail > 0.0 else NEG_INF
+
+
 def ctc_beam_decode_fixed_length(
     log_probs: np.ndarray,
     mapping_inv: Dict[int, str],
@@ -1137,15 +1199,21 @@ def ctc_beam_decode_fixed_length(
     log-sum-exp로 **합산**합니다. 즉 beam 점수가 곧 P(문자열 | 이미지)이며,
     단일 정렬(alignment) 경로 확률이 아닙니다.
 
-    신뢰도 = 최종 beam 집합 안에서 정규화한 사후확률
-             exp(best - logsumexp(all)). 1위 후보가 압도적이면 1.0에 가깝고,
-             2위와 접전이면 0.5 부근으로 떨어집니다.
+    신뢰도 = P(예측 문자열 | 이미지, 길이 = expected_length)
+           = exp(best_score - length_logprob(...))
+
+    분모는 살아남은 beam의 합이 아니라 길이 L인 모든 문자열의 확률 합입니다.
+    beam 집합으로 정규화하면 1위가 2위보다 얼마나 나은지만 재게 되어,
+    (a) beam_width라는 튜닝 노브에 따라 값이 흔들리고
+    (b) beam 밖으로 빠져나간 확률 질량을 무시해 학습 분포 밖 입력에서도
+        0.5 언저리의 애매한 값을 돌려줍니다.
+    길이 조건부 사후확률은 두 문제가 모두 없고, 임계값을 그대로 신뢰할 수 있습니다.
 
     Args:
         log_probs: (T, num_classes) log 확률. 인덱스 0은 blank
         mapping_inv: index -> character 매핑
         expected_length: 기대 레이블 길이 (하드 제약으로 사용)
-        beam_width: 유지할 prefix 수
+        beam_width: 유지할 prefix 수 (예측 문자열에만 영향, 신뢰도 척도와는 무관)
         unk_token: 매핑에 없는 인덱스 대체 토큰
         top_k: 프레임당 후보 문자 수 (0이면 beam_width * 2). blank는 항상 포함
 
@@ -1237,11 +1305,14 @@ def ctc_beam_decode_fixed_length(
     pool = exact if exact else scored
     best_prefix, best_score = max(pool, key=lambda item: item[1])
 
-    # 신뢰도: 살아남은 후보들 사이에서 정규화한 사후확률
-    total = NEG_INF
-    for _, score in scored:
-        total = _log_add(total, score)
-    confidence = float(np.exp(best_score - total)) if total > NEG_INF else 0.0
+    # 신뢰도: 길이 L로 조건부화한 사후확률. 분모는 beam과 무관하게 정확히 구한다.
+    log_z = length_logprob(log_probs, expected_length) if exact else NEG_INF
+    if log_z == NEG_INF:
+        # 길이 L 도달 불가(T < L 등). 남은 후보들 사이의 상대 점수로 대체한다.
+        log_z = NEG_INF
+        for _, score in scored:
+            log_z = _log_add(log_z, score)
+    confidence = float(np.exp(best_score - log_z)) if log_z > NEG_INF else 0.0
 
     text = ''.join(mapping_inv.get(c, unk_token) for c in best_prefix)
     return text, min(1.0, max(0.0, confidence))

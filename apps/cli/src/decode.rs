@@ -2,7 +2,8 @@
 //!
 //! prefix별로 blank로 끝나는 경로(p_b)와 문자로 끝나는 경로(p_nb)의 확률을
 //! log-sum-exp로 합산한다. beam 점수가 곧 P(문자열 | 이미지)이며,
-//! 신뢰도는 최종 후보 집합에서 정규화한 사후확률이다.
+//! 신뢰도는 길이 제약으로 조건부화한 사후확률
+//! P(예측 문자열 | 이미지, 길이 = expected_length) 이다.
 
 use std::collections::HashMap;
 
@@ -31,6 +32,87 @@ fn top_classes(frame: &[f64], k: usize) -> Vec<usize> {
 		selected.push(0);
 	}
 	selected
+}
+
+/// log P(|y| = expected_length | 이미지). 길이가 정확히 L인 **모든** 라벨열의 확률 합.
+///
+/// 신뢰도를 정규화할 때 쓰는 분모다. beam에 무엇이 살아남았는지와 무관하게 결정되므로
+/// beam_width를 바꿔도 값이 흔들리지 않는다.
+///
+/// 상태는 (k = 지금까지 emit한 문자 수, c = 마지막 emit 문자, 0은 "아직 없음"):
+///   `b[k][c]` 현재 프레임이 blank / `a[k][c]` 현재 프레임이 문자 c를 emit (c >= 1).
+/// 프레임마다 전체 합으로 스케일링해 언더플로를 피하고 로그 스케일만 누적한다.
+/// 비용은 O(T * L * C)로 beam search에 비하면 무시할 수준이다.
+pub fn length_logprob(log_probs: &[Vec<f64>], expected_length: usize) -> f64 {
+	let num_frames = log_probs.len();
+	let l = expected_length;
+	if l == 0 || num_frames == 0 || num_frames < l {
+		return NEG_INF;
+	}
+	let num_classes = log_probs[0].len();
+	let idx = |k: usize, c: usize| k * num_classes + c;
+
+	let mut a = vec![0.0f64; (l + 1) * num_classes];
+	let mut b = vec![0.0f64; (l + 1) * num_classes];
+	b[idx(0, 0)] = 1.0;
+	let mut log_scale = 0.0f64;
+
+	for frame_lp in log_probs {
+		let frame: Vec<f64> = frame_lp.iter().map(|v| v.exp()).collect();
+		let mut next_a = vec![0.0f64; a.len()];
+		let mut next_b = vec![0.0f64; b.len()];
+
+		for k in 0..=l {
+			let mut row_sum = 0.0;
+			for c in 0..num_classes {
+				row_sum += a[idx(k, c)] + b[idx(k, c)];
+			}
+
+			// blank: k와 마지막 문자를 그대로 유지
+			for c in 0..num_classes {
+				next_b[idx(k, c)] = (a[idx(k, c)] + b[idx(k, c)]) * frame[0];
+			}
+
+			// 같은 문자를 blank 없이 반복: 문자열이 그대로이므로 k 유지
+			for c in 1..num_classes {
+				next_a[idx(k, c)] += a[idx(k, c)] * frame[c];
+			}
+
+			// 새 문자 c로 확장하여 k+1: 마지막 문자가 c가 아닌 모든 경로와
+			// 마지막 문자가 c였지만 blank를 거친 경로의 합 = row_sum - a[k][c]
+			if k < l {
+				for c in 1..num_classes {
+					let mass = (row_sum - a[idx(k, c)]).max(0.0);
+					next_a[idx(k + 1, c)] += mass * frame[c];
+				}
+			}
+		}
+
+		a = next_a;
+		b = next_b;
+
+		let scale: f64 = a.iter().sum::<f64>() + b.iter().sum::<f64>();
+		if scale <= 0.0 {
+			return NEG_INF;
+		}
+		for v in a.iter_mut() {
+			*v /= scale;
+		}
+		for v in b.iter_mut() {
+			*v /= scale;
+		}
+		log_scale += scale.ln();
+	}
+
+	let mut tail = 0.0;
+	for c in 0..num_classes {
+		tail += a[idx(l, c)] + b[idx(l, c)];
+	}
+	if tail > 0.0 {
+		tail.ln() + log_scale
+	} else {
+		NEG_INF
+	}
 }
 
 /// `log_probs`: (T, C) log 확률. 인덱스 0은 blank.
@@ -131,7 +213,8 @@ pub fn ctc_beam_decode_fixed_length(
 
 	// 기대 길이에 맞는 후보 우선, 없으면 전체에서 최고 점수
 	let exact: Vec<&(&Vec<usize>, f64)> = scored.iter().filter(|(p, _)| p.len() == expected_length).collect();
-	let (best_prefix, best_score) = if !exact.is_empty() {
+	let has_exact = !exact.is_empty();
+	let (best_prefix, best_score) = if has_exact {
 		let best = exact
 			.iter()
 			.max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
@@ -145,8 +228,13 @@ pub fn ctc_beam_decode_fixed_length(
 		(best.0, best.1)
 	};
 
-	let total = scored.iter().fold(NEG_INF, |acc, (_, score)| log_add(acc, *score));
-	let confidence = if total > NEG_INF { (best_score - total).exp() } else { 0.0 };
+	// 신뢰도: 길이 L로 조건부화한 사후확률. 분모는 beam과 무관하게 정확히 구한다.
+	// 길이 L 도달 불가(T < L 등)면 남은 후보들 사이의 상대 점수로 대체한다.
+	let mut log_z = if has_exact { length_logprob(log_probs, expected_length) } else { NEG_INF };
+	if log_z == NEG_INF {
+		log_z = scored.iter().fold(NEG_INF, |acc, (_, score)| log_add(acc, *score));
+	}
+	let confidence = if log_z > NEG_INF { (best_score - log_z).exp() } else { 0.0 };
 
 	let text: String = best_prefix
 		.iter()
@@ -233,6 +321,98 @@ mod tests {
 		let (text, conf) = ctc_beam_decode_fixed_length(&lp, &CHARSET, 3, 10);
 		assert_eq!(text.chars().count(), 3);
 		assert!((0.0..=1.0).contains(&conf));
+	}
+
+	/// 모든 프레임 경로를 열거해 길이 L인 라벨열의 확률 합 (작은 입력 전용).
+	fn brute_force_length_prob(log_probs: &[Vec<f64>], expected_length: usize) -> f64 {
+		let num_frames = log_probs.len();
+		let num_classes = log_probs[0].len();
+		let mut total = 0.0;
+		for mut code in 0..num_classes.pow(num_frames as u32) {
+			let mut path = Vec::with_capacity(num_frames);
+			for _ in 0..num_frames {
+				path.push(code % num_classes);
+				code /= num_classes;
+			}
+			let mut collapsed = 0usize;
+			let mut prev = usize::MAX;
+			for &c in &path {
+				if c != prev && c != 0 {
+					collapsed += 1;
+				}
+				prev = c;
+			}
+			if collapsed == expected_length {
+				let mut p = 1.0;
+				for (t, &c) in path.iter().enumerate() {
+					p *= log_probs[t][c].exp();
+				}
+				total += p;
+			}
+		}
+		total
+	}
+
+	#[test]
+	fn length_logprob_matches_brute_force() {
+		let lp = frames(&[
+			[0.4, 0.2, 0.3, 0.1],
+			[0.1, 0.5, 0.2, 0.2],
+			[0.25, 0.25, 0.25, 0.25],
+			[0.6, 0.1, 0.2, 0.1],
+		]);
+		for l in 1..=3 {
+			let got = length_logprob(&lp, l).exp();
+			let want = brute_force_length_prob(&lp, l);
+			assert!((got - want).abs() < 1e-12, "L={l}: dp={got} brute={want}");
+		}
+	}
+
+	#[test]
+	fn length_distribution_sums_to_one() {
+		let lp = frames(&[
+			[0.4, 0.2, 0.3, 0.1],
+			[0.1, 0.5, 0.2, 0.2],
+			[0.25, 0.25, 0.25, 0.25],
+			[0.6, 0.1, 0.2, 0.1],
+		]);
+		let mut total = brute_force_length_prob(&lp, 0);
+		for l in 1..=4 {
+			total += length_logprob(&lp, l).exp();
+		}
+		assert!((total - 1.0).abs() < 1e-12, "total = {total}");
+	}
+
+	#[test]
+	fn ambiguous_input_is_not_confident() {
+		// 어느 문자도 뚜렷하지 않으면 신뢰도가 낮아야 한다. beam 내부 정규화는
+		// 1위와 2위의 비율만 보므로 이런 입력에도 높은 값을 줄 수 있다.
+		let lp = frames(&[[0.4, 0.2, 0.2, 0.2]; 6]);
+		let (text, conf) = ctc_beam_decode_fixed_length(&lp, &CHARSET, 3, 10);
+		assert_eq!(text.chars().count(), 3);
+		assert!(conf < 0.1, "conf = {conf}");
+	}
+
+	#[test]
+	fn confidence_converges_as_beam_widens() {
+		// 분모가 beam과 무관하게 고정이라 값이 단조 증가하며 고정점에 수렴한다.
+		let lp = frames(&[
+			[0.3, 0.3, 0.2, 0.2],
+			[0.2, 0.4, 0.2, 0.2],
+			[0.5, 0.2, 0.2, 0.1],
+			[0.1, 0.3, 0.4, 0.2],
+			[0.4, 0.2, 0.2, 0.2],
+			[0.2, 0.2, 0.3, 0.3],
+		]);
+		let confs: Vec<f64> = [5usize, 15, 40, 80]
+			.iter()
+			.map(|&w| ctc_beam_decode_fixed_length(&lp, &CHARSET, 3, w).1)
+			.collect();
+		for pair in confs.windows(2) {
+			assert!(pair[0] <= pair[1] + 1e-12, "단조 증가가 깨졌다: {confs:?}");
+		}
+		let n = confs.len();
+		assert!((confs[n - 1] - confs[n - 2]).abs() < 1e-9, "수렴하지 않았다: {confs:?}");
 	}
 
 	#[test]
