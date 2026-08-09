@@ -5,6 +5,7 @@
 - Python 3.12 (`requires-python = "==3.12.*"`), package manager: **uv** (lockfile: `uv.lock`). 설치: `uv sync`
 - Run web API (dev): `uv run fastapi dev web/app.py --host 0.0.0.0 --port 8000`
 - Run web API (prod): `docker compose up` (호스트 5001 → 컨테이너 8000)
+- Run Spring Boot web API (dev): `apps/springBoot/devserver.sh {start|stop|restart|status}` (백그라운드, 포트 5000)
 - Run CLI: `uv run python main.py -c supreme_court -i captcha_data/<id>/images/<path>.png`
 
 ## Architecture
