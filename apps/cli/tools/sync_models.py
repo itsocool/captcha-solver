@@ -1,6 +1,6 @@
 """CLI가 쓸 모델 자산을 `apps/cli/models/`에 동기화한다.
 
-- `{captcha_id}.onnx`      : captcha_data/<id>/<rev>/model/model_full.pt.onnx 복사본
+- `{captcha_id}.onnx`      : captcha_data/<id>/<rev>/model/model.onnx 복사본
 - `{captcha_id}.meta.json` : 문자셋·크기·전처리 종류 등 CLI가 알아야 할 메타데이터
 
 CLI는 ONNX만으로는 문자셋과 전처리 방식을 알 수 없으므로 메타데이터가 반드시 필요하다.
@@ -44,7 +44,7 @@ def main() -> int:
 		if targets and captcha_id not in targets:
 			continue
 
-		source_onnx = captcha_type.train_data.get_model_path() + ".onnx"
+		source_onnx = captcha_type.train_data.get_onnx_path()
 		if not os.path.exists(source_onnx):
 			print(f"{captcha_id}: onnx 없음, 건너뜀 ({source_onnx})")
 			continue

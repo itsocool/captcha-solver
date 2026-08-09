@@ -6,8 +6,8 @@ PyTorch 학습부터 Python·Rust·Spring Boot 추론까지 한 저장소에서 
 
 | 방식 | 용도 | 모델/런타임 | 시작점 |
 |---|---|---|---|
-| Python CLI | 이미지 한 장, 개발·디버깅 | `model_full.pt`, Python/PyTorch | `uv run python main.py ...` |
-| FastAPI | 웹 UI와 HTTP API | `model_full.pt`, Python/PyTorch | `uv run fastapi dev web/app.py` |
+| Python CLI | 이미지 한 장, 개발·디버깅 | `model.pt`, Python/PyTorch | `uv run python main.py ...` |
+| FastAPI | 웹 UI와 HTTP API | `model.pt`, Python/PyTorch | `uv run fastapi dev web/app.py` |
 | Rust CLI | 독립 실행 파일·배포 | portable ONNX + `meta.json` | `apps/cli`의 `captcha-cli` |
 | Spring Boot | JVM HTTP 서비스 | portable ONNX + `meta.json` | `apps/springBoot` |
 
@@ -58,7 +58,7 @@ Python 원본은 다음 레이아웃을 사용합니다. 이미지 파일명(확
 ```text
 captcha_data/<captcha_id>/<rev>/
 ├── images/{train,pred}/
-└── model/{model_full.pt,model_jit.pt,model_full.pt.onnx}
+└── model/{model.pt,model.onnx}
 ```
 
 Rust·Spring은 portable 디렉터리로 ONNX와 메타데이터를 함께 배포합니다.

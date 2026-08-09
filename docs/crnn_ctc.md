@@ -318,9 +318,8 @@ train_loader, val_loader = model.split_dataset(
 
 | 형식 | 파일명 | 생성 |
 |------|--------|------|
-| PyTorch StateDict | `model_full.pt` | 학습 종료 시 |
-| TorchScript | `model_jit.pt` | 학습 종료 시 |
-| ONNX | `model_full.pt.onnx` | 학습 종료 시 |
+| PyTorch StateDict | `model.pt` | 학습 종료 시 |
+| ONNX | `model.onnx` | 학습 종료 시 |
 
 TorchScript/ONNX: inference 전용 forward(wrapper)로 export.
 

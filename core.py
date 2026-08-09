@@ -782,8 +782,7 @@ class PyTorchModel(BaseModel):
                     if early_stopping_patience > 0 and patience_counter >= early_stopping_patience:
                         # 최종 모델 저장 (early stopping으로 종료되지 않은 경우)
                         self.save_model(model_path)
-                        self.save_model_jit(model_path.replace('_full.pt', '_jit.pt'))
-                        self.export_onnx(model_path + '.onnx')
+                        self.export_onnx(self.train_data.get_onnx_path())
 
                         if self.verbose > 0:
                             print(f"\n[Early Stopping] Triggered after {epoch + 1} epochs")
@@ -800,8 +799,7 @@ class PyTorchModel(BaseModel):
         else:
             self.save_model(model_path)
             
-        self.save_model_jit(model_path.replace('_full.pt', '_jit.pt'))
-        self.export_onnx(model_path + '.onnx')
+        self.export_onnx(self.train_data.get_onnx_path())
         
         if self.verbose > 0:
             print("=" * 70)
@@ -842,41 +840,6 @@ class PyTorchModel(BaseModel):
                 print(f"  - Temp model: {temp_path}")
             else:
                 print(f"  - Final model: {model_path}")
-                
-    def save_model_jit(self, model_path: str):
-        """TorchScript 형식으로 모델 저장 (trace 방식)."""
-        if self.model is None:
-            raise ValueError("Model not loaded. Call load_prediction_model() first.")
-        
-        if self.verbose > 0:
-            print(f"TorchScript saving: {model_path}")
-        
-        # TorchScript용 wrapper 클래스 - 추론 전용 forward만 노출
-        class JITWrapper(nn.Module):
-            def __init__(self, model):
-                super().__init__()
-                self.model = model
-            
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                # 원본 모델의 forward 호출 (y=None, criterion=None)
-                out, _ = self.model(x, None, None)
-                return out
-        
-        wrapper = JITWrapper(self.model)
-        wrapper.eval()
-        
-        # trace용 더미 입력 생성
-        dummy_input = torch.randn(
-            1, 1, self.train_data.image_height, self.train_data.image_width
-        ).to(self.device)
-        
-        # TorchScript 변환 (trace 방식 - 타입 어노테이션 문제 회피)
-        with torch.no_grad():
-            traced_model = torch.jit.trace(wrapper, dummy_input)
-        traced_model.save(model_path)
-        
-        if self.verbose > 0:
-            print(f"TorchScript model saved: {model_path}")
                 
     def export_onnx(self, onnx_path: str, fixed_batch: bool = True):
         """ONNX 형식으로 모델 내보내기.

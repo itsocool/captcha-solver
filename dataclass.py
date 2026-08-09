@@ -146,7 +146,10 @@ class TrainData(BaseModel):
         return model_base_dir
 
     def get_model_path(self) -> str:
-        return os.path.join(self.get_model_base_dir(), "model_full.pt")
+        return os.path.join(self.get_model_base_dir(), "model.pt")
+
+    def get_onnx_path(self) -> str:
+        return os.path.join(self.get_model_base_dir(), "model.onnx")
 
     def get_train_info(self) -> Tuple[str, str, str, int, int, int, List[str], int]:
         iw = self.detected_image_width

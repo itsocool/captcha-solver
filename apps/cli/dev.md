@@ -46,7 +46,7 @@ $ captcha-cli -m supreme_court.onnx -i captcha.png --json
 
 ONNX 파일만 있으면 되는 게 아닙니다. 파이썬 쪽 전처리와 디코딩을 **바이트 단위로 동일하게** 재현해야 같은 결과가 나옵니다.
 
-### 3.1 모델 시그니처 (실측: `captcha_data/supreme_court/0/model/model_full.pt.onnx`)
+### 3.1 모델 시그니처 (실측: `captcha_data/supreme_court/0/model/model.onnx`)
 
 | 항목 | 값 |
 |------|-----|

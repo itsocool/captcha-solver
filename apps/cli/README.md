@@ -49,7 +49,7 @@ uv run python apps/cli/tools/sync_models.py kshop      # 특정 캡차만
 
 ```
 apps/cli/models/
-├── supreme_court.onnx        # captcha_data/<id>/<rev>/model/model_full.pt.onnx 복사본
+├── supreme_court.onnx        # captcha_data/<id>/<rev>/model/model.onnx 복사본
 ├── supreme_court.meta.json   # {image_width, image_height, label_length, characters, threshold, preprocess}
 ├── gov24.onnx
 └── ...
@@ -208,9 +208,10 @@ Error: 모델 입력 크기(200×50)와 메타데이터 크기(250×50)가 다�
 
 전처리 텐서 자체의 차이는 픽셀당 최대 0.10, 평균 0.0004~0.0015 수준입니다(리사이즈 필터 구현 차이).
 
-### kshop 불일치의 원인 — 포팅 문제가 아닙니다
+### kshop 불일치 — 해소됨 (포팅 문제가 아니었습니다)
 
-**`model_full.pt`와 `model_full.pt.onnx`의 가중치가 서로 다릅니다.** 동일한 입력 텐서를 두 아티팩트에 넣으면 결과가 갈립니다.
+`model_full.pt`와 `model_full.pt.onnx`의 **가중치가 서로 달랐던** 것이 원인이었습니다. 동일한 입력
+텐서를 두 아티팩트에 넣으면 결과가 갈렸습니다.
 
 ```
 정답(파일명): 050862
@@ -218,6 +219,24 @@ PyTorch(model_full.pt)  → 050186 (0.59)
 Rust CLI(onnx)          → 050862 (0.99)
 ```
 
-`core.py: train_model`이 학습 종료 시 베스트 체크포인트(`.tmp`)를 `.pt`로 승격한 뒤, JIT/ONNX는 **메모리에 남아 있는 마지막 에폭 가중치**로 export하기 때문입니다. kshop 100장 기준 정확도는 파이썬(.pt) 64%, CLI(.onnx) 86%로 오히려 ONNX 쪽이 좋습니다.
+`core.py: train_model`이 학습 종료 시 `.tmp` 체크포인트를 `.pt`로 승격한 뒤, JIT/ONNX 는
+**메모리에 남아 있는 마지막 에폭 가중치**로 export 했기 때문입니다. 승격된 `.tmp` 쪽이 오히려
+열세였습니다 — kshop pred 101장 기준 `.pt` 64/101, `.onnx` 87/101.
+
+측정으로 확인한 사실은 다음과 같습니다.
+
+| captcha | `.pt` vs `.onnx` 가중치 | `.pt` | `.onnx` |
+|---|---|---|---|
+| supreme_court | 달랐음 (로짓 0.11) | 200/200 | 200/200 |
+| gov24 | 달랐음 (로짓 2.99) | 200/200 | 200/200 |
+| wetax | 같았음 | 100/100 | 100/100 |
+| kshop | 달랐음 (로짓 7.82) | 64/101 | 87/101 |
+
+`model_jit.pt` 는 4종 모두 `.onnx` 와 가중치가 **완전히 동일**했습니다(둘 다 메모리 모델에서
+나왔으므로). 이를 이용해 `model.pt` 를 `model_jit.pt` 의 state dict 로 복구했고, 현재 `model.pt`
+와 `model.onnx` 는 4종 모두 예측이 101/101 일치합니다(로짓 오차 ~0.002, float 노이즈 수준).
+
+`model_jit.pt` 는 어디서도 로드하지 않는 데다 CUDA 로 trace 되어 CPU 에서 실행조차 되지 않아
+제거했습니다.
 
 정합성을 맞추려면 export 직전에 베스트 가중치를 다시 로드해야 합니다.
