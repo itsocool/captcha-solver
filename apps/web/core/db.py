@@ -39,11 +39,23 @@ def _add_missing_columns(conn: sqlite3.Connection) -> None:
 
 
 def init_db() -> None:
-	"""schema.sql 적용. IF NOT EXISTS / INSERT OR IGNORE 라 반복 실행해도 안전하다."""
-	schema_path = _resolve(get_settings().db_schema_path)
+	"""schema.sql 과 시드 SQL 을 순서대로 적용한다.
+
+	둘 다 IF NOT EXISTS / INSERT OR IGNORE 라 반복 실행해도 안전하다.
+	스키마 파일이 없으면 기동을 막지만, 시드는 없어도 건너뛴다.
+	"""
+	settings = get_settings()
+	schema_path = _resolve(settings.db_schema_path)
+	seed_path = _resolve(settings.db_seed_path)
+
 	with connect() as conn:
 		_add_missing_columns(conn)
 		conn.executescript(schema_path.read_text(encoding="utf-8"))
+
+		if seed_path.is_file():
+			conn.executescript(seed_path.read_text(encoding="utf-8"))
+		else:
+			print(f"[db] 시드 파일이 없어 건너뜁니다: {seed_path}")
 
 
 def get_service_config(reload: bool = False) -> dict:

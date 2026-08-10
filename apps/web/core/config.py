@@ -26,6 +26,7 @@ class Settings(BaseSettings):
 	db_path: str = "./db/captchaSolver.sqlite3"
 	database_url: str = "sqlite:///./db/captchaSolver.sqlite3"
 	db_schema_path: str = "./db/schema.sql"
+	db_seed_path: str = "./db/seed_captcha_types.sql"
 
 	@property
 	def template_dir(self) -> Path:

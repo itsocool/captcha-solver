@@ -165,7 +165,7 @@ FastAPI는 누락 필수 필드·형식 불일치를 프레임워크 검증 응�
 | `WEB_HOST` / `WEB_PORT` | `0.0.0.0` / `5000` | 직접 실행 시 바인딩 |
 | `WEB_DEBUG` | `false` | reload/debug |
 | `APP_TITLE` | `Captcha Solver` | FastAPI 제목 |
-| `DB_PATH`, `DB_SCHEMA_PATH` | SQLite 기본 경로 | 서비스 설정 DB·스키마 |
+| `DB_PATH`, `DB_SCHEMA_PATH`, `DB_SEED_PATH` | SQLite 기본 경로 | 서비스 설정 DB·스키마·시드 |
 
 `APP_VERSION`은 FastAPI 설정 항목이 아닙니다. 버전은 `apps/web/core/version.py`가 `pyproject.toml` 등에서 조회합니다.
 

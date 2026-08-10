@@ -57,7 +57,7 @@ graph TD
 | Python CLI | `cli.py` | 파일 기반 단건 예측, 일반/JSON 출력. `hypercaptcha` 콘솔 스크립트 / `python -m hypercaptcha` |
 | FastAPI 조립 | `apps/web/app.py` | lifespan, 정적 파일/템플릿, 시스템/API/UI 라우터 연결 |
 | Python 서비스 계층 | `apps/web/services/captcha.py` | 모델 캐시/프리로드, 서비스 ID 검증, base64/바이트 입력 처리 |
-| 서비스 설정 | `apps/web/core/db.py`, `db/schema.sql` | SQLite 초기화, 서비스 대상과 기본 캡차 조회 및 캐시 |
+| 서비스 설정 | `apps/web/core/db.py`, `db/schema.sql`, `db/seed_captcha_types.sql` | SQLite 초기화(스키마+시드), 서비스 대상과 기본 캡차 조회 및 캐시 |
 | REST API | `apps/web/api/v1/predict.py` | multipart 및 JSON 예측 요청, 오류를 HTTP 상태로 매핑 |
 | Rust CLI | `apps/cli/src/*.rs` | 이미지/표준입력 → 전처리 → ONNX → CTC 디코딩 → 텍스트/JSON |
 | 모델 동기화 | `apps/cli/tools/sync_models.py` | Python ONNX를 portable models로 복사하고 메타데이터 생성 |

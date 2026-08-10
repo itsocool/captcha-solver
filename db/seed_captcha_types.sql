@@ -1,7 +1,8 @@
 -- 캡차 타입 시드 데이터 (출처: 저장소 루트 data.json)
 --
--- 적용: sqlite3 db/captchaSolver.sqlite3 < db/seed_captcha_types.sql
---       (schema.sql 이 먼저 적용되어 있어야 한다)
+-- 적용: FastAPI 기동 시 init_db() 가 schema.sql 다음에 자동 실행한다
+--       (경로는 DB_SEED_PATH, 기본 ./db/seed_captcha_types.sql).
+--       수동 적용은 sqlite3 db/captchaSolver.sqlite3 < db/seed_captcha_types.sql
 --
 -- INSERT OR IGNORE 라 반복 실행해도 안전하다. 기존 행의 값을 고치지는 않으므로,
 -- 값을 바꾸려면 해당 행을 지우고 다시 넣거나 UPDATE 를 쓴다.
