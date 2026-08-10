@@ -152,7 +152,7 @@ FastAPI는 누락 필수 필드·형식 불일치를 프레임워크 검증 응�
 
 ## 서비스 설정과 환경 변수
 
-`db/schema.sql`의 `service_captchas`가 활성화된 ID와 기본 ID를 결정하며, 유효한 DB 값이 환경 변수보다 우선합니다. DB가 비어 있거나 설정이 없을 때만 FastAPI의 `DEFAULT_CAPTCHA_ID`(기본 `supreme_court`)가 폴백으로 사용됩니다. 변경은 기동 시 한 번 읽으므로 DB·FastAPI `.env`·모델 변경 후 서버를 재시작해야 캐시와 설정에 반영됩니다.
+`db/schema.sql`의 `service_captchas`가 활성화된 ID와 기본 ID를 결정합니다. 기본 캡차를 바꾸려면 그 테이블의 `is_default` 플래그를 옮기세요 — 환경 변수로는 바꿀 수 없습니다. DB를 아예 읽지 못할 때만 `config.py`의 `default_captcha_id`(`supreme_court`)로 폴백합니다. 변경은 기동 시 한 번 읽으므로 DB·FastAPI `.env`·모델 변경 후 서버를 재시작해야 캐시와 설정에 반영됩니다.
 
 ### FastAPI (`.env`)
 
@@ -160,7 +160,6 @@ FastAPI는 누락 필수 필드·형식 불일치를 프레임워크 검증 응�
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
-| `DEFAULT_CAPTCHA_ID` | `supreme_court` | DB 설정이 없을 때의 기본 ID |
 | `WEB_HOST` / `WEB_PORT` | `0.0.0.0` / `5000` | 직접 실행 시 바인딩 |
 | `WEB_DEBUG` | `false` | reload/debug |
 | `APP_TITLE` | `Captcha Solver` | FastAPI 제목 |
@@ -180,6 +179,10 @@ docker compose down
 ```
 
 Compose는 호스트 `5001`을 컨테이너 `8000`에 연결하고 `captcha_data`를 읽기 전용으로 마운트합니다. `Dockerfile`은 `uv.lock`을 고정해 의존성을 설치하고 `/health` 헬스체크를 사용합니다.
+
+설정 우선순위는 **실제 환경 변수(compose의 `environment` / `env_file`) > 컨테이너 안의 `/app/.env` > `apps/web/core/config.py`의 필드 기본값**입니다. `Dockerfile`은 런타임 값을 하나도 고정하지 않습니다 — `ENV`로 박으면 나중에 넣어준 `.env`를 덮어써 버리기 때문입니다. 따라서 **`.env`를 주면 그 값이 쓰이고, 없으면 코드 기본값으로 뜹니다**. `.env`는 `.dockerignore`로 막혀 이미지에 포함되지 않고 런타임에만 주입되므로, 값을 바꾸면 재빌드 없이 `docker compose up -d`만 다시 하면 됩니다(`env_file`의 `required: false`는 Compose v2.24+ 필요).
+
+컨테이너의 SQLite(`/app/db/captchaSolver.sqlite3`)는 기동할 때마다 `schema.sql`과 시드로 새로 만들어지는 휘발성 데이터입니다. 런타임에 바꾼 `service_captchas` 값을 유지하려면 `DB_PATH`를 이미지 밖 경로로 옮기고 그 경로에 볼륨을 붙이세요(`docker-compose.yml` 주석 참고).
 
 ## 테스트와 검증
 

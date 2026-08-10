@@ -61,7 +61,7 @@ def init_db() -> None:
 def get_service_config(reload: bool = False) -> dict:
 	"""서비스 대상 캡차 목록과 기본 캡차 ID.
 
-	테이블이 비어 있거나 없으면 .env의 DEFAULT_CAPTCHA_ID만 서비스한다.
+	테이블이 비어 있거나 없으면 Settings.default_captcha_id 만 서비스한다.
 	반환: {"default_captcha_id": str, "serviced": [str], "source": "db" | "fallback"}
 	"""
 	global _SERVICE_CONFIG

@@ -92,7 +92,9 @@ captcha_data/<captcha_id>/<rev>/images/{train,pred}/
 | `WEB_HOST` | `0.0.0.0` | Bind host |
 | `WEB_PORT` | `5000` | Bind port |
 | `WEB_DEBUG` | `false` | Debug mode |
-| `DEFAULT_CAPTCHA_ID` | `supreme_court` | Default captcha type |
+| `DB_PATH` / `DB_SCHEMA_PATH` / `DB_SEED_PATH` | `./db/...` | SQLite 경로·스키마·시드 |
+
+기본 캡차는 환경 변수가 아니라 `db/schema.sql` 의 `service_captchas.is_default` 가 정한다.
 
 Endpoints: `GET /health`, `POST /predict`
 

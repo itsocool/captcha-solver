@@ -160,7 +160,7 @@ sequenceDiagram
 | :--- | :--- | :--- |
 | Python | `pyproject.toml`: `==3.12.*` | 실행 버전 고정 |
 | 패키지 관리자 | `uv.lock`, `uv` | 의존성 재현 |
-| `DEFAULT_CAPTCHA_ID` | `.env`, `supreme_court` | DB 설정이 없을 때만 기본 ID 폴백 |
+| 기본 캡차 | `db/schema.sql`: `service_captchas.is_default` | 환경 변수가 아니라 DB 가 결정 |
 | `WEB_HOST` | `0.0.0.0` | 직접 실행 Uvicorn 바인드 주소 |
 | `WEB_PORT` | `5000` | 직접 실행 Uvicorn 포트 |
 | `WEB_DEBUG` | `false` | 직접 실행 reload |

@@ -21,6 +21,10 @@ htmlcov/
 captcha_data/*/images/
 *.weights.h5
 
+# 로컬 환경변수 — 이미지에 굽지 않는다. 런타임 주입은 compose 의 env_file 로.
+.env
+.env.local
+
 # SQLite 런타임 DB — 컨테이너에서 기동 시 새로 만든다
 db/*.sqlite3
 db/*.sqlite3-wal
