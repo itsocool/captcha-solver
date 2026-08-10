@@ -1,0 +1,12 @@
+{
+  "captcha_id": "supreme_court",
+  "name": "대법원",
+  "rev": 0,
+  "image_width": 120,
+  "image_height": 40,
+  "label_length": 6,
+  "characters": "0123456789",
+  "threshold": 255,
+  "preprocess": "supreme_court",
+  "blank_index": 0
+}

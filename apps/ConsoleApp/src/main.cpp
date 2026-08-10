@@ -16,9 +16,17 @@
 #include <unistd.h>
 #endif
 
+#ifdef CAPTCHA_SINGLE_EXE
+// API 포인터를 헤더가 알아서 채우지 않는다. load_embedded_ort() 가 직접 넣는다.
+#define ORT_API_MANUAL_INIT
+#include <compressapi.h>
+#endif
+
 #include <onnxruntime_cxx_api.h>
 
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -40,13 +48,12 @@ namespace {
 // 오류 메시지에 경로를 찍기 위한 변환.
 std::string narrow(const fs::path& p) {
 #ifdef _WIN32
-	// 콘솔 코드페이지로 맞춰야 한글 경로가 깨지지 않는다.
+	// 항상 UTF-8. 소스가 /utf-8 이라 메시지 리터럴도 UTF-8 이고, wmain 이 콘솔 출력
+	// 코드페이지를 UTF-8 로 맞춰 둔다. 리다이렉트된 출력도 이 인코딩으로 일관된다.
 	const std::wstring& s = p.native();
-	UINT cp = GetConsoleOutputCP();
-	if (cp == 0) cp = CP_ACP;
-	const int n = WideCharToMultiByte(cp, 0, s.c_str(), static_cast<int>(s.size()), nullptr, 0, nullptr, nullptr);
+	const int n = WideCharToMultiByte(CP_UTF8, 0, s.c_str(), static_cast<int>(s.size()), nullptr, 0, nullptr, nullptr);
 	std::string out(static_cast<size_t>(n), '\0');
-	WideCharToMultiByte(cp, 0, s.c_str(), static_cast<int>(s.size()), out.data(), n, nullptr, nullptr);
+	WideCharToMultiByte(CP_UTF8, 0, s.c_str(), static_cast<int>(s.size()), out.data(), n, nullptr, nullptr);
 	return out;
 #else
 	return p.native();
@@ -74,6 +81,71 @@ fs::path exe_dir() {
 	return fs::path(buf).parent_path();
 #endif
 }
+
+#ifdef CAPTCHA_SINGLE_EXE
+
+// 같은 DLL 을 매번 풀지 않도록 크기로 구분한 캐시 디렉터리를 쓴다.
+fs::path ort_cache_dir(uint64_t size) {
+	fs::path base;
+	if (const wchar_t* local = _wgetenv(L"LOCALAPPDATA")) {
+		base = local;
+	} else {
+		std::wstring buf(MAX_PATH + 1, L'\0');
+		buf.resize(GetTempPathW(static_cast<DWORD>(buf.size()), buf.data()));
+		base = buf;
+	}
+	return base / L"captcha-solver" / (L"ort-" + std::to_wstring(size));
+}
+
+// 실행 파일에 넣어둔 onnxruntime.dll 을 캐시에 풀고 로드한다.
+// ponytail: 캐시는 사용자 쓰기 가능 경로다. 같은 계정의 다른 프로세스가 DLL 을 바꿔칠 수 있지만
+//           그 권한이면 exe 자체를 고칠 수 있으므로 막지 않는다. 필요해지면 서명 검증을 넣을 것.
+void load_embedded_ort() {
+	const HMODULE self = GetModuleHandleW(nullptr);
+	// RT_RCDATA 는 UNICODE 매크로에 따라 A/W 가 갈리므로 값(10)을 직접 쓴다.
+	const HRSRC info = FindResourceW(self, MAKEINTRESOURCEW(1), MAKEINTRESOURCEW(10));
+	const HGLOBAL res = info != nullptr ? LoadResource(self, info) : nullptr;
+	const auto* blob = res != nullptr ? static_cast<const uint8_t*>(LockResource(res)) : nullptr;
+	const DWORD blob_size = info != nullptr ? SizeofResource(self, info) : 0;
+	if (blob == nullptr || blob_size <= sizeof(uint64_t)) throw std::runtime_error("내장된 onnxruntime 을 찾을 수 없습니다");
+
+	uint64_t raw_size = 0;
+	std::memcpy(&raw_size, blob, sizeof raw_size);
+
+	const fs::path dll = ort_cache_dir(raw_size) / L"onnxruntime.dll";
+	std::error_code ec;
+	if (fs::file_size(dll, ec) != raw_size) {
+		std::vector<uint8_t> raw(static_cast<size_t>(raw_size));
+		DECOMPRESSOR_HANDLE decompressor = nullptr;
+		if (!CreateDecompressor(COMPRESS_ALGORITHM_LZMS, nullptr, &decompressor))
+			throw std::runtime_error("CreateDecompressor 실패");
+		SIZE_T n = 0;
+		const BOOL ok = Decompress(decompressor, blob + sizeof raw_size, blob_size - sizeof raw_size, raw.data(),
+		                           raw.size(), &n);
+		CloseDecompressor(decompressor);
+		if (!ok || n != raw.size()) throw std::runtime_error("onnxruntime 압축 해제 실패");
+
+		fs::create_directories(dll.parent_path(), ec);
+		// 두 프로세스가 같은 캐시를 동시에 만들 수 있다. 임시 파일에 쓰고 rename 한다.
+		const fs::path tmp = dll.parent_path() / (L"onnxruntime.dll." + std::to_wstring(GetCurrentProcessId()));
+		{
+			std::ofstream out(tmp, std::ios::binary);
+			if (!out.write(reinterpret_cast<const char*>(raw.data()), static_cast<std::streamsize>(raw.size())))
+				throw std::runtime_error("쓸 수 없습니다: " + narrow(tmp));
+		}
+		// 다른 프로세스가 먼저 만들어 로드 중이면 rename 이 실패한다. 그때는 그 파일을 그대로 쓴다.
+		if (!MoveFileExW(tmp.c_str(), dll.c_str(), MOVEFILE_REPLACE_EXISTING)) fs::remove(tmp, ec);
+	}
+
+	const HMODULE handle = LoadLibraryExW(dll.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+	if (handle == nullptr) throw std::runtime_error("로드할 수 없습니다: " + narrow(dll));
+	using GetApiBaseFn = const OrtApiBase*(ORT_API_CALL*)();
+	const auto get_api_base = reinterpret_cast<GetApiBaseFn>(GetProcAddress(handle, "OrtGetApiBase"));
+	if (get_api_base == nullptr) throw std::runtime_error("OrtGetApiBase 가 없습니다");
+	Ort::InitApi(get_api_base()->GetApi(ORT_API_VERSION));
+}
+
+#endif  // CAPTCHA_SINGLE_EXE
 
 // ---------------------------------------------------------------- 유틸
 
@@ -229,8 +301,31 @@ constexpr size_t kBeamWidth = 10;
 constexpr int kIntraThreads = 1;
 
 void usage() {
-	std::cerr << "Usage: captcha -c=\"gov24\" -i=\"path/to/image.jpg\""
-	             " [-m=\"path/to/model\"] [--meta=\"path/to/meta.json\"]\n";
+	std::cerr << "Usage: captcha -i=\"path/to/image.jpg\" [-c=\"gov24\"]"
+	             " [-m=\"path/to/model.ort\"] [--meta=\"path/to/meta.json\"]\n"
+	             "       (-c 기본값: supreme_court)\n"
+	             "       captcha --to-ort <in.onnx> <out.ort>\n";
+}
+
+// ONNX 를 ORT 포맷으로 굽는다. 최적화가 파일에 박혀 세션 여는 시간이 줄어든다.
+// 빌드가 모델을 배치할 때 이 모드를 쓰고, 사용자도 모델을 직접 변환할 수 있다.
+//
+// 최적화는 EXTENDED 까지만 건다. ORT_ENABLE_ALL 은 레이아웃 최적화(NCHWc)를 포함해
+// **변환한 기계의 CPU 명령셋에 맞춰 굳으므로**, 다른 CPU 로 옮길 파일에는 쓸 수 없다.
+int to_ort(const fs::path& src, const fs::path& dst) {
+#ifdef CAPTCHA_SINGLE_EXE
+	load_embedded_ort();
+#endif
+	Ort::Env env(ORT_LOGGING_LEVEL_ERROR, "captcha");
+	Ort::SessionOptions options;
+	options.SetIntraOpNumThreads(kIntraThreads);
+	options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
+	options.SetOptimizedModelFilePath(dst.c_str());
+	options.AddConfigEntry("session.save_model_format", "ORT");
+
+	// 세션을 여는 순간 최적화된 그래프가 dst 로 떨어진다.
+	const Ort::Session session(env, src.c_str(), options);
+	return 0;
 }
 
 Str unquote(Str s) {
@@ -260,6 +355,14 @@ int run(const std::vector<Str>& args) {
 	Str captcha_id;
 	fs::path image_path, model_path, meta_path;
 
+	if (!args.empty() && args[0] == ORT_TSTR("--to-ort")) {
+		if (args.size() != 3) {
+			usage();
+			return 1;
+		}
+		return to_ort(unquote(args[1]), unquote(args[2]));
+	}
+
 	for (size_t i = 0; i < args.size(); ++i) {
 		Str value;
 		if (match(args, i, ORT_TSTR("-c"), ORT_TSTR("--captcha-id"), value)) captcha_id = value;
@@ -268,11 +371,9 @@ int run(const std::vector<Str>& args) {
 		else if (match(args, i, ORT_TSTR("--meta"), ORT_TSTR("--meta-path"), value)) meta_path = value;
 	}
 
-	if (captcha_id.empty()) {
-		std::cerr << "Error: captcha-id is required. Use -c or --captcha-id\n";
-		usage();
-		return 1;
-	}
+	// 캡차를 지정하지 않으면 supreme_court. 파이썬 engine 쪽 기본값과 같다.
+	if (captcha_id.empty()) captcha_id = ORT_TSTR("supreme_court");
+
 	if (image_path.empty()) {
 		std::cerr << "Error: image-path is required. Use -i or --image-path\n";
 		usage();
@@ -280,7 +381,8 @@ int run(const std::vector<Str>& args) {
 	}
 
 	const fs::path dir = exe_dir();
-	if (model_path.empty()) model_path = dir / (captcha_id + ORT_TSTR(".model"));
+	// 기본은 ORT 포맷. ORT 는 확장자로 포맷을 가리므로 .onnx 를 -m 으로 줘도 그대로 열린다.
+	if (model_path.empty()) model_path = dir / (captcha_id + ORT_TSTR(".ort"));
 
 	if (meta_path.empty()) {
 		meta_path = fs::path(model_path).replace_extension(ORT_TSTR(".meta.json"));
@@ -300,6 +402,10 @@ int run(const std::vector<Str>& args) {
 
 	const ModelMeta meta = ModelMeta::load(meta_path);
 	const std::vector<float> input = preprocess_image(read_file(image_path), meta);
+
+#ifdef CAPTCHA_SINGLE_EXE
+	load_embedded_ort();  // 첫 Ort:: 호출 전에 반드시.
+#endif
 
 	Ort::Env env(ORT_LOGGING_LEVEL_ERROR, "captcha");
 	Ort::SessionOptions options;
@@ -363,6 +469,16 @@ int wmain(int argc, wchar_t** argv)
 int main(int argc, char** argv)
 #endif
 {
+#ifdef _WIN32
+	// 메시지 리터럴이 UTF-8(/utf-8)이라 CP949 콘솔에서는 한글이 깨진다. 출력 코드페이지를
+	// UTF-8 로 올린다. 콘솔 설정은 프로세스가 끝나도 남으므로 반드시 되돌린다.
+	struct ConsoleUtf8 {
+		const UINT prev = GetConsoleOutputCP();
+		ConsoleUtf8() { if (prev != CP_UTF8) SetConsoleOutputCP(CP_UTF8); }
+		~ConsoleUtf8() { if (prev != CP_UTF8 && prev != 0) SetConsoleOutputCP(prev); }
+	} console_utf8;
+#endif
+
 	try {
 		return run(std::vector<Str>(argv + 1, argv + argc));
 	} catch (const Ort::Exception& e) {

@@ -27,4 +27,6 @@ model_base_dir = engine.train_model(
 print(f"Model trained and saved at: {model.train_data.get_model_path()}")
 print(f"  torch.export: {model.train_data.get_export_path()}")
 print(f"  ONNX:         {model.train_data.get_onnx_path()}")
+print(f"  ORT:          {model.train_data.get_ort_path()}")
+print(f"  meta:         {model.train_data.get_meta_path()}")
 print("Done!")

@@ -9,7 +9,7 @@
 ### 한눈에 보는 아키텍처
 - 주요 모듈: `engine.py` (학습/추론 엔트리), `dataclass.py` (데이터/경로 규약), `base_core.py` (공통 인터페이스)
 - 데이터 레이아웃: `captcha_data/<captcha_id>/<rev>/images/{train,pred}` — 이미지 파일명(확장자 제외)이 레이블입니다. 예: `captcha_data/kshop/0/images/train/abc12.png` → 레이블 `abc12`.
-- 모델 파일: 같은 `captcha_data/<id>/<rev>/model/` 디렉터리에 세 가지가 놓입니다 — `model.pth` (state dict 체크포인트), `model.pt2` (`torch.export` 아카이브), `model.onnx` (ONNX). TorchScript(`model_jit.pt`)와 Keras(`weights.keras`)는 더 이상 사용하지 않습니다.
+- 모델 파일: 같은 `captcha_data/<id>/<rev>/model/` 디렉터리에 다섯 가지가 놓입니다 — `model.pth` (state dict 체크포인트), `model.pt2` (`torch.export` 아카이브), `model.onnx` (ONNX), `model.ort` (ORT 포맷), `model.meta.json` (사이드카 메타데이터). TorchScript(`model_jit.pt`)와 Keras(`weights.keras`)는 더 이상 사용하지 않습니다.
 
 ### 핵심 디자인 결정(발견한 규칙)
 - 레이블과 문자 집합은 학습 데이터에서 자동으로 추출됩니다 (`TrainData.get_train_info`) — 파일명으로부터 `label_length`와 `characters`를 계산합니다.
@@ -29,7 +29,7 @@
 ### 코드 패턴과 주의사항(에이전트가 알면 좋은 것)
 - 파일명 기반 라벨: 모든 이미지 파일명(확장자 제외)이 레이블이므로, 파일명 규칙을 지키세요.
 - 전처리 위치: 임계값(`threshold`)과 리사이즈는 `TrainData.image_pre_process`에 있습니다. 변경 시 추론 파이프라인(예: `predict`)과 일관되게 유지해야 합니다.
-- 모델 저장 규약: 저장은 `model.pth`(state dict), export 는 `model.pt2`(torch.export)와 `model.onnx`(ONNX) 세 가지입니다.
+- 모델 저장 규약: 저장은 `model.pth`(state dict), export 는 `model.pt2`(torch.export)·`model.onnx`(ONNX)·`model.ort`(ORT 포맷) 세 가지이고, 사이드카 `model.meta.json` 이 함께 저장됩니다.
 
 ### 예시 참조(파일/함수)
 - 데이터 클래스: `dataclass.py::TrainData` — `get_image_dir`, `get_data_files`, `get_model_path`

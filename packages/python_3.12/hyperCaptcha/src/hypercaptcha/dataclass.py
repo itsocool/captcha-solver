@@ -34,6 +34,29 @@ class CaptchaType(BaseModel):
     desc: str
     train_data: "TrainData"
 
+    def build_meta(self) -> dict:
+        """모델 옆에 놓이는 사이드카 메타데이터.
+
+        모델 파일만으로는 문자셋·레이블 길이·전처리 종류를 알 수 없어서 Rust CLI /
+        Spring Boot / ConsoleApp 이 이 JSON 을 함께 읽는다. 학습이 `model.meta.json` 으로
+        저장하고, `sync_models.py` 가 배포용으로 같은 내용을 복사한다.
+        """
+        td = self.train_data
+        return {
+            "captcha_id": self.captcha_id,
+            "name": self.name,
+            "rev": td.rev,
+            "image_width": td.detected_image_width,
+            "image_height": td.detected_image_height,
+            "label_length": td.detected_label_length,
+            "characters": td.detected_characters,
+            "threshold": td.threshold,
+            # ponytail: 전처리가 다른 캡차가 supreme_court 하나뿐이라 여기서 가른다.
+            #           두 번째가 생기면 TrainData 필드로 올릴 것.
+            "preprocess": "supreme_court" if self.captcha_id == "supreme_court" else "default",
+            "blank_index": 0,
+        }
+
 
 class TrainData(BaseModel):
     captcha_id: str
@@ -156,6 +179,14 @@ class TrainData(BaseModel):
     def get_onnx_path(self) -> str:
         """ONNX 산출물. Rust CLI / Spring Boot / ConsoleApp 이 읽는다."""
         return os.path.join(self.get_model_base_dir(), "model.onnx")
+
+    def get_meta_path(self) -> str:
+        """사이드카 메타데이터. 내용은 `CaptchaType.build_meta()` 가 만든다."""
+        return os.path.join(self.get_model_base_dir(), "model.meta.json")
+
+    def get_ort_path(self) -> str:
+        """ORT 포맷 산출물. 최적화까지 끝난 flatbuffer 라 로드가 빠르고 minimal build 도 읽는다."""
+        return os.path.join(self.get_model_base_dir(), "model.ort")
 
     def get_train_info(self) -> Tuple[str, str, str, int, int, int, List[str], int]:
         iw = self.detected_image_width

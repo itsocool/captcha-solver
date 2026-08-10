@@ -1,0 +1,2 @@
+// configure_file 로 만들어진다. 1 = main.cpp 의 load_embedded_ort() 가 찾는 리소스 ID.
+1 RCDATA "@CAPTCHA_ORT_BLOB@"

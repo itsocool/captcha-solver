@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-// ONNX 옆에 놓이는 사이드카 메타데이터 (<모델>.meta.json).
+// 모델 옆에 놓이는 사이드카 메타데이터 (<모델>.meta.json).
 struct ModelMeta {
 	std::string captcha_id;
 	int image_width = 0;

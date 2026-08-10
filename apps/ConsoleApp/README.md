@@ -3,7 +3,8 @@
 `apps/ConsoleApp.v4`(C# / .NET Framework 4.8)를 **네이티브 C++**로 옮긴 콘솔 실행 파일.
 CLI 문법과 출력 형식이 같아 기존 `gov24.cmd` / `supreme_court.cmd` 를 그대로 쓸 수 있습니다.
 
-.NET 런타임 없이 **실행 파일 + ONNX Runtime 공유 라이브러리 + `<id>.model` + `<id>.meta.json`** 만으로 동작합니다.
+.NET 런타임 없이 **실행 파일 + `<id>.ort` + `<id>.meta.json`** 만으로 동작합니다
+(Windows 는 ONNX Runtime 이 실행 파일에 내장돼 있고, Linux 는 `libonnxruntime.so` 가 옆에 놓입니다).
 
 **Windows x64 / Linux x64·aarch64 모두 빌드**됩니다
 (경로를 `std::filesystem::path`로만 다뤄서, `path::value_type`이 ONNX Runtime의 `ORTCHAR_T`와 그대로 맞습니다).
@@ -19,7 +20,10 @@ Linux만 필요하다면 `apps/cli`(Rust)가 이미 같은 파이프라인을 �
 captcha.exe -c="gov24" -i="gov24.JPG"
 :: 004657   (개행 없이 예측 문자열만)
 
-captcha.exe -c="gov24" -i="a.png" -m="D:\models\gov24.model" --meta="D:\models\gov24.meta.json"
+captcha.exe -c="gov24" -i="a.png" -m="D:\models\gov24.ort" --meta="D:\models\gov24.meta.json"
+
+:: ONNX -> ORT 변환 (학습 파이프라인 밖에서 모델을 받았을 때)
+captcha.exe --to-ort gov24.onnx gov24.ort
 ```
 
 ```bash
@@ -28,9 +32,9 @@ captcha.exe -c="gov24" -i="a.png" -m="D:\models\gov24.model" --meta="D:\models\g
 
 | 옵션 | 기본값 | 설명 |
 |------|--------|------|
-| `-c`, `--captcha-id` | (필수) | 캡차 ID |
+| `-c`, `--captcha-id` | `supreme_court` | 캡차 ID |
 | `-i`, `--image-path` | (필수) | 이미지 경로 |
-| `-m`, `--model-path` | `<실행 파일 폴더>/<id>.model` | ONNX 모델 |
+| `-m`, `--model-path` | `<실행 파일 폴더>/<id>.ort` | 모델. 확장자로 포맷을 가리므로 `.onnx` 도 그대로 받습니다 |
 | `--meta` | `<모델>.meta.json`, 없으면 `<실행 파일 폴더>/<id>.meta.json` | 메타데이터 |
 
 `-c=값` / `-c 값` 두 형식 모두 받습니다(C# 원본과 동일). 지원 이미지: PNG, JPEG, BMP, GIF, TGA, PSD, HDR, PNM.
@@ -60,6 +64,7 @@ cd apps\ConsoleApp
 | `build.ps1` | `config.ps1` 호출 후 빌드 |
 | `ctest.ps1` | `build.ps1` 호출 후 테스트 |
 | `pred.ps1` | 빌드된 exe로 이미지를 대량 인식해 정답(파일명)과 대조 |
+| `pack.ps1` | `build.ps1` 호출 후 NSIS 설치 파일 생성 |
 
 CMake가 PATH에 없어도 됩니다 — `config.ps1`이 `vswhere`로 Visual Studio를 찾아 번들 CMake를
 **이 프로세스의 PATH에만** 추가합니다(전역 PATH는 건드리지 않음).
@@ -79,8 +84,13 @@ CMake가 PATH에 없어도 됩니다 — `config.ps1`이 `vswhere`로 Visual Stu
 cd apps\ConsoleApp
 cmake -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release
-:: -> build\Release\captcha.exe + onnxruntime.dll + <id>.model + <id>.meta.json
+:: -> build\Release\captcha.exe + <id>.ort + <id>.meta.json
 ```
+
+Windows 빌드는 기본이 **단일 exe**입니다. `onnxruntime.dll` 을 LZMS 로 압축해 exe 리소스에 넣고
+(11.5MB -> 3.6MB), CRT 까지 정적 링크하므로 VC++ 재배포 패키지도 필요 없습니다. 실행 시
+`%LOCALAPPDATA%\captcha-solver\ort-<크기>\onnxruntime.dll` 로 한 번 풀고 그 뒤로는 재사용합니다.
+DLL 을 옆에 두는 예전 방식이 필요하면 `-DCAPTCHA_SINGLE_EXE=OFF`.
 
 VS에 딸린 CMake는 `%ProgramFiles(x86)%\Microsoft Visual Studio\<버전>\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin` 에 있습니다.
 
@@ -121,16 +131,40 @@ PowerShell 판과 다른 점 두 가지:
 cd apps/ConsoleApp
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
-# -> build/captcha + libonnxruntime.so* + <id>.model + <id>.meta.json
+# -> build/captcha + libonnxruntime.so* + <id>.ort + <id>.meta.json
 ```
 
 실행 파일에 `RUNPATH=$ORIGIN` 이 박히고 `libonnxruntime.so*` 가 옆에 복사되므로, **디렉터리째 옮겨도 그대로 동작**합니다.
-(`captcha` + `libonnxruntime.so.1` + `<id>.model` + `<id>.meta.json` 만 있으면 됩니다.)
+(`captcha` + `libonnxruntime.so.1` + `<id>.ort` + `<id>.meta.json` 만 있으면 됩니다.)
 
 ### 공통 옵션
 
 ONNX Runtime 버전은 `-DORT_VERSION=1.20.1` 로 바꿀 수 있습니다(모델은 opset 17 / IR 8이라 1.13 이상이면 됩니다).
-`-DCAPTCHA_COPY_MODELS=OFF` 를 주면 모델 복사를 생략합니다.
+`-DCAPTCHA_COPY_MODELS=OFF` 를 주면 모델 복사를 생략하고,
+`-DCAPTCHA_DATA_DIR=<경로>` 로 모델을 가져올 `captcha_data` 위치를 바꿉니다(기본값 `<저장소 루트>/captcha_data`).
+`-DCAPTCHA_SINGLE_EXE=OFF` (Windows 전용, 기본 ON) 로 하면 DLL 내장 대신 실행 파일 옆에 복사합니다.
+
+### Windows — 설치 파일 (NSIS)
+
+```powershell
+cd apps\ConsoleApp
+.\pack.ps1           # 빌드 -> build\captcha-solver-1.0.0-win64.exe
+```
+
+CPack의 NSIS 제너레이터를 씁니다. **NSIS가 필요합니다** — 없으면 `pack.ps1`이 설치 방법을 알려줍니다
+(`winget install NSIS.NSIS`). CPack을 직접 부르려면 빌드 후:
+
+```cmd
+cpack --config build\CPackConfig.cmake -C Release -B build
+```
+
+설치본은 `%ProgramFiles%\captcha-solver\bin\` 에 `captcha.exe` + `<id>.ort` + `<id>.meta.json`
+(단일 exe가 아니면 `onnxruntime.dll` 도)을 나란히 놓습니다 — 실행 파일이 모델을 자기 폴더에서 찾기
+때문에 이 배치가 그대로 실행 조건입니다. 설치 마법사가 `bin` 을 PATH에 추가할지 묻고,
+제어판에서 제거할 수 있습니다. 모델은 configure 시점에 잡힌 것이 들어가므로,
+`-DCAPTCHA_COPY_MODELS=OFF` 면 실행 파일만 담깁니다.
+
+버전은 `CMakeLists.txt` 의 `project(... VERSION 1.0.0 ...)` 하나로 정해집니다.
 
 ### 검증
 
@@ -207,26 +241,35 @@ kshop 86%는 `apps/cli/README.md` 에 기록된 ONNX 기준 정확도와 같은 
 
 ## 모델과 메타데이터
 
-`.model` 은 확장자만 다른 **ONNX 파일**입니다(`gov24.model` 은 `apps/cli/models/gov24.onnx` 와 동일).
+`.ort` 는 **ORT 포맷**입니다 — ONNX Runtime 이 그래프 최적화까지 마친 결과를 flatbuffer 로 구운 것으로,
+세션을 열 때 최적화를 다시 돌리지 않습니다. 학습 쪽 `finalize_artifacts()` 가 `model.ort` 를 만들고,
+**빌드는 그 파일을 이름만 바꿔 복사**합니다.
 
-ONNX만으로는 **문자셋·레이블 길이·전처리 종류**를 알 수 없어 사이드카 JSON이 함께 있어야 합니다.
+> 학습 파이프라인 밖에서 ONNX 만 받았다면 `captcha --to-ort <in.onnx> <out.ort>` 로 직접 변환할 수 있습니다.
+> 최적화 수준은 양쪽 다 `ORT_ENABLE_EXTENDED` 까지입니다. `ORT_ENABLE_ALL` 은 레이아웃 최적화(NCHWc)를
+> 포함해 **변환한 기계의 CPU 명령셋에 맞춰 굳으므로**, 다른 CPU 로 배포할 파일에는 쓸 수 없습니다.
+
+모델만으로는 **문자셋·레이블 길이·전처리 종류**를 알 수 없어 사이드카 JSON이 함께 있어야 합니다.
 
 ```json
 { "captcha_id": "gov24", "image_width": 200, "image_height": 50,
   "label_length": 6, "characters": "0123456789", "threshold": 60, "preprocess": "default" }
 ```
 
-`apps/cli/tools/sync_models.py` 가 생성하며, `apps/cli/models/` 에 캡차 4종이 준비돼 있습니다.
+학습 쪽 `finalize_artifacts()` 가 `model.meta.json` 으로 저장합니다.
 
-빌드 시 **`apps/cli/models/*.meta.json` 에 있는 모든 캡차**를 산출물 폴더로 복사합니다
-(`gov24`, `kshop`, `supreme_court`, `wetax`). 모델 본체는
-`ConsoleApp.v4/<id>.model` 이 있으면 그걸 쓰고, 없으면 `apps/cli/models/<id>.onnx` 를
-`<id>.model` 이라는 이름으로 복사합니다. `sync_models.py` 로 모델을 추가하면 다음 빌드에
-자동으로 딸려옵니다(`file(GLOB CONFIGURE_DEPENDS)`).
+빌드는 **`captcha_data/<id>/<rev>/model/`** 에서 `model.ort` 와 `model.meta.json` 을 가져와
+`<id>.ort` / `<id>.meta.json` 으로 이름만 바꿔 놓습니다. `<rev>` 는 숫자 디렉터리 중 **가장 큰 것**을
+고르고, 두 파일 중 하나라도 없으면 그 캡차는 건너뜁니다(configure 로그에 표시).
+캡차를 추가하면 다음 빌드에 자동으로 딸려옵니다(`file(GLOB CONFIGURE_DEPENDS)`).
 
-> `ConsoleApp.v4/supreme_court.model` 은 `apps/cli/models/supreme_court.onnx` 와 **가중치가 다른 리비전**입니다
-> (입력·출력 shape는 같아 메타는 그대로 맞고, 샘플 10장도 10/10 통과합니다).
-> `gov24.model` 은 `gov24.onnx` 와 바이트 단위로 동일합니다.
+```
+-- 복사할 모델: gov24(rev=1);kshop(rev=0);supreme_court(rev=0);wetax(rev=0)
+```
+
+`captcha_data` 는 저장소에 없으므로, 학습 데이터가 없는 환경에서는 모델이 하나도 복사되지 않고
+`samples` 테스트가 실패합니다. 다른 위치를 쓰려면 `-DCAPTCHA_DATA_DIR=<경로>`,
+모델 복사 자체를 끄려면 `-DCAPTCHA_COPY_MODELS=OFF` 입니다.
 
 ---
 

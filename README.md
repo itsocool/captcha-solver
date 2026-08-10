@@ -58,7 +58,7 @@ Python 원본은 다음 레이아웃을 사용합니다. 이미지 파일명(확
 ```text
 captcha_data/<captcha_id>/<rev>/
 ├── images/{train,pred}/
-└── model/{model.pth,model.pt2,model.onnx}
+└── model/{model.pth,model.pt2,model.onnx,model.ort,model.meta.json}
 ```
 
 Rust·Spring은 portable 디렉터리로 ONNX와 메타데이터를 함께 배포합니다.

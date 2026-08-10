@@ -44,7 +44,7 @@ captcha_data/<captcha_id>/<rev>/images/{train,pred}/
 ```
 
 - Image **filename** (no extension) = label (e.g., `abc12.png` → label `abc12`)
-- Models: `captcha_data/<id>/<rev>/model/model.pth` (state dict checkpoint), `model.pt2` (`torch.export` archive), `model.onnx` (ONNX). `finalize_artifacts()` exports the `.pt2` and `.onnx` from the finalized `.pth` on disk (never the in-memory model) and fails training if the checkpoint and ONNX predictions disagree.
+- Models: `captcha_data/<id>/<rev>/model/model.pth` (state dict checkpoint), `model.pt2` (`torch.export` archive), `model.onnx` (ONNX), `model.ort` (ORT format, baked from the ONNX at `ORT_ENABLE_EXTENDED` so it stays CPU-portable), `model.meta.json` (charset/size/preprocess sidecar, built by `CaptchaType.build_meta()`). `finalize_artifacts()` writes all of them from the finalized `.pth` on disk (never the in-memory model) and fails training if the checkpoint and the exported models disagree.
 
 ## Image Preprocessing
 

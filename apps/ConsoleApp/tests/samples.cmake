@@ -11,7 +11,7 @@ set(fail 0)
 
 foreach(id ${IDS})
 	get_filename_component(_exe_dir "${EXE}" DIRECTORY)
-	if(NOT EXISTS "${_exe_dir}/${id}.model")
+	if(NOT EXISTS "${_exe_dir}/${id}.ort")
 		message(STATUS "${id}: 모델이 없어 건너뜁니다 (-DCAPTCHA_COPY_MODELS=ON 으로 빌드하세요)")
 		continue()
 	endif()

@@ -1,0 +1,12 @@
+{
+  "captcha_id": "wetax",
+  "name": "WETAX",
+  "rev": 0,
+  "image_width": 200,
+  "image_height": 60,
+  "label_length": 6,
+  "characters": "0123456789",
+  "threshold": 255,
+  "preprocess": "default",
+  "blank_index": 0
+}

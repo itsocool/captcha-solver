@@ -1,14 +1,26 @@
 cmake_minimum_required(VERSION 3.24)
-project(captcha-solver-cpp LANGUAGES CXX)
+project(captcha-solver-cpp VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(MSVC)
-	add_compile_options(/utf-8)  # 소스의 한글 주석/문자열
+	# /Gy /Gw = 함수/데이터를 각각 COMDAT 으로. 링커의 /OPT:REF,ICF 가 안 쓰는 걸 걷어낸다.
+	add_compile_options(/utf-8 /Gy /Gw)  # /utf-8 은 소스의 한글 주석/문자열
 endif()
 
 set(ORT_VERSION "1.20.1" CACHE STRING "ONNX Runtime 버전")
-option(CAPTCHA_COPY_MODELS "빌드 산출물 옆에 ConsoleApp.v4 모델 + cli 메타를 복사" ON)
+set(CAPTCHA_DATA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../captcha_data"
+	CACHE PATH "모델을 가져올 captcha_data 디렉터리")
+option(CAPTCHA_COPY_MODELS "빌드 산출물 옆에 captcha_data 의 최신 리비전 모델을 복사" ON)
+option(CAPTCHA_SINGLE_EXE "onnxruntime.dll 을 압축해 실행 파일에 내장 (Windows 전용)" ON)
+
+if(NOT WIN32)
+	set(CAPTCHA_SINGLE_EXE OFF)
+endif()
+if(CAPTCHA_SINGLE_EXE)
+	# CRT 까지 정적 링크. VC++ 재배포 패키지 없이 exe 하나로 돈다.
+	set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
 
 # ---------------------------------------------------------------- 의존성
 # 둘 다 configure 시점에 자동으로 받아온다. vcpkg 불필요.
@@ -56,7 +68,33 @@ target_include_directories(captcha_core PUBLIC src)
 target_include_directories(captcha_core SYSTEM PUBLIC "${stb_SOURCE_DIR}")
 
 add_executable(captcha src/main.cpp)
-target_link_libraries(captcha PRIVATE captcha_core onnxruntime)
+target_link_libraries(captcha PRIVATE captcha_core)
+set_property(TARGET captcha captcha_core PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+
+if(CAPTCHA_SINGLE_EXE)
+	# import lib 를 링크하지 않는다. 헤더만 쓰고 API 는 실행 시 GetProcAddress 로 받는다.
+	target_include_directories(captcha SYSTEM PRIVATE "${ort_SOURCE_DIR}/include")
+	target_compile_definitions(captcha PRIVATE CAPTCHA_SINGLE_EXE)
+	target_link_libraries(captcha PRIVATE Cabinet.lib)  # 압축 해제(Compression API)
+
+	# DLL 을 LZMS 로 압축해 RCDATA 리소스로 넣는다. 11.5MB -> 4MB 안팎.
+	set(_ort_blob "${CMAKE_CURRENT_BINARY_DIR}/onnxruntime.lzms")
+	add_executable(packblob tools/pack.cpp)
+	target_link_libraries(packblob PRIVATE Cabinet.lib)
+	add_custom_command(OUTPUT "${_ort_blob}"
+		COMMAND packblob "${ort_SOURCE_DIR}/lib/onnxruntime.dll" "${_ort_blob}"
+		DEPENDS packblob "${ort_SOURCE_DIR}/lib/onnxruntime.dll"
+		COMMENT "onnxruntime.dll 압축")
+	add_custom_target(ort_blob DEPENDS "${_ort_blob}")
+	add_dependencies(captcha ort_blob)
+
+	string(REPLACE "/" "\\\\" CAPTCHA_ORT_BLOB "${_ort_blob}")
+	configure_file(src/ort_blob.rc.in "${CMAKE_CURRENT_BINARY_DIR}/ort_blob.rc" @ONLY)
+	set_source_files_properties("${CMAKE_CURRENT_BINARY_DIR}/ort_blob.rc" PROPERTIES OBJECT_DEPENDS "${_ort_blob}")
+	target_sources(captcha PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/ort_blob.rc")
+else()
+	target_link_libraries(captcha PRIVATE onnxruntime)
+endif()
 
 if(NOT WIN32)
 	find_package(Threads REQUIRED)
@@ -68,48 +106,98 @@ endif()
 # ONNX Runtime 런타임 라이브러리를 실행 파일 옆에 둔다.
 # ponytail: copy_if_different 는 심볼릭 링크를 따라가므로 리눅스에서는 .so 실체가 2벌 복사된다
 #           (soname 이 어느 쪽이든 맞도록). 용량이 문제되면 create_symlink 로 바꿀 것.
-if(WIN32)
-	file(GLOB _ort_runtime "${ort_SOURCE_DIR}/lib/*.dll")
-else()
-	file(GLOB _ort_runtime "${ort_SOURCE_DIR}/lib/libonnxruntime.so*")
+if(NOT CAPTCHA_SINGLE_EXE)
+	if(WIN32)
+		file(GLOB _ort_runtime "${ort_SOURCE_DIR}/lib/*.dll")
+	else()
+		file(GLOB _ort_runtime "${ort_SOURCE_DIR}/lib/libonnxruntime.so*")
+	endif()
+	foreach(_lib ${_ort_runtime})
+		add_custom_command(TARGET captcha POST_BUILD
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_lib}" "$<TARGET_FILE_DIR:captcha>")
+	endforeach()
 endif()
-foreach(_lib ${_ort_runtime})
-	add_custom_command(TARGET captcha POST_BUILD
-		COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_lib}" "$<TARGET_FILE_DIR:captcha>")
-endforeach()
 
-# apps/cli/models 의 메타데이터를 기준으로 모델을 훑는다.
-# 모델 본체는 ConsoleApp.v4 의 <id>.model 을 우선 쓰고, 없으면 cli 의 <id>.onnx 를 쓴다.
+# captcha_data/<id>/<rev>/model/ 의 model.ort + model.meta.json 을 <id>.ort / <id>.meta.json 으로
+# 복사한다. 변환은 학습 쪽 finalize_artifacts() 가 이미 끝냈으므로 여기서는 이름만 바꾼다.
 if(CAPTCHA_COPY_MODELS)
-	set(_cli_models "${CMAKE_CURRENT_SOURCE_DIR}/../cli/models")
-	file(GLOB _metas CONFIGURE_DEPENDS "${_cli_models}/*.meta.json")
+	file(GLOB _id_dirs CONFIGURE_DEPENDS "${CAPTCHA_DATA_DIR}/*")
 	set(_copied "")
-	foreach(_meta ${_metas})
-		get_filename_component(_name "${_meta}" NAME)
-		string(REGEX REPLACE "\\.meta\\.json$" "" _id "${_name}")
-
-		set(_model "${CMAKE_CURRENT_SOURCE_DIR}/../ConsoleApp.v4/${_id}.model")
-		if(NOT EXISTS "${_model}")
-			set(_model "${_cli_models}/${_id}.onnx")
+	foreach(_id_dir ${_id_dirs})
+		if(NOT IS_DIRECTORY "${_id_dir}")
+			continue()
 		endif()
-		if(NOT EXISTS "${_model}")
-			message(STATUS "모델 없음, 복사 건너뜀: ${_id}")
+		get_filename_component(_id "${_id_dir}" NAME)
+
+		# 리비전은 숫자 디렉터리다. NATURAL 정렬의 마지막이 최신.
+		file(GLOB _revs CONFIGURE_DEPENDS "${_id_dir}/*")
+		set(_rev_names "")
+		foreach(_rev ${_revs})
+			get_filename_component(_rev_name "${_rev}" NAME)
+			if(IS_DIRECTORY "${_rev}" AND _rev_name MATCHES "^[0-9]+$")
+				list(APPEND _rev_names "${_rev_name}")
+			endif()
+		endforeach()
+		# 원소가 "0" 하나뿐이면 if(NOT _rev_names) 가 참이 된다(CMake 의 거짓 상수). 길이로 본다.
+		list(LENGTH _rev_names _rev_count)
+		if(_rev_count EQUAL 0)
+			continue()
+		endif()
+		list(SORT _rev_names COMPARE NATURAL)
+		list(GET _rev_names -1 _rev)
+
+		set(_model "${_id_dir}/${_rev}/model/model.ort")
+		set(_meta "${_id_dir}/${_rev}/model/model.meta.json")
+		if(NOT EXISTS "${_model}" OR NOT EXISTS "${_meta}")
+			message(STATUS "모델 없음, 복사 건너뜀: ${_id} rev=${_rev}")
 			continue()
 		endif()
 
 		add_custom_command(TARGET captcha POST_BUILD
-			COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_model}" "$<TARGET_FILE_DIR:captcha>/${_id}.model"
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_model}" "$<TARGET_FILE_DIR:captcha>/${_id}.ort"
 			COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_meta}" "$<TARGET_FILE_DIR:captcha>/${_id}.meta.json")
-		list(APPEND _copied ${_id})
+		install(FILES "${_model}" DESTINATION bin RENAME "${_id}.ort")
+		install(FILES "${_meta}" DESTINATION bin RENAME "${_id}.meta.json")
+		list(APPEND _copied "${_id}(rev=${_rev})")
 	endforeach()
 	message(STATUS "복사할 모델: ${_copied}")
 endif()
+
+# ---------------------------------------------------------------- 설치 / 패키징
+# 실행 파일과 모델을 bin/ 에 나란히 둔다. main.cpp 가 모델을 <실행 파일 폴더> 에서 찾으므로
+# 이 배치가 그대로 실행 조건이다. (모델 install 규칙은 위 복사 루프에 함께 있다)
+install(TARGETS captcha RUNTIME DESTINATION bin)
+if(NOT CAPTCHA_SINGLE_EXE)
+	install(FILES ${_ort_runtime} DESTINATION bin)
+endif()
+
+set(CPACK_PACKAGE_NAME "captcha-solver")
+set(CPACK_PACKAGE_VENDOR "HiWorks")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "캡차 인식 콘솔 도구")
+set(CPACK_PACKAGE_INSTALL_DIRECTORY "captcha-solver")
+if(WIN32)
+	set(CPACK_GENERATOR "NSIS")
+	set(CPACK_NSIS_PACKAGE_NAME "captcha-solver")
+	set(CPACK_NSIS_DISPLAY_NAME "captcha-solver")
+	set(CPACK_NSIS_INSTALL_ROOT "$PROGRAMFILES64")  # x64 빌드. 기본값은 32비트 Program Files 다
+	set(CPACK_NSIS_MODIFY_PATH ON)                  # 콘솔 도구라 bin 을 PATH 에 넣을지 묻는다
+	set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
+	# ponytail: 압축기는 기본값(zlib) 그대로. .ort 는 이미 조밀해서 lzma 로 바꿔도 크기가 같았다.
+	if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../hi.works.ico")
+		file(REAL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../hi.works.ico" _icon)
+		set(CPACK_NSIS_MUI_ICON "${_icon}")
+		set(CPACK_NSIS_MUI_UNIICON "${_icon}")
+	endif()
+endif()
+include(CPack)
 
 # ---------------------------------------------------------------- 테스트
 include(CTest)
 if(BUILD_TESTING)
 	add_executable(test_decode tests/test_decode.cpp)
 	target_link_libraries(test_decode PRIVATE captcha_core)
+	# captcha_core 가 /GL 로 컴파일되므로 링크하는 쪽도 /LTCG 여야 경고가 안 난다.
+	set_property(TARGET test_decode PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
 	add_test(NAME decode COMMAND test_decode)
 
 	# apps/cli/samples/<id>/<정답>.png 로 end-to-end 확인.

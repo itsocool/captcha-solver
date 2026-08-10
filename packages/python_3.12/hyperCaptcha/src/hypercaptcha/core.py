@@ -1,3 +1,4 @@
+import json
 import os
 import numpy as np
 import torch
@@ -14,6 +15,17 @@ from .dataclass import CaptchaType, TrainData
 from .base_core import BaseModel
 
 NEG_INF = float('-inf')
+
+
+def _require_onnxruntime():
+    """onnxruntime 은 export/검증에만 쓰므로 필요할 때 늦게 부른다."""
+    try:
+        import onnxruntime as ort
+    except ImportError as e:
+        raise RuntimeError(
+            "ONNX/ORT export 와 검증에 onnxruntime 이 필요합니다. `uv sync` 로 설치하세요."
+        ) from e
+    return ort
 
 # ============================================================
 # PyTorch 2.0+ 최적화 설정
@@ -850,13 +862,15 @@ class PyTorchModel(BaseModel):
         학습 종료 시 `.tmp` 가 `.pth` 로 승격되는데, 예전에는 메모리 모델에서 export 해
         체크포인트와 ONNX 가 서로 다른 에폭이 되는 일이 있었다(kshop 사례).
 
-        세 산출물의 역할:
-            model.pth  - state_dict 체크포인트. 파이썬 추론과 재학습의 기준.
-            model.pt2  - torch.export 아카이브. 그래프까지 고정해 파이썬 코드 없이 로드.
-            model.onnx - ONNX. Rust CLI / Spring Boot / ConsoleApp 이 읽는다.
+        산출물의 역할:
+            model.pth       - state_dict 체크포인트. 파이썬 추론과 재학습의 기준.
+            model.pt2       - torch.export 아카이브. 그래프까지 고정해 파이썬 코드 없이 로드.
+            model.onnx      - ONNX. Rust CLI / Spring Boot / ConsoleApp 이 읽는다.
+            model.ort       - ONNX 를 ORT 포맷으로 구운 것. 로드가 빠르고 minimal build 가 읽는다.
+            model.meta.json - 문자셋·크기·전처리 종류. 모델 파일만으로는 알 수 없다.
 
         Returns:
-            {"checkpoint": ..., "export": ..., "onnx": ...} 경로 매핑
+            {"checkpoint": ..., "export": ..., "onnx": ..., "ort": ..., "meta": ...} 경로 매핑
         """
         self.model.load_state_dict(
             torch.load(model_path, map_location=self.device, weights_only=False)
@@ -869,14 +883,43 @@ class PyTorchModel(BaseModel):
         onnx_path = self.train_data.get_onnx_path()
         self.export_onnx(onnx_path)
 
+        ort_path = self.train_data.get_ort_path()
+        self.export_ort(onnx_path, ort_path)
+
+        meta_path = self.train_data.get_meta_path()
+        self.save_meta(meta_path)
+
         if verify:
             self.verify_onnx_export(onnx_path)
+            self.verify_onnx_export(ort_path)
 
-        return {"checkpoint": model_path, "export": export_path, "onnx": onnx_path}
+        return {"checkpoint": model_path, "export": export_path,
+                "onnx": onnx_path, "ort": ort_path, "meta": meta_path}
+
+    def save_meta(self, meta_path: str):
+        """사이드카 메타데이터를 쓴다. 내용은 `CaptchaType.build_meta()` 가 만든다.
+
+        Args:
+            meta_path: model.meta.json 저장 경로
+        """
+        if self.verbose > 0:
+            print(f"meta 저장: {meta_path}")
+
+        os.makedirs(os.path.dirname(meta_path), exist_ok=True)
+        staging = meta_path + '.writing'
+        try:
+            with open(staging, "w", encoding="utf-8") as f:
+                json.dump(self.captcha_type.build_meta(), f, ensure_ascii=False, indent=2)
+                f.write("\n")
+            os.replace(staging, meta_path)
+        except Exception:
+            if os.path.exists(staging):
+                os.remove(staging)
+            raise
 
     def verify_onnx_export(self, onnx_path: str, num_samples: int = 8,
                            logit_tol: float = 0.5) -> None:
-        """방금 내보낸 ONNX 가 PyTorch 와 같은 예측을 내는지 확인한다.
+        """방금 내보낸 모델(.onnx / .ort)이 PyTorch 와 같은 예측을 내는지 확인한다.
 
         판정 기준은 **디코딩된 예측 문자열의 일치**다. 로짓 오차는 진단용으로 함께 보되,
         가중치가 뒤바뀐 수준(관측치 7.8)과 float 노이즈(관측치 0.003)를 가르는
@@ -887,12 +930,7 @@ class PyTorchModel(BaseModel):
         """
         import glob
 
-        try:
-            import onnxruntime as ort
-        except ImportError as e:
-            raise RuntimeError(
-                "ONNX export 검증에 onnxruntime 이 필요합니다. `uv sync` 로 설치하세요."
-            ) from e
+        ort = _require_onnxruntime()
 
         images = sorted(glob.glob(os.path.join(
             self.train_data.get_image_dir(train=True), "*.png")))[:num_samples]
@@ -931,14 +969,14 @@ class PyTorchModel(BaseModel):
                 f"\n  {name}: PyTorch={a!r} ONNX={b!r}" for name, a, b in mismatches[:5]
             )
             raise RuntimeError(
-                f"ONNX export 검증 실패 — {onnx_path}\n"
+                f"export 검증 실패 — {onnx_path}\n"
                 f"  샘플 {len(images)}장 중 예측 불일치 {len(mismatches)}건, "
                 f"로짓 최대 오차 {worst_diff:.4g} (임계 {logit_tol})"
                 f"{detail}"
             )
 
         if self.verbose > 0:
-            print(f"ONNX 검증 통과: 샘플 {len(images)}장 예측 일치, "
+            print(f"{os.path.basename(onnx_path)} 검증 통과: 샘플 {len(images)}장 예측 일치, "
                   f"로짓 최대 오차 {worst_diff:.4g}")
 
 
@@ -1021,6 +1059,42 @@ class PyTorchModel(BaseModel):
         if self.verbose > 0:
             batch_info = "fixed batch=1" if fixed_batch else "dynamic batch"
             print(f"ONNX exported (legacy, {batch_info}): {onnx_path}")
+
+    def export_ort(self, onnx_path: str, ort_path: str):
+        """ONNX 를 ORT 포맷(.ort)으로 굽는다.
+
+        ONNX Runtime 이 그래프 최적화까지 마친 결과를 flatbuffer 로 저장한 것이다. 세션을
+        열 때 최적화를 다시 돌리지 않아 로드가 빠르고, minimal build 런타임은 이 형식만 읽는다.
+
+        최적화는 EXTENDED 까지만 건다. ORT_ENABLE_ALL 은 레이아웃 최적화(NCHWc)를 포함해
+        **변환한 기계의 CPU 명령셋에 맞춰 굽으므로**, 다른 CPU 로 배포할 산출물에는 쓸 수 없다.
+
+        Args:
+            onnx_path: 입력 ONNX 경로
+            ort_path: .ort 저장 경로
+        """
+        ort = _require_onnxruntime()
+
+        if self.verbose > 0:
+            print(f"ORT export: {ort_path}")
+
+        os.makedirs(os.path.dirname(ort_path), exist_ok=True)
+        # ORT 는 확장자로 출력 포맷을 판별한다. 스테이징도 .ort 로 끝나야 한다.
+        staging = ort_path + '.writing.ort'
+        try:
+            options = ort.SessionOptions()
+            options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_EXTENDED
+            options.optimized_model_filepath = staging
+            options.add_session_config_entry("session.save_model_format", "ORT")
+            ort.InferenceSession(onnx_path, options, providers=["CPUExecutionProvider"])
+            os.replace(staging, ort_path)
+        except Exception:
+            if os.path.exists(staging):
+                os.remove(staging)
+            raise
+
+        if self.verbose > 0:
+            print(f"ORT exported: {ort_path}")
 
     def load_prediction_model(self, model_path: str = None) -> nn.Module:
         """모델 로드."""
