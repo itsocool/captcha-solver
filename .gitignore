@@ -22,3 +22,6 @@ db/*.sqlite3-shm
 # Rust CLI 빌드 산출물
 apps/cli/target/
 apps/cli/dist/
+
+# Serena 로컬 인덱스/설정
+.serena/
