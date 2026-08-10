@@ -15,8 +15,6 @@ LOWER_CASE: Final = string.ascii_lowercase
 UPPER_CASE: Final = string.ascii_uppercase
 ALPHABET: Final = string.ascii_letters
 ALPHA_NUMERIC: Final = string.digits + string.ascii_letters
-CAPTCHA_CHAR_SETS: Final = "2345678bcdefgmnpwxy"
-DEV_CHAR_SETS: Final = "2345678ABCDEFGHKLMNPRSTUVWYZabcdefhklmnoprstuvwyz"
 
 
 class _TrainInfo(BaseModel):
@@ -31,10 +29,10 @@ class _TrainInfo(BaseModel):
 
 
 class CaptchaType(BaseModel):
-    captcha_id: str = "default"
-    name: str = "기본캡챠"
-    desc: str = "기본 캡챠"
-    train_data: "TrainData" = Field(default_factory=lambda: TrainData(captcha_id="default"))
+    captcha_id: str
+    name: str
+    desc: str
+    train_data: "TrainData"
 
 
 class TrainData(BaseModel):

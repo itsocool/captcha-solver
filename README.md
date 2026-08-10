@@ -7,7 +7,7 @@ PyTorch 학습부터 Python·Rust·Spring Boot 추론까지 한 저장소에서 
 | 방식 | 용도 | 모델/런타임 | 시작점 |
 |---|---|---|---|
 | Python CLI | 이미지 한 장, 개발·디버깅 | `model_full.pt`, Python/PyTorch | `uv run python main.py ...` |
-| FastAPI | 웹 UI와 HTTP API | `model_full.pt`, Python/PyTorch | `uv run fastapi dev web/app.py` |
+| FastAPI | 웹 UI와 HTTP API | `model_full.pt`, Python/PyTorch | `uv run fastapi dev apps/web/app.py` |
 | Rust CLI | 독립 실행 파일·배포 | portable ONNX + `meta.json` | `apps/cli`의 `captcha-cli` |
 | Spring Boot | JVM HTTP 서비스 | portable ONNX + `meta.json` | `apps/springBoot` |
 
@@ -32,20 +32,20 @@ cp .env.example .env       # 선택: 설정을 덮어쓸 때
 uv run python main.py -c supreme_court -i captcha_data/supreme_court/0/images/pred/091082.png
 
 # FastAPI 개발 서버: http://localhost:8000
-uv run fastapi dev web/app.py --host 0.0.0.0 --port 8000
+uv run fastapi dev apps/web/app.py --host 0.0.0.0 --port 8000
 
 # Docker: http://localhost:5001
 docker compose up --build
 ```
 
-서버가 시작되면 `/health`와 `/docs`를 확인하세요. 운영 실행은 `uv run fastapi run web/app.py --host 0.0.0.0 --port 8000`입니다.
+서버가 시작되면 `/health`와 `/docs`를 확인하세요. 운영 실행은 `uv run fastapi run apps/web/app.py --host 0.0.0.0 --port 8000`입니다.
 
 ## 아키텍처
 
 `engine.py`가 캡차 설정·학습·예측을 조정하고, `core.py`의 CNN → Feature Projection → 2층 BiLSTM → CTC가 인식합니다. FastAPI는 요청을 검증하고 프로세스 메모리의 모델 캐시를 통해 `engine.predict`를 호출합니다. Rust와 Spring은 동일한 전처리·고정 길이 CTC 디코더를 ONNX Runtime으로 실행합니다.
 
 ```text
-client → web/api → captcha service/cache → engine → PyTorchModel → CRNN/CTC
+client → apps/web/api → captcha service/cache → engine → PyTorchModel → CRNN/CTC
                                   └→ ONNX (Rust/Spring portable runtime)
 ```
 
@@ -69,24 +69,24 @@ models/
 └── <captcha_id>.meta.json  # image_width, image_height, label_length, characters, threshold, preprocess
 ```
 
-등록된 CAPTCHA ID는 `default`, `dev`, `supreme_court`, `gov24`, `wetax`, `kshop` 여섯 가지입니다. DB의 기본 서비스 대상은 `supreme_court`, `gov24`, `wetax`, `kshop` 네 가지입니다. 학습 데이터가 있으면 정렬된 `images/train/*.png` 목록의 마지막 PNG를 열어 이미지 크기를 감지하고, 파일명에서 레이블 길이와 문자 집합을 감지합니다.
+등록된 CAPTCHA ID는 `supreme_court`, `gov24`, `wetax`, `kshop` 네 가지이며, DB의 기본 서비스 대상도 동일합니다. 학습 데이터가 있으면 정렬된 `images/train/*.png` 목록의 마지막 PNG를 열어 이미지 크기를 감지하고, 파일명에서 레이블 길이와 문자 집합을 감지합니다.
 
 CRNN은 입력에서 특징 맵 높이 `H/8`, 시간축 너비 `W/4`를 출력합니다. 고정 길이 CTC 디코딩은 `W/4 >= label_length`를 요구하므로 모델 입력 폭을 레이블 길이보다 충분히 크게 유지하세요.
 
 ## Python 학습 및 평가
 
-`train.py`와 `pred.py` 상단 변수를 수정한 뒤 실행합니다(명령 인자를 받는 스크립트가 아닙니다).
+`hypercaptcha/train.py`와 `hypercaptcha/pred.py` 상단 변수를 수정한 뒤 실행합니다(명령 인자를 받는 스크립트가 아닙니다).
 
 ```bash
-uv run python train.py              # 학습, PT/JIT/ONNX 산출물 생성
-uv run python pred.py               # images/pred 배치 평가
+uv run python -m hypercaptcha.train   # 학습, PT/JIT/ONNX 산출물 생성
+uv run python -m hypercaptcha.pred    # images/pred 배치 평가
 uv run python test_ctc_decode.py    # CTC 디코더 단위 검증
 ```
 
 엔진 API로도 학습·배치 평가·데이터 재분배를 호출할 수 있습니다.
 
 ```python
-import engine
+from hypercaptcha import engine
 model = engine.get_captcha_model(captcha_id="supreme_court")
 engine.train_model(model=model)
 engine.batch_predict_model(model=model)
@@ -106,7 +106,7 @@ uv run python main.py -c <captcha_id> -i <image_path> [-v]
 ## FastAPI 웹 서비스
 
 ```bash
-uv run fastapi dev web/app.py --host 0.0.0.0 --port 8000
+uv run fastapi dev apps/web/app.py --host 0.0.0.0 --port 8000
 ```
 
 `/`는 웹 UI, `/status`는 모델 상태, `/health`, `/ping`, `/version`은 상태·버전 엔드포인트입니다. 서버 기동 시 서비스 대상 모델을 preload/warm-up하고 `_MODEL_CACHE`에 보관하므로 모델 파일을 바꾼 뒤에는 프로세스를 재시작해야 합니다. `/health`는 서비스 대상 ID가 모두 로드됐을 때 `status: "ok"`, 하나라도 누락됐을 때 `status: "degraded"`를 반환합니다. `degraded`도 응답 자체는 HTTP 200이며 `serviced_captcha_ids`와 `loaded_captcha_ids`로 누락 항목을 확인합니다.
@@ -167,7 +167,7 @@ FastAPI는 누락 필수 필드·형식 불일치를 프레임워크 검증 응�
 | `APP_TITLE` | `Captcha Solver` | FastAPI 제목 |
 | `DB_PATH`, `DB_SCHEMA_PATH` | SQLite 기본 경로 | 서비스 설정 DB·스키마 |
 
-`APP_VERSION`은 FastAPI 설정 항목이 아닙니다. 버전은 `web/core/version.py`가 `pyproject.toml` 등에서 조회합니다.
+`APP_VERSION`은 FastAPI 설정 항목이 아닙니다. 버전은 `apps/web/core/version.py`가 `pyproject.toml` 등에서 조회합니다.
 
 ### Spring Boot (`application.yml` 또는 Spring 외부 설정)
 

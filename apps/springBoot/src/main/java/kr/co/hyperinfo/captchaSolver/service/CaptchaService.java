@@ -36,7 +36,7 @@ import kr.co.hyperinfo.captchaSolver.ml.ModelMeta;
 import kr.co.hyperinfo.captchaSolver.ml.Preprocessor;
 
 /**
- * 파이썬 {@code web/services/captcha.py} 의 포팅.
+ * 파이썬 {@code apps/web/services/captcha.py} 의 포팅.
  * 추론은 PyTorch 대신 apps/cli 와 같은 ONNX 모델을 ONNX Runtime 으로 돌린다.
  */
 @Service

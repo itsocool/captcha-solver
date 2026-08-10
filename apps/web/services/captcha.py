@@ -20,7 +20,7 @@ def list_captcha_types(serviced_only: bool = True) -> list[tuple[str, str]]:
 
 	기본은 DB(service_captchas)에서 서비스 대상으로 지정된 캡차만 반환한다.
 	"""
-	import engine
+	from hypercaptcha import engine
 
 	registered = engine.get_captcha_type_list()
 	if serviced_only:
@@ -44,7 +44,7 @@ def get_model(captcha_id: str):
 	if captcha_id in _MODEL_CACHE:
 		return _MODEL_CACHE[captcha_id]
 
-	import engine
+	from hypercaptcha import engine
 
 	model = engine.get_captcha_model(captcha_id=captcha_id, verbose=0)
 	_MODEL_CACHE[captcha_id] = model
@@ -89,7 +89,7 @@ def preload_models() -> dict[str, str]:
 
 def model_status() -> list[dict]:
 	"""등록된 캡차별 모델 상태. /status 페이지용."""
-	import engine
+	from hypercaptcha import engine
 
 	serviced = get_service_config()["serviced"]
 	rows = []
@@ -143,7 +143,7 @@ def predict_from_bytes(captcha_id: str, image_bytes: bytes, filename: str = "cap
 	if not is_serviced(captcha_id):
 		raise ValueError(f"captcha_id '{captcha_id}' is not serviced")
 
-	import engine
+	from hypercaptcha import engine
 
 	safe_filename = os.path.basename(filename) or "captcha.png"
 	with tempfile.TemporaryDirectory() as td:

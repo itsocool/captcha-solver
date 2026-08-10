@@ -15,9 +15,7 @@ import sys
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 MODELS_DIR = os.path.join(REPO_ROOT, "apps", "cli", "models")
 
-sys.path.insert(0, REPO_ROOT)
-
-import engine
+from hypercaptcha import engine
 
 
 def build_meta(captcha_id: str, captcha_type) -> dict:

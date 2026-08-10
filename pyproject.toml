@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = "==3.12.*"
 dependencies = [
     "fastapi[standard]>=0.135.3",
+    "hypercaptcha",
     "numpy>=2.4.4",
     "onnx>=1.21.0",
     "pandas>=3.0.2",
@@ -27,23 +28,22 @@ fastapi = "fastapi_dev:main"
 
 [tool.setuptools]
 include-package-data = true
-py-modules = [
-    "base_core",
-    "core",
-    "dataclass",
-    "engine",
-    "fastapi_dev",
-    "main",
-    "pred",
-    "train",
+# 라이브러리/학습 스크립트는 모두 hypercaptcha 패키지로 옮겼다.
+py-modules = ["fastapi_dev"]
+packages = [
+    "web",
+    "web.api",
+    "web.api.v1",
+    "web.core",
+    "web.frontend",
+    "web.schemas",
+    "web.services",
 ]
 
-[tool.setuptools.packages.find]
-where = ["."]
-exclude = ["captcha_data*", "logs*", "*.egg-info*", ".git*"]
+[tool.setuptools.package-dir]
+web = "apps/web"
 
 [tool.setuptools.package-data]
-# package-level data moved to project root; no package-local data.json
 web = [
     "templates/*.html",
     "static/*.ico",
@@ -59,6 +59,15 @@ url = "https://pypi.org/simple"
 
 [[tool.uv.index]]
 url = "https://download.pytorch.org/whl/cu130"
+
+[tool.uv.workspace]
+members = [
+    "packages/python_3.12/captcha_solver",
+    "packages/python_3.12/hyperCaptcha",
+]
+
+[tool.uv.sources]
+hypercaptcha = { workspace = true }
 
 [dependency-groups]
 dev = [

@@ -4,7 +4,7 @@
 """
 import numpy as np
 
-from core import ctc_beam_decode_fixed_length
+from hypercaptcha.core import ctc_beam_decode_fixed_length
 
 
 MAPPING = {0: '', 1: 'a', 2: 'b', 3: 'c'}

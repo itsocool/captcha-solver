@@ -9,14 +9,11 @@ import argparse
 import json
 import os
 import subprocess
-import sys
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 CLI_BIN = os.path.join(REPO_ROOT, "apps", "cli", "target", "release", "captcha-cli")
 
-sys.path.insert(0, REPO_ROOT)
-
-import engine
+from hypercaptcha import engine
 
 
 def run_cli(captcha_id: str, image_path: str) -> dict:

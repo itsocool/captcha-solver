@@ -4,41 +4,27 @@ import numpy as np
 import torch
 from typing import List, Tuple, Optional, Dict
 from tqdm import tqdm
-from core import PyTorchModel
-from base_core import BaseModel
-from dataclass import CAPTCHA_CHAR_SETS, DEV_CHAR_SETS, CaptchaType, TrainData
+from .core import PyTorchModel
+from .base_core import BaseModel
+from .dataclass import CaptchaType, TrainData
 
 def get_captcha_type_list(train_data_base_dir: str = "./captcha_data") -> Dict[str, CaptchaType]:
 
-    default = CaptchaType(name="기본 캡챠", desc="기본 캡챠", train_data=TrainData(
-        captcha_id="default",
-        train_data_base_dir=train_data_base_dir,
-        label_length=5,
-        characters=list(CAPTCHA_CHAR_SETS),
-    ))
-
-    dev = CaptchaType(name="개발중", desc="개발중", train_data=TrainData(
-        captcha_id="dev",
-        train_data_base_dir=train_data_base_dir,
-        label_length=6,
-        characters=list(DEV_CHAR_SETS),
-    ))
-
-    supreme_court = CaptchaType(name="대법원", desc="대법원 캡챠", train_data=TrainData(
+    supreme_court = CaptchaType(captcha_id="supreme_court", name="대법원", desc="대법원 캡챠", train_data=TrainData(
         captcha_id="supreme_court",
         train_data_base_dir=train_data_base_dir,
         image_width=120,
         image_height=40,
     ))
 
-    gov24 = CaptchaType(name="정부 24", desc="대한민국 정부 24 캡챠", train_data=TrainData(
+    gov24 = CaptchaType(captcha_id="gov24", name="정부 24", desc="대한민국 정부 24 캡챠", train_data=TrainData(
         captcha_id="gov24",
         rev=1,
         train_data_base_dir=train_data_base_dir,
         threshold=60,
     ))
 
-    wetax = CaptchaType(name="WETAX", desc="WETAX 캡챠", train_data=TrainData(
+    wetax = CaptchaType(captcha_id="wetax", name="WETAX", desc="WETAX 캡챠", train_data=TrainData(
         captcha_id="wetax",
         train_data_base_dir=train_data_base_dir,
         image_height=60,
@@ -52,15 +38,13 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data") -> Dict[s
     ))
 
     return {
-        "default": default,
-        "dev": dev,
         "supreme_court": supreme_court,
         "gov24": gov24,
         "wetax": wetax,
         "kshop": kshop,
     }
 
-def get_captcha_model(train_data_base_dir: str = "./captcha_data", captcha_id: str = "default", verbose: int = 1) -> PyTorchModel:
+def get_captcha_model(train_data_base_dir: str = "./captcha_data", captcha_id: str = "supreme_court", verbose: int = 1) -> PyTorchModel:
     captcha_type_list: Dict[str, CaptchaType] = get_captcha_type_list(train_data_base_dir=train_data_base_dir)
 
     if captcha_id not in captcha_type_list:
@@ -85,7 +69,7 @@ def train_model(
     
     model.build_model()
 
-    # Split dataset (dev.ipynb style)
+    # Split dataset
     train_loader, val_loader = model.split_dataset(
         batch_size=batch_size,
         train_size=0.8,

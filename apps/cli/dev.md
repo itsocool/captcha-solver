@@ -31,7 +31,7 @@ $ captcha-cli -m supreme_court.onnx -i captcha.png --json
 
 ## 2. 먼저 따질 것: 새로 만들 필요가 있나?
 
-이미 `main.py` + `main.spec`(PyInstaller)로 CLI를 빌드하는 경로가 있습니다. 다만 그 경로는 **PyTorch 전체를 번들**하므로 산출물이 수백 MB~GB급이 됩니다.
+예전에는 `main.py` + `main.spec`(PyInstaller)로 CLI를 빌드하는 경로가 있었습니다(현재는 제거됨). 그 방식은 **PyTorch 전체를 번들**하므로 산출물이 수백 MB~GB급이 됩니다.
 
 새 CLI의 실익은 언어 교체가 아니라 **런타임 축소**입니다.
 

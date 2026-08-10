@@ -1,6 +1,6 @@
 # captcha-solver Spring Boot 서비스
 
-저장소 루트의 FastAPI 웹 서비스(`web/`)를 Spring Boot 로 포팅한 것입니다.
+저장소 루트의 FastAPI 웹 서비스(`apps/web/`)를 Spring Boot 로 포팅한 것입니다.
 API 경로·요청/응답 형태·화면 구성이 모두 동일합니다.
 
 추론만 다릅니다. 파이썬은 PyTorch 로 `model_full.pt` 를 읽지만, JVM 에서는 그 파일을

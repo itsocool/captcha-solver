@@ -11,6 +11,7 @@ build
 .git
 .gitignore
 .venv
+**/.venv
 venv/
 .DS_Store
 *.log

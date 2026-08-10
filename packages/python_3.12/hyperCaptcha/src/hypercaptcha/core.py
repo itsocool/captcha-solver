@@ -10,8 +10,8 @@ from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 from typing import List, Tuple, Dict
 from tqdm import tqdm
-from dataclass import CaptchaType, TrainData
-from base_core import BaseModel
+from .dataclass import CaptchaType, TrainData
+from .base_core import BaseModel
 
 NEG_INF = float('-inf')
 
@@ -812,7 +812,7 @@ class PyTorchModel(BaseModel):
         return train_hist
     
     def save_model(self, model_path: str, temp: bool = False):
-        """모델 저장 (PyTorch 규약 - dev.ipynb 스타일)."""
+        """모델 저장 (PyTorch 규약)."""
         model_dir = os.path.dirname(model_path)
         os.makedirs(model_dir, exist_ok=True)
         temp_path = model_path + '.tmp'

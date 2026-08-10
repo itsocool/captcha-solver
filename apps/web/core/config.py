@@ -4,7 +4,9 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-BASE_DIR = Path(__file__).resolve().parents[2]
+# WEB_DIR = apps/web, BASE_DIR = 저장소 루트 (.env / pyproject.toml / db 상대경로의 기준)
+WEB_DIR = Path(__file__).resolve().parents[1]
+BASE_DIR = WEB_DIR.parents[1]
 ENV_FILE = BASE_DIR / ".env"
 
 
@@ -27,11 +29,11 @@ class Settings(BaseSettings):
 
 	@property
 	def template_dir(self) -> Path:
-		return BASE_DIR / "web" / "templates"
+		return WEB_DIR / "templates"
 
 	@property
 	def static_dir(self) -> Path:
-		return BASE_DIR / "web" / "static"
+		return WEB_DIR / "static"
 
 
 @lru_cache

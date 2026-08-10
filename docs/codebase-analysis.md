@@ -12,7 +12,7 @@
 
 ### 2.1 전체 구조
 
-시스템의 중심은 루트의 평면 Python 모듈이다. `dataclass.py`가 CAPTCHA별 데이터와 경로 규칙을 정의하고, `core.py`가 모델과 학습/추론 알고리즘을 구현하며, `engine.py`가 외부 진입점을 제공한다. `main.py`와 `web/`은 이 API를 사용하는 전달 계층이다.
+시스템의 중심은 `hypercaptcha` 패키지(`packages/python_3.12/hyperCaptcha/src/hypercaptcha/`)다. `dataclass.py`가 CAPTCHA별 데이터와 경로 규칙을 정의하고, `core.py`가 모델과 학습/추론 알고리즘을 구현하며, `engine.py`가 외부 진입점을 제공한다. `cli.py`, 루트 스크립트, `apps/web/`은 이 API를 사용하는 전달 계층이다. (아래 표의 파일명은 모두 이 패키지 안의 경로다.)
 
 Rust와 Java 구현은 별도 학습 기능이 없다. Python이 만든 `model_full.pt.onnx`와 `sync_models.py`가 생성한 `.meta.json`을 받아 Python의 전처리와 디코딩 의미를 재현한다. 따라서 모델 파일만이 아니라 문자셋, 이미지 크기, 라벨 길이, threshold, 전처리 종류가 담긴 사이드카가 배포 계약의 일부다.
 
@@ -38,7 +38,7 @@ graph TD
 
 ### 2.2 핵심 설계 특성
 
-- 캡차 레지스트리는 `engine.get_captcha_type_list()`에 하드코딩되어 있다. 현재 `default`, `dev`, `supreme_court`, `gov24`, `wetax`, `kshop` 여섯 종류다.
+- 캡차 레지스트리는 `engine.get_captcha_type_list()`에 하드코딩되어 있다. 현재 `supreme_court`, `gov24`, `wetax`, `kshop` 네 종류다.
 - 라벨은 별도 어노테이션 파일 없이 PNG 파일명에서 얻는다. `091082.png`의 정답은 `091082`다.
 - `BaseModel`이 공통 인터페이스를 정의하지만 구현은 `PyTorchModel` 하나뿐이다.
 - 웹 서비스 대상은 모델 레지스트리와 별도로 SQLite `service_captchas`가 결정한다. 등록됐지만 서비스 대상이 아닐 수 있다.
@@ -54,11 +54,11 @@ graph TD
 | `CRNN`, `PyTorchModel` | `core.py` | CNN-BiLSTM 모델, 데이터 로더, 학습, 체크포인트, 내보내기, 추론 |
 | CTC 디코더 | `core.py` | 고정 길이 prefix beam search와 후보 사후확률 기반 confidence 계산 |
 | 엔진 | `engine.py` | 캡차 레지스트리, 모델 팩토리, 학습/단건/배치 예측, 데이터 재분배 |
-| Python CLI | `main.py` | 파일 기반 단건 예측, PyInstaller 경로 처리, 일반/JSON 출력 |
-| FastAPI 조립 | `web/app.py` | lifespan, 정적 파일/템플릿, 시스템/API/UI 라우터 연결 |
-| Python 서비스 계층 | `web/services/captcha.py` | 모델 캐시/프리로드, 서비스 ID 검증, base64/바이트 입력 처리 |
-| 서비스 설정 | `web/core/db.py`, `db/schema.sql` | SQLite 초기화, 서비스 대상과 기본 캡차 조회 및 캐시 |
-| REST API | `web/api/v1/predict.py` | multipart 및 JSON 예측 요청, 오류를 HTTP 상태로 매핑 |
+| Python CLI | `cli.py` | 파일 기반 단건 예측, 일반/JSON 출력. `hypercaptcha` 콘솔 스크립트 / `python -m hypercaptcha` |
+| FastAPI 조립 | `apps/web/app.py` | lifespan, 정적 파일/템플릿, 시스템/API/UI 라우터 연결 |
+| Python 서비스 계층 | `apps/web/services/captcha.py` | 모델 캐시/프리로드, 서비스 ID 검증, base64/바이트 입력 처리 |
+| 서비스 설정 | `apps/web/core/db.py`, `db/schema.sql` | SQLite 초기화, 서비스 대상과 기본 캡차 조회 및 캐시 |
+| REST API | `apps/web/api/v1/predict.py` | multipart 및 JSON 예측 요청, 오류를 HTTP 상태로 매핑 |
 | Rust CLI | `apps/cli/src/*.rs` | 이미지/표준입력 → 전처리 → ONNX → CTC 디코딩 → 텍스트/JSON |
 | 모델 동기화 | `apps/cli/tools/sync_models.py` | Python ONNX를 portable models로 복사하고 메타데이터 생성 |
 | Spring Boot 서비스 | `apps/springBoot` | ONNX 기반으로 FastAPI와 같은 UI/API/DB/상태 계약 제공 |
@@ -92,8 +92,8 @@ CNN의 풀링은 `(2,2) → (2,2) → (2,1)`이므로 출력은 대략 `H/8 × W
 ```mermaid
 sequenceDiagram
     participant Client
-    participant Route as web/api/v1/predict.py
-    participant Service as web/services/captcha.py
+    participant Route as apps/web/api/v1/predict.py
+    participant Service as apps/web/services/captcha.py
     participant Cache as _MODEL_CACHE
     participant Engine as engine.predict
     participant Model as PyTorchModel
@@ -132,7 +132,7 @@ sequenceDiagram
 
 | 함수/메서드 | 파일 | 설명 |
 | :--- | :--- | :--- |
-| `get_captcha_type_list()` | `engine.py` | 여섯 CAPTCHA 설정을 생성하는 단일 레지스트리 |
+| `get_captcha_type_list()` | `engine.py` | 네 CAPTCHA 설정을 생성하는 단일 레지스트리 |
 | `get_captcha_model()` | `engine.py` | ID를 검증하고 `PyTorchModel`을 생성 |
 | `train_model()` | `engine.py` | 모델 빌드, 80/20 분할, 학습 루프 연결 |
 | `predict()` | `engine.py` | 필요 시 state dict를 지연 로드하고 단건 예측 |
@@ -144,9 +144,9 @@ sequenceDiagram
 | `PyTorchModel.train_model()` | `core.py` | 최적화, 검증, early stopping, 저장 및 export |
 | `PyTorchModel.load_prediction_model()` | `core.py` | CRNN을 만들고 `model_full.pt` state dict 로드 |
 | `ctc_beam_decode_fixed_length()` | `core.py` | 하드 길이 제약을 둔 CTC prefix beam search |
-| `preload_models()` | `web/services/captcha.py` | 서비스 모델 로드와 더미 텐서 워밍업, 상태 기록 |
-| `predict_from_bytes()` | `web/services/captcha.py` | 서비스 검증, 임시 파일 생성, Python 엔진 호출 |
-| `get_service_config()` | `web/core/db.py` | SQLite 서비스 설정 조회 및 프로세스 캐시 |
+| `preload_models()` | `apps/web/services/captcha.py` | 서비스 모델 로드와 더미 텐서 워밍업, 상태 기록 |
+| `predict_from_bytes()` | `apps/web/services/captcha.py` | 서비스 검증, 임시 파일 생성, Python 엔진 호출 |
+| `get_service_config()` | `apps/web/core/db.py` | SQLite 서비스 설정 조회 및 프로세스 캐시 |
 | `run_onnx()` | `apps/cli/src/main.rs` | ONNX 세션 설정, 입력 shape 검증, 추론 |
 | `preprocess()` | `apps/cli/src/preprocess.rs` | Python 전처리의 Rust 포팅 |
 | `CaptchaService.predict()` | Spring `CaptchaService.java` | 모델 세션 캐시와 Java ONNX 예측 오케스트레이션 |
@@ -248,7 +248,7 @@ Spring Boot 4.1.0, Java 25, ONNX Runtime 1.23.0을 사용한다. 기본 서버 �
 
 ### API 확장
 
-Python은 `web/api/v1` 라우터와 `web/schemas`, Java는 controller/record/OpenAPI 테스트를 함께 변경해야 한다. 두 서버의 호환성이 목표이므로 경로, snake_case 필드, 오류의 `{"detail": ...}` 형태를 계약 테스트로 고정하는 편이 안전하다.
+Python은 `apps/web/api/v1` 라우터와 `apps/web/schemas`, Java는 controller/record/OpenAPI 테스트를 함께 변경해야 한다. 두 서버의 호환성이 목표이므로 경로, snake_case 필드, 오류의 `{"detail": ...}` 형태를 계약 테스트로 고정하는 편이 안전하다.
 
 ### 모델 배포 개선
 
@@ -262,9 +262,9 @@ Python은 `web/api/v1` 라우터와 `web/schemas`, Java는 controller/record/Ope
 | 목적 | 명령 |
 | :--- | :--- |
 | Python 의존성 설치 | `uv sync` |
-| FastAPI 개발 서버 | `uv run fastapi dev web/app.py --host 0.0.0.0 --port 8000` |
+| FastAPI 개발 서버 | `uv run fastapi dev apps/web/app.py --host 0.0.0.0 --port 8000` |
 | Python CLI | `uv run python main.py -c supreme_court -i <image>` |
-| 학습 | `train.py` 상단 설정 후 `uv run python train.py` |
+| 학습 | `hypercaptcha/train.py` 상단 설정 후 `uv run python -m hypercaptcha.train` |
 | Python CTC 점검 | `uv run python test_ctc_decode.py` |
 | Rust 테스트 | `cd apps/cli && cargo test` |
 | Rust/Python 비교 | `uv run python apps/cli/tools/compare_with_python.py --limit 100` |
