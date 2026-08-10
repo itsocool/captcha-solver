@@ -83,7 +83,7 @@ INSERT OR IGNORE INTO service_captchas(captcha_id, enabled, is_default, sort_ord
 INSERT OR IGNORE INTO schema_migrations(version, name)
 VALUES (2, 'service_captchas');
 
--- 이름 붙은 문자 집합 상수 (출처: 저장소 루트 data.json 의 constants)
+-- 이름 붙은 문자 집합 상수 (원래 저장소 루트 data.json 의 constants 였고, 이제 여기가 유일한 출처)
 CREATE TABLE IF NOT EXISTS character_sets (
 	name TEXT PRIMARY KEY,
 	characters TEXT NOT NULL CHECK (length(characters) > 0),

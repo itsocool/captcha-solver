@@ -263,9 +263,8 @@ Python은 `apps/web/api/v1` 라우터와 `apps/web/schemas`, Java는 controller/
 | :--- | :--- |
 | Python 의존성 설치 | `uv sync` |
 | FastAPI 개발 서버 | `uv run fastapi dev apps/web/app.py --host 0.0.0.0 --port 8000` |
-| Python CLI | `uv run python main.py -c supreme_court -i <image>` |
+| Python CLI | `uv run hypercaptcha -c supreme_court -i <image>` |
 | 학습 | `hypercaptcha/train.py` 상단 설정 후 `uv run python -m hypercaptcha.train` |
-| Python CTC 점검 | `uv run python test_ctc_decode.py` |
 | Rust 테스트 | `cd apps/cli && cargo test` |
 | Rust/Python 비교 | `uv run python apps/cli/tools/compare_with_python.py --limit 100` |
 | Spring 테스트 | `cd apps/springBoot && ./mvnw test` (Windows: `mvnw.cmd test`) |

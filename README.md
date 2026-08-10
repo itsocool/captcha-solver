@@ -23,7 +23,7 @@ uv sync
 cp .env.example .env       # 선택: 설정을 덮어쓸 때
 ```
 
-`uv lock`을 다시 생성한 현재 `uv.lock`은 `torch 2.12.0`과 `torchvision 0.27.0`을 PyPI 레지스트리(`https://pypi.org/simple`, 휠: `files.pythonhosted.org`)에서 해석합니다. `pyproject.toml`의 CUDA 13 추가 인덱스만으로 CUDA 휠이 선택되는 것은 아니므로, 설치 후 실제 `torch.version.cuda`와 설치된 휠을 확인하세요. CTC 디코더는 잠금 파일을 그대로 사용하는 `uv run --locked python test_ctc_decode.py`로 확인할 수 있습니다.
+`uv lock`을 다시 생성한 현재 `uv.lock`은 `torch 2.12.0`과 `torchvision 0.27.0`을 PyPI 레지스트리(`https://pypi.org/simple`, 휠: `files.pythonhosted.org`)에서 해석합니다. `pyproject.toml`의 CUDA 13 추가 인덱스만으로 CUDA 휠이 선택되는 것은 아니므로, 설치 후 실제 `torch.version.cuda`와 설치된 휠을 확인하세요. 잠금 파일을 그대로 쓰려면 `uv run --locked ...` 형태로 실행하세요.
 
 ## 5분 빠른 시작
 
@@ -80,7 +80,6 @@ CRNN은 입력에서 특징 맵 높이 `H/8`, 시간축 너비 `W/4`를 출력�
 ```bash
 uv run python -m hypercaptcha.train   # 학습, PT/JIT/ONNX 산출물 생성
 uv run python -m hypercaptcha.pred    # images/pred 배치 평가
-uv run python test_ctc_decode.py    # CTC 디코더 단위 검증
 ```
 
 엔진 API로도 학습·배치 평가·데이터 재분배를 호출할 수 있습니다.
@@ -185,7 +184,7 @@ Compose는 호스트 `5001`을 컨테이너 `8000`에 연결하고 `captcha_data
 ## 테스트와 검증
 
 ```bash
-uv run python test_ctc_decode.py
+uv run python apps/cli/tools/compare_with_python.py --limit 100   # Rust CLI 와 파이썬 결과 대조
 ```
 
 ```powershell

@@ -1,4 +1,7 @@
--- 캡차 타입 시드 데이터 (출처: 저장소 루트 data.json)
+-- 캡차 타입 시드 데이터
+--
+-- 원래 저장소 루트 data.json 에 있던 값이다. data.json 은 제거됐고 이 파일이
+-- 유일한 출처다. 런타임 레지스트리는 engine.get_captcha_type_list() 쪽이다.
 --
 -- 적용: FastAPI 기동 시 init_db() 가 schema.sql 다음에 자동 실행한다
 --       (경로는 DB_SEED_PATH, 기본 ./db/seed_captcha_types.sql).
@@ -7,7 +10,7 @@
 -- INSERT OR IGNORE 라 반복 실행해도 안전하다. 기존 행의 값을 고치지는 않으므로,
 -- 값을 바꾸려면 해당 행을 지우고 다시 넣거나 UPDATE 를 쓴다.
 --
--- data.json 의 `default`, `dev` 는 제외했다. 두 타입은 engine.get_captcha_type_list()
+-- 옛 data.json 의 `default`, `dev` 는 제외했다. 두 타입은 engine.get_captcha_type_list()
 -- 에서 제거됐고 service_captchas 시드에도 없다.
 
 PRAGMA foreign_keys = ON;
@@ -19,8 +22,8 @@ BEGIN;
 -- ---------------------------------------------------------------------------
 INSERT OR IGNORE INTO captcha_types(captcha_id, name, description) VALUES
 	('supreme_court', '대법원',  '대법원 캡챠'),
-	-- data.json 은 '정부24' / '정부24 캡챠', engine.py 는 '정부 24' / '대한민국 정부 24 캡챠'.
-	-- 여기서는 data.json 을 따랐다.
+	-- 옛 data.json 은 '정부24' / '정부24 캡챠', engine.py 는 '정부 24' / '대한민국 정부 24 캡챠'.
+	-- 여기서는 data.json 값을 따랐다.
 	('gov24',         '정부24',  '정부24 캡챠'),
 	('wetax',         'WETAX',   'WETAX 캡챠'),
 	('kshop',         'kshop',   'KT Shopping 캡챠');
@@ -28,12 +31,12 @@ INSERT OR IGNORE INTO captcha_types(captcha_id, name, description) VALUES
 -- ---------------------------------------------------------------------------
 -- train_data_configs: 캡차별 학습/전처리 설정
 --
--- 명시하지 않은 값은 data.json 의 train_data_defaults 와 동일하다.
+-- 명시하지 않은 값은 옛 data.json 의 train_data_defaults 와 동일하다.
 --   backend='pytorch', rev=0, train_data_base_dir='./captcha_data',
 --   image_width=200, image_height=50, label_length=6,
 --   characters='0123456789', threshold=255
 --
--- characters 는 data.json 의 train_data_defaults.characters 값이다. 네 타입 모두
+-- characters 는 옛 data.json 의 train_data_defaults.characters 값이다. 네 타입 모두
 -- 숫자 라벨이라 engine 이 파일명에서 감지하는 문자 집합과도 일치한다.
 -- UNIQUE (captcha_id, backend, rev) 로 중복 삽입이 막힌다.
 -- ---------------------------------------------------------------------------

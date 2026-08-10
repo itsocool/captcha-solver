@@ -90,4 +90,3 @@ captcha_data/<captcha_id>/<rev>/images/{train,pred}/
 |--------|-----------|
 | `apps/web/` (FastAPI) | `from hypercaptcha import engine` |
 | `apps/cli/tools/*.py` | `from hypercaptcha import engine` |
-| `test_ctc_decode.py` | `from hypercaptcha.core import ...` |

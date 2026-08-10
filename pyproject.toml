@@ -23,13 +23,9 @@ dependencies = [
     "tqdm>=4.67.3",
 ]
 
-[project.scripts]
-fastapi = "fastapi_dev:main"
-
 [tool.setuptools]
 include-package-data = true
-# 라이브러리/학습 스크립트는 모두 hypercaptcha 패키지로 옮겼다.
-py-modules = ["fastapi_dev"]
+# 라이브러리/학습 스크립트는 모두 hypercaptcha 패키지에 있다. 루트에는 배포할 모듈이 없다.
 packages = [
     "web",
     "web.api",

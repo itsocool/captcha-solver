@@ -98,8 +98,8 @@ Endpoints: `GET /health`, `POST /predict`
 
 ## Gotchas
 
-- **No test suite** — verify by running `python -m hypercaptcha.train` or `.pred` with small dataset
-  (`test_ctc_decode.py`만 단위 검증).
+- **No test suite** — verify by running `python -m hypercaptcha.train` or `.pred` with small dataset,
+  또는 `apps/cli/tools/compare_with_python.py` 로 Rust CLI 와 대조.
 - No lint/typecheck config (ruff, mypy, flake8 모두 없음). 패키징 설정은 `pyproject.toml` 한 곳에 있음.
 - `apps/web/services/captcha.py`는 `from hypercaptcha import engine`을 **함수 안에서** 지연 import 한다.
   최상위에서 import 하면 서버 기동 시점에 torch/CUDA 초기화가 딸려온다.
