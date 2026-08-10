@@ -2,3 +2,8 @@
 # (pred.cmd 의 한글 출력이 조각난 명령으로 깨지는 원인) → 항상 CRLF 로 체크아웃한다.
 *.cmd text eol=crlf
 *.bat text eol=crlf
+*.keras filter=lfs diff=lfs merge=lfs -text
+*.ort filter=lfs diff=lfs merge=lfs -text
+*.onnx filter=lfs diff=lfs merge=lfs -text
+*.pth filter=lfs diff=lfs merge=lfs -text
+*.pt2 filter=lfs diff=lfs merge=lfs -text
