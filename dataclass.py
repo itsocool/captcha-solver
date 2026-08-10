@@ -15,8 +15,6 @@ LOWER_CASE: Final = string.ascii_lowercase
 UPPER_CASE: Final = string.ascii_uppercase
 ALPHABET: Final = string.ascii_letters
 ALPHA_NUMERIC: Final = string.digits + string.ascii_letters
-CAPTCHA_CHAR_SETS: Final = "2345678bcdefgmnpwxy"
-DEV_CHAR_SETS: Final = "2345678ABCDEFGHKLMNPRSTUVWYZabcdefhklmnoprstuvwyz"
 
 
 class _TrainInfo(BaseModel):
@@ -31,10 +29,10 @@ class _TrainInfo(BaseModel):
 
 
 class CaptchaType(BaseModel):
-    captcha_id: str = "default"
-    name: str = "기본캡챠"
-    desc: str = "기본 캡챠"
-    train_data: "TrainData" = Field(default_factory=lambda: TrainData(captcha_id="default"))
+    captcha_id: str = "supreme_court"
+    name: str = "대법원"
+    desc: str = "대법원 캡챠"
+    train_data: "TrainData" = Field(default_factory=lambda: TrainData(captcha_id="supreme_court"))
 
 
 class TrainData(BaseModel):
@@ -148,7 +146,16 @@ class TrainData(BaseModel):
         return model_base_dir
 
     def get_model_path(self) -> str:
-        return os.path.join(self.get_model_base_dir(), "model_full.pt")
+        """학습 체크포인트. `torch.save(state_dict)` 로 저장하고 파이썬 추론이 읽는다."""
+        return os.path.join(self.get_model_base_dir(), "model.pth")
+
+    def get_export_path(self) -> str:
+        """`torch.export` 산출물. 그래프와 가중치를 함께 담은 PyTorch 2 아카이브."""
+        return os.path.join(self.get_model_base_dir(), "model.pt2")
+
+    def get_onnx_path(self) -> str:
+        """ONNX 산출물. Rust CLI / Spring Boot / ConsoleApp 이 읽는다."""
+        return os.path.join(self.get_model_base_dir(), "model.onnx")
 
     def get_train_info(self) -> Tuple[str, str, str, int, int, int, List[str], int]:
         iw = self.detected_image_width

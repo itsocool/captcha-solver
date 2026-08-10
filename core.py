@@ -347,6 +347,18 @@ class CRNN(nn.Module):
         
         return out, None
 
+class _InferenceWrapper(nn.Module):
+    """export 시 추론 전용 forward 만 노출한다 (학습용 y/criterion 인자를 감춘다)."""
+
+    def __init__(self, model: nn.Module):
+        super().__init__()
+        self.model = model
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        out, _ = self.model(x, None, None)
+        return out
+
+
 class CaptchaDataset(Dataset):
     """PyTorch Dataset for CAPTCHA images."""
     
@@ -780,11 +792,8 @@ class PyTorchModel(BaseModel):
                     
                     # Early stopping 체크
                     if early_stopping_patience > 0 and patience_counter >= early_stopping_patience:
-                        # 최종 모델 저장 (early stopping으로 종료되지 않은 경우)
-                        self.save_model(model_path)
-                        self.save_model_jit(model_path.replace('_full.pt', '_jit.pt'))
-                        self.export_onnx(model_path + '.onnx')
-
+                        # 저장과 export 는 루프 밖 한 곳에서만 한다.
+                        # 여기서 하면 아래 .tmp 승격이 덮어써 아티팩트가 갈린다.
                         if self.verbose > 0:
                             print(f"\n[Early Stopping] Triggered after {epoch + 1} epochs")
                             print(f"Best validation loss: {best_val_loss:.4f} at epoch {best_epoch}")
@@ -794,15 +803,14 @@ class PyTorchModel(BaseModel):
                 if save_best and (epoch + 1) % 10 == 0:
                     self.save_model(model_path, temp=True)
         
-        # 최종 모델 저장 (early stopping으로 종료되지 않은 경우)
+        # 체크포인트를 먼저 확정한 뒤, 그 파일 하나에서만 파생 아티팩트를 만든다.
         if os.path.exists(model_path + '.tmp'):
             os.replace(model_path + '.tmp', model_path)
         else:
             self.save_model(model_path)
-            
-        self.save_model_jit(model_path.replace('_full.pt', '_jit.pt'))
-        self.export_onnx(model_path + '.onnx')
-        
+
+        self.finalize_artifacts(model_path)
+
         if self.verbose > 0:
             print("=" * 70)
             print("Training completed.")
@@ -812,104 +820,181 @@ class PyTorchModel(BaseModel):
         return train_hist
     
     def save_model(self, model_path: str, temp: bool = False):
-        """모델 저장 (PyTorch 규약 - dev.ipynb 스타일)."""
-        model_dir = os.path.dirname(model_path)
-        os.makedirs(model_dir, exist_ok=True)
-        temp_path = model_path + '.tmp'
-        
+        """state dict 저장.
+
+        스테이징 파일에 먼저 쓰고 os.replace 로 교체한다. 중간에 죽어도 직전 파일이
+        온전히 남는다. 저장 실패는 삼키지 않고 그대로 올린다 — 실패를 성공으로
+        보고하면 학습 결과를 통째로 잃는다.
+        """
+        target = model_path + '.tmp' if temp else model_path
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+
+        staging = target + '.writing'
         try:
-            if temp:
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
-                torch.save(self.model.state_dict(), temp_path)
-            else:
-                if os.path.exists(model_path):
-                    os.remove(model_path)
-                torch.save(self.model.state_dict(), model_path)
-                
-        except Exception as e:
-            # 실패 시 임시파일 정리(있다면) 및 폴백
-            try:
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
-            except Exception:
-                pass
-            
+            torch.save(self.model.state_dict(), staging)
+            os.replace(staging, target)
+        except Exception:
+            if os.path.exists(staging):
+                os.remove(staging)
+            raise
+
         if self.verbose > 0:
-            print(f"Model saved to {model_dir}")
-            
-            if temp:
-                print(f"  - Temp model: {temp_path}")
-            else:
-                print(f"  - Final model: {model_path}")
-                
-    def save_model_jit(self, model_path: str):
-        """TorchScript 형식으로 모델 저장 (trace 방식)."""
+            label = "Temp model" if temp else "Final model"
+            print(f"Model saved - {label}: {target}")
+
+    def finalize_artifacts(self, model_path: str, verify: bool = True) -> Dict[str, str]:
+        """확정된 체크포인트 하나에서 나머지 아티팩트를 내보내고 동등성을 검증한다.
+
+        메모리에 남은 모델이 아니라 **디스크의 체크포인트를 다시 읽어서** export 한다.
+        학습 종료 시 `.tmp` 가 `.pth` 로 승격되는데, 예전에는 메모리 모델에서 export 해
+        체크포인트와 ONNX 가 서로 다른 에폭이 되는 일이 있었다(kshop 사례).
+
+        세 산출물의 역할:
+            model.pth  - state_dict 체크포인트. 파이썬 추론과 재학습의 기준.
+            model.pt2  - torch.export 아카이브. 그래프까지 고정해 파이썬 코드 없이 로드.
+            model.onnx - ONNX. Rust CLI / Spring Boot / ConsoleApp 이 읽는다.
+
+        Returns:
+            {"checkpoint": ..., "export": ..., "onnx": ...} 경로 매핑
+        """
+        self.model.load_state_dict(
+            torch.load(model_path, map_location=self.device, weights_only=False)
+        )
+        self.model.eval()
+
+        export_path = self.train_data.get_export_path()
+        self.export_pt2(export_path)
+
+        onnx_path = self.train_data.get_onnx_path()
+        self.export_onnx(onnx_path)
+
+        if verify:
+            self.verify_onnx_export(onnx_path)
+
+        return {"checkpoint": model_path, "export": export_path, "onnx": onnx_path}
+
+    def verify_onnx_export(self, onnx_path: str, num_samples: int = 8,
+                           logit_tol: float = 0.5) -> None:
+        """방금 내보낸 ONNX 가 PyTorch 와 같은 예측을 내는지 확인한다.
+
+        판정 기준은 **디코딩된 예측 문자열의 일치**다. 로짓 오차는 진단용으로 함께 보되,
+        가중치가 뒤바뀐 수준(관측치 7.8)과 float 노이즈(관측치 0.003)를 가르는
+        느슨한 임계값만 둔다.
+
+        Raises:
+            RuntimeError: 예측이 하나라도 갈리거나 로짓 오차가 임계값을 넘으면
+        """
+        import glob
+
+        try:
+            import onnxruntime as ort
+        except ImportError as e:
+            raise RuntimeError(
+                "ONNX export 검증에 onnxruntime 이 필요합니다. `uv sync` 로 설치하세요."
+            ) from e
+
+        images = sorted(glob.glob(os.path.join(
+            self.train_data.get_image_dir(train=True), "*.png")))[:num_samples]
+        transform = get_eval_transform(self.train_data)
+        expected_length = self.train_data.label_length
+
+        sess = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
+        input_name = sess.get_inputs()[0].name
+
+        def decode(logits_TNC: np.ndarray) -> str:
+            out = np.transpose(logits_TNC, (1, 0, 2))[0]
+            out = out - out.max(axis=-1, keepdims=True)
+            log_probs = out - np.log(np.exp(out).sum(axis=-1, keepdims=True))
+            text, _ = ctc_beam_decode_fixed_length(
+                log_probs, self.idx_to_char, expected_length=expected_length,
+                beam_width=10, unk_token="[UNK]",
+            )
+            return text
+
+        mismatches = []
+        worst_diff = 0.0
+
+        for path in images:
+            tensor = transform(Image.open(path)).unsqueeze(0)
+            with torch.inference_mode():
+                torch_logits = self.model(tensor.to(self.device))[0].cpu().numpy()
+            onnx_logits = sess.run(None, {input_name: tensor.numpy().astype(np.float32)})[0]
+
+            worst_diff = max(worst_diff, float(np.abs(torch_logits - onnx_logits).max()))
+            pred_torch, pred_onnx = decode(torch_logits), decode(onnx_logits)
+            if pred_torch != pred_onnx:
+                mismatches.append((os.path.basename(path), pred_torch, pred_onnx))
+
+        if mismatches or worst_diff > logit_tol:
+            detail = "".join(
+                f"\n  {name}: PyTorch={a!r} ONNX={b!r}" for name, a, b in mismatches[:5]
+            )
+            raise RuntimeError(
+                f"ONNX export 검증 실패 — {onnx_path}\n"
+                f"  샘플 {len(images)}장 중 예측 불일치 {len(mismatches)}건, "
+                f"로짓 최대 오차 {worst_diff:.4g} (임계 {logit_tol})"
+                f"{detail}"
+            )
+
+        if self.verbose > 0:
+            print(f"ONNX 검증 통과: 샘플 {len(images)}장 예측 일치, "
+                  f"로짓 최대 오차 {worst_diff:.4g}")
+
+
+    def _export_inputs(self) -> Tuple[nn.Module, torch.Tensor]:
+        """export 용 추론 전용 wrapper 와 더미 입력. ONNX 와 .pt2 가 함께 쓴다."""
         if self.model is None:
             raise ValueError("Model not loaded. Call load_prediction_model() first.")
-        
-        if self.verbose > 0:
-            print(f"TorchScript saving: {model_path}")
-        
-        # TorchScript용 wrapper 클래스 - 추론 전용 forward만 노출
-        class JITWrapper(nn.Module):
-            def __init__(self, model):
-                super().__init__()
-                self.model = model
-            
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                # 원본 모델의 forward 호출 (y=None, criterion=None)
-                out, _ = self.model(x, None, None)
-                return out
-        
-        wrapper = JITWrapper(self.model)
+
+        wrapper = _InferenceWrapper(self.model)
         wrapper.eval()
-        
-        # trace용 더미 입력 생성
         dummy_input = torch.randn(
-            1, 1, self.train_data.image_height, self.train_data.image_width
+            1, 1, self.train_data.image_height, self.train_data.image_width,
         ).to(self.device)
-        
-        # TorchScript 변환 (trace 방식 - 타입 어노테이션 문제 회피)
-        with torch.no_grad():
-            traced_model = torch.jit.trace(wrapper, dummy_input)
-        traced_model.save(model_path)
-        
+        return wrapper, dummy_input
+
+    def export_pt2(self, export_path: str):
+        """`torch.export` 아카이브(.pt2)로 내보내기.
+
+        state_dict 와 달리 그래프까지 담기므로, 로드하는 쪽에 모델 정의 코드가 없어도
+        된다. 배치 1 고정으로 내보낸다 — ONNX 와 같은 시그니처를 유지한다.
+
+        Args:
+            export_path: .pt2 파일 저장 경로
+        """
+        wrapper, dummy_input = self._export_inputs()
+
         if self.verbose > 0:
-            print(f"TorchScript model saved: {model_path}")
-                
+            print(f"torch.export: {export_path}")
+
+        os.makedirs(os.path.dirname(export_path), exist_ok=True)
+        # torch.export.save 는 확장자가 .pt2 가 아니면 경고하므로 스테이징도 .pt2 로 끝낸다.
+        staging = export_path + '.writing.pt2'
+        try:
+            with torch.inference_mode():
+                exported = torch.export.export(wrapper, (dummy_input,))
+            torch.export.save(exported, staging)
+            os.replace(staging, export_path)
+        except Exception:
+            if os.path.exists(staging):
+                os.remove(staging)
+            raise
+
+        if self.verbose > 0:
+            print(f"torch.export done (fixed batch=1): {export_path}")
+
     def export_onnx(self, onnx_path: str, fixed_batch: bool = True):
         """ONNX 형식으로 모델 내보내기.
-        
+
         Args:
             onnx_path: ONNX 파일 저장 경로
             fixed_batch: 배치 크기를 1로 고정할지 여부 (기본값: True)
                         LSTM의 동적 배치 경고를 방지하려면 True 권장
         """
+        wrapper, dummy_input = self._export_inputs()
 
-        if self.model is None:
-            raise ValueError("Model not loaded. Call load_prediction_model() first.")
-        
         if self.verbose > 0:
             print(f"ONNX export: {onnx_path}")
-        
-        # ONNX export용 wrapper 클래스 - 추론 전용 forward만 노출
-        class ONNXWrapper(nn.Module):
-            def __init__(self, model):
-                super().__init__()
-                self.model = model
-            
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                # 원본 모델의 forward 호출 (y=None, criterion=None)
-                out, _ = self.model(x, None, None)
-                return out
-        
-        wrapper = ONNXWrapper(self.model)
-        wrapper.eval()
-        batch_size = 1
-        dummy_input = torch.randn(
-            batch_size, 1, self.train_data.image_height, self.train_data.image_width,
-        ).to(self.device)
         # 레거시 TorchScript 기반 export
         export_kwargs = {
             'input_names': ['input'],
@@ -990,8 +1075,9 @@ class PyTorchModel(BaseModel):
             
             out = out.permute(1, 0, 2)  # (N, T, C)
 
-            # log-probabilities
-            log_probs = out.log_softmax(2)
+            # log-probabilities. AMP를 쓰면 out이 fp16이라 그대로 log_softmax를 태우면
+            # 신뢰도에 양자화 잡음이 섞이고 ONNX 경로와 값이 갈린다. float32로 올려서 계산.
+            log_probs = out.float().log_softmax(2)
             log_probs_np = log_probs.cpu().numpy()[0]  # (T, C)
             
             # 고정 길이 Beam Search 디코딩
@@ -1053,7 +1139,7 @@ class PyTorchModel(BaseModel):
                     out, _ = self.model(batch_input)
                 
                 out = out.permute(1, 0, 2)  # (N, T, C)
-                log_probs = out.log_softmax(2)
+                log_probs = out.float().log_softmax(2)  # AMP fp16 잡음 차단 (predict 주석 참고)
                 log_probs_np = log_probs.cpu().numpy()  # (N, T, C)
             
             # 각 샘플에 대해 디코딩
@@ -1079,6 +1165,67 @@ def _log_add(a: float, b: float) -> float:
     return hi + float(np.log1p(np.exp(lo - hi)))
 
 
+def length_logprob(log_probs: np.ndarray, expected_length: int) -> float:
+    """
+    log P(|y| = expected_length | 이미지). 길이가 정확히 L인 **모든** 라벨열의 확률 합.
+
+    신뢰도를 정규화할 때 쓰는 분모입니다. beam에 무엇이 살아남았는지와 무관하게
+    결정되므로, beam_width를 바꿔도 값이 흔들리지 않습니다.
+
+    상태는 (k = 지금까지 emit한 문자 수, c = 마지막 emit 문자, 0은 "아직 없음"):
+        B[k][c] - 현재 프레임이 blank
+        A[k][c] - 현재 프레임이 문자 c를 emit (c >= 1)
+    프레임마다 전체 합으로 스케일링해 언더플로를 피하고 로그 스케일만 누적합니다.
+    비용은 O(T * L * C)로, beam search에 비하면 무시할 수준입니다.
+
+    Args:
+        log_probs: (T, num_classes) log 확률. 인덱스 0은 blank
+        expected_length: 기대 레이블 길이
+
+    Returns:
+        log 확률. 길이 L이 도달 불가능하면 -inf
+    """
+    T, num_classes = log_probs.shape
+    L = expected_length
+    if L <= 0 or T == 0 or T < L:
+        return NEG_INF
+
+    probs = np.exp(log_probs)
+    A = np.zeros((L + 1, num_classes))
+    B = np.zeros((L + 1, num_classes))
+    B[0, 0] = 1.0
+    log_scale = 0.0
+
+    for t in range(T):
+        frame = probs[t]
+        total = A + B                 # 상태별 총 확률
+        row_sum = total.sum(axis=1)   # k별 총합
+
+        # blank: k와 마지막 문자를 그대로 유지
+        next_B = total * frame[0]
+
+        # 같은 문자를 blank 없이 반복: 문자열이 그대로이므로 k 유지
+        next_A = np.zeros_like(A)
+        next_A[:, 1:] = A[:, 1:] * frame[1:]
+
+        # 새 문자 c로 확장하여 k+1: 마지막 문자가 c가 아닌 모든 경로(row_sum - A[k][c])와
+        # 마지막 문자가 c였지만 blank를 거친 경로(B[k][c])의 합 = row_sum - A[k][c]
+        extend = np.maximum(row_sum[:, None] - A, 0.0) * frame[None, :]
+        next_A[1:, 1:] += extend[:-1, 1:]
+
+        A, B = next_A, next_B
+
+        scale = A.sum() + B.sum()
+        if scale <= 0.0:
+            return NEG_INF
+        A /= scale
+        B /= scale
+        log_scale += float(np.log(scale))
+
+    tail = float((A[L] + B[L]).sum())
+    return float(np.log(tail)) + log_scale if tail > 0.0 else NEG_INF
+
+
 def ctc_beam_decode_fixed_length(
     log_probs: np.ndarray,
     mapping_inv: Dict[int, str],
@@ -1094,15 +1241,21 @@ def ctc_beam_decode_fixed_length(
     log-sum-exp로 **합산**합니다. 즉 beam 점수가 곧 P(문자열 | 이미지)이며,
     단일 정렬(alignment) 경로 확률이 아닙니다.
 
-    신뢰도 = 최종 beam 집합 안에서 정규화한 사후확률
-             exp(best - logsumexp(all)). 1위 후보가 압도적이면 1.0에 가깝고,
-             2위와 접전이면 0.5 부근으로 떨어집니다.
+    신뢰도 = P(예측 문자열 | 이미지, 길이 = expected_length)
+           = exp(best_score - length_logprob(...))
+
+    분모는 살아남은 beam의 합이 아니라 길이 L인 모든 문자열의 확률 합입니다.
+    beam 집합으로 정규화하면 1위가 2위보다 얼마나 나은지만 재게 되어,
+    (a) beam_width라는 튜닝 노브에 따라 값이 흔들리고
+    (b) beam 밖으로 빠져나간 확률 질량을 무시해 학습 분포 밖 입력에서도
+        0.5 언저리의 애매한 값을 돌려줍니다.
+    길이 조건부 사후확률은 두 문제가 모두 없고, 임계값을 그대로 신뢰할 수 있습니다.
 
     Args:
         log_probs: (T, num_classes) log 확률. 인덱스 0은 blank
         mapping_inv: index -> character 매핑
         expected_length: 기대 레이블 길이 (하드 제약으로 사용)
-        beam_width: 유지할 prefix 수
+        beam_width: 유지할 prefix 수 (예측 문자열에만 영향, 신뢰도 척도와는 무관)
         unk_token: 매핑에 없는 인덱스 대체 토큰
         top_k: 프레임당 후보 문자 수 (0이면 beam_width * 2). blank는 항상 포함
 
@@ -1194,11 +1347,14 @@ def ctc_beam_decode_fixed_length(
     pool = exact if exact else scored
     best_prefix, best_score = max(pool, key=lambda item: item[1])
 
-    # 신뢰도: 살아남은 후보들 사이에서 정규화한 사후확률
-    total = NEG_INF
-    for _, score in scored:
-        total = _log_add(total, score)
-    confidence = float(np.exp(best_score - total)) if total > NEG_INF else 0.0
+    # 신뢰도: 길이 L로 조건부화한 사후확률. 분모는 beam과 무관하게 정확히 구한다.
+    log_z = length_logprob(log_probs, expected_length) if exact else NEG_INF
+    if log_z == NEG_INF:
+        # 길이 L 도달 불가(T < L 등). 남은 후보들 사이의 상대 점수로 대체한다.
+        log_z = NEG_INF
+        for _, score in scored:
+            log_z = _log_add(log_z, score)
+    confidence = float(np.exp(best_score - log_z)) if log_z > NEG_INF else 0.0
 
     text = ''.join(mapping_inv.get(c, unk_token) for c in best_prefix)
     return text, min(1.0, max(0.0, confidence))

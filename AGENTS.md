@@ -5,6 +5,7 @@
 - Python 3.12 (`requires-python = "==3.12.*"`), package manager: **uv** (lockfile: `uv.lock`). 설치: `uv sync`
 - Run web API (dev): `uv run fastapi dev web/app.py --host 0.0.0.0 --port 8000`
 - Run web API (prod): `docker compose up` (호스트 5001 → 컨테이너 8000)
+- Run Spring Boot web API (dev): `apps/springBoot/devserver.sh {start|stop|restart|status}` (백그라운드, 포트 5000)
 - Run CLI: `uv run python main.py -c supreme_court -i captcha_data/<id>/images/<path>.png`
 
 ## Architecture
@@ -27,9 +28,7 @@ Single-repo PyTorch captcha solver. No package — all code lives at root as fla
 
 Hardcoded in `engine.get_captcha_type_list()`:
 
-- `default` — digits only (`2345678bcdefgmnpwxy`), label length 5
-- `dev` — mixed alphanumeric, label length 6
-- `supreme_court` — custom crop preprocess, 120×40
+- `supreme_court` — custom crop preprocess, 120×40 (default `captcha_id`)
 - `gov24` — threshold=60, rev=1
 - `wetax` — height=60
 - `kshop` — 263×54
@@ -41,7 +40,7 @@ captcha_data/<captcha_id>/<rev>/images/{train,pred}/
 ```
 
 - Image **filename** (no extension) = label (e.g., `abc12.png` → label `abc12`)
-- Models: `captcha_data/<id>/<rev>/model/model_full.pt` (state dict), `model_jit.pt` (TorchScript), `model_full.pt.onnx` (ONNX)
+- Models: `captcha_data/<id>/<rev>/model/model.pth` (state dict checkpoint), `model.pt2` (`torch.export` archive), `model.onnx` (ONNX). `finalize_artifacts()` exports the `.pt2` and `.onnx` from the finalized `.pth` on disk (never the in-memory model) and fails training if the checkpoint and ONNX predictions disagree.
 
 ## Image Preprocessing
 

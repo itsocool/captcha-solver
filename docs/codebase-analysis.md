@@ -14,7 +14,7 @@
 
 시스템의 중심은 루트의 평면 Python 모듈이다. `dataclass.py`가 CAPTCHA별 데이터와 경로 규칙을 정의하고, `core.py`가 모델과 학습/추론 알고리즘을 구현하며, `engine.py`가 외부 진입점을 제공한다. `main.py`와 `web/`은 이 API를 사용하는 전달 계층이다.
 
-Rust와 Java 구현은 별도 학습 기능이 없다. Python이 만든 `model_full.pt.onnx`와 `sync_models.py`가 생성한 `.meta.json`을 받아 Python의 전처리와 디코딩 의미를 재현한다. 따라서 모델 파일만이 아니라 문자셋, 이미지 크기, 라벨 길이, threshold, 전처리 종류가 담긴 사이드카가 배포 계약의 일부다.
+Rust와 Java 구현은 별도 학습 기능이 없다. Python이 만든 `model.onnx`와 `sync_models.py`가 생성한 `.meta.json`을 받아 Python의 전처리와 디코딩 의미를 재현한다. 따라서 모델 파일만이 아니라 문자셋, 이미지 크기, 라벨 길이, threshold, 전처리 종류가 담긴 사이드카가 배포 계약의 일부다.
 
 ```mermaid
 graph TD
@@ -22,9 +22,9 @@ graph TD
     TD --> Core[core.py / PyTorchModel + CRNN]
     Engine[engine.py / Registry + Orchestration] --> TD
     Engine --> Core
-    Core --> PT[model_full.pt]
-    Core --> JIT[model_jit.pt]
-    Core --> ONNX[model_full.pt.onnx]
+    Core --> PT[model.pth]
+    Core --> PT2[model.pt2]
+    Core --> ONNX[model.onnx]
     PT --> CLIpy[main.py]
     PT --> FastAPI[web / FastAPI]
     ONNX --> Sync[sync_models.py]
@@ -38,7 +38,7 @@ graph TD
 
 ### 2.2 핵심 설계 특성
 
-- 캡차 레지스트리는 `engine.get_captcha_type_list()`에 하드코딩되어 있다. 현재 `default`, `dev`, `supreme_court`, `gov24`, `wetax`, `kshop` 여섯 종류다.
+- 캡차 레지스트리는 `engine.get_captcha_type_list()`에 하드코딩되어 있다. 현재 `supreme_court`, `gov24`, `wetax`, `kshop` 네 종류이며 기본값은 `supreme_court`다.
 - 라벨은 별도 어노테이션 파일 없이 PNG 파일명에서 얻는다. `091082.png`의 정답은 `091082`다.
 - `BaseModel`이 공통 인터페이스를 정의하지만 구현은 `PyTorchModel` 하나뿐이다.
 - 웹 서비스 대상은 모델 레지스트리와 별도로 SQLite `service_captchas`가 결정한다. 등록됐지만 서비스 대상이 아닐 수 있다.
@@ -74,18 +74,18 @@ graph TD
 4. 파일명의 각 문자는 1부터 시작하는 클래스 인덱스로 변환된다. 0은 CTC blank다.
 5. CRNN은 그레이스케일 이미지를 CNN 특징으로 만들고 너비 방향을 시계열로 바꾼 뒤 2층 양방향 LSTM과 출력 projection을 통과시킨다.
 6. `ctc` 또는 `focal` 손실로 AdamW 학습을 수행한다. CUDA에서 AMP, gradient clipping, 선형 warmup과 cosine decay를 사용한다.
-7. 검증 손실이 개선될 때 `model_full.pt.tmp`에 state dict를 저장한다. 종료 후 `.tmp`를 `model_full.pt`로 승격하고 TorchScript와 ONNX도 내보낸다.
+7. 검증 손실이 개선될 때 `model.pth.tmp`에 state dict를 저장한다. 종료 후 `.tmp`를 `model.pth`로 승격하고, 그 파일을 다시 읽어 `model.pt2`와 `model.onnx`를 내보낸다.
 
 CNN의 풀링은 `(2,2) → (2,2) → (2,1)`이므로 출력은 대략 `H/8 × W/4`다. 따라서 CTC 시간축 조건은 `floor(image_width / 4) >= label_length`다. 기존 `AGENTS.md`의 `W/16` 설명은 현재 코드와 맞지 않는다.
 
 ### 4.2 Python 단건 예측 흐름
 
 1. CLI나 웹 서비스가 `engine.predict()`를 호출한다.
-2. 모델이 아직 없으면 `model_full.pt`를 읽어 CRNN에 state dict를 로드하고 eval 모드로 전환한다.
+2. 모델이 아직 없으면 `model.pth`를 읽어 CRNN에 state dict를 로드하고 eval 모드로 전환한다.
 3. PIL 이미지에 CAPTCHA별 전처리와 eval transform을 적용하여 `(1, 1, H, W)` 텐서를 만든다.
 4. CRNN이 `(T, 1, C)` 로짓을 출력하고 log-softmax를 적용한다.
 5. 고정 길이 prefix beam search가 blank/문자 종료 확률을 합산하고 기대 길이를 채울 수 없는 prefix를 제거한다.
-6. 최종 후보 중 최고 문자열을 반환한다. confidence는 살아남은 최종 후보들의 합에 대한 최고 후보의 정규화 확률이다.
+6. 최종 후보 중 최고 문자열을 반환한다. confidence는 길이 제약으로 조건부화한 사후확률 `P(문자열 | 이미지, 길이 = label_length)`이며, 분모인 길이 L의 총 확률은 `length_logprob()`의 DP로 정확히 구한다(beam 구성과 무관).
 
 ### 4.3 FastAPI 요청 흐름
 
@@ -132,7 +132,7 @@ sequenceDiagram
 
 | 함수/메서드 | 파일 | 설명 |
 | :--- | :--- | :--- |
-| `get_captcha_type_list()` | `engine.py` | 여섯 CAPTCHA 설정을 생성하는 단일 레지스트리 |
+| `get_captcha_type_list()` | `engine.py` | 네 CAPTCHA 설정을 생성하는 단일 레지스트리 |
 | `get_captcha_model()` | `engine.py` | ID를 검증하고 `PyTorchModel`을 생성 |
 | `train_model()` | `engine.py` | 모델 빌드, 80/20 분할, 학습 루프 연결 |
 | `predict()` | `engine.py` | 필요 시 state dict를 지연 로드하고 단건 예측 |
@@ -142,7 +142,7 @@ sequenceDiagram
 | `CRNN.forward()` | `core.py` | CNN → feature projection → SpecAugment → BiLSTM → logits/CTC loss |
 | `PyTorchModel.split_dataset()` | `core.py` | 파일명 라벨을 토큰화하고 train/validation loader 생성 |
 | `PyTorchModel.train_model()` | `core.py` | 최적화, 검증, early stopping, 저장 및 export |
-| `PyTorchModel.load_prediction_model()` | `core.py` | CRNN을 만들고 `model_full.pt` state dict 로드 |
+| `PyTorchModel.load_prediction_model()` | `core.py` | CRNN을 만들고 `model.pth` state dict 로드 |
 | `ctc_beam_decode_fixed_length()` | `core.py` | 하드 길이 제약을 둔 CTC prefix beam search |
 | `preload_models()` | `web/services/captcha.py` | 서비스 모델 로드와 더미 텐서 워밍업, 상태 기록 |
 | `predict_from_bytes()` | `web/services/captcha.py` | 서비스 검증, 임시 파일 생성, Python 엔진 호출 |
@@ -190,15 +190,17 @@ Spring Boot 4.1.0, Java 25, ONNX Runtime 1.23.0을 사용한다. 기본 서버 �
 
 ## 7. 주의점, 함정, 중요 결함
 
-### 7.1 최적 PyTorch 가중치와 JIT/ONNX가 달라질 수 있음
+### 7.1 최적 PyTorch 가중치와 ONNX가 달라질 수 있음 (해소됨)
 
-검증 최적 state dict는 `.tmp` 파일에 저장되고 학습 종료 후 `model_full.pt`로 이름만 바뀐다. 그러나 export 전에 이 파일을 메모리 모델로 다시 로드하지 않는다. 따라서 `.pt`는 최적 에폭인데 JIT/ONNX는 마지막 에폭일 수 있다. `apps/cli/README.md`에는 실제 `kshop`에서 두 아티팩트의 예측이 달랐다는 조사 결과가 기록되어 있다.
+`.tmp` 파일에 저장된 state dict는 학습 종료 후 `model.pt`로 이름만 바뀐다. 그러나 export 전에 이 파일을 메모리 모델로 다시 로드하지 않으므로 `.pt`와 ONNX가 서로 다른 에폭이 될 수 있다. 실측 결과 4종 중 3종에서 실제로 갈렸고, `kshop`은 `.pt` 64/101 대 `.onnx` 87/101로 승격된 쪽이 오히려 열세였다(`apps/cli/README.md`). 아티팩트는 ONNX 기준으로 정렬했고, 코드도 고쳤다.
 
-권장 수정은 `.tmp` 승격 직후 `load_state_dict()`로 최적 가중치를 다시 로드하고 그 단일 상태에서 PT/JIT/ONNX를 생성하는 것이다. 이 결함을 고치기 전에는 Python과 portable 런타임의 결과 차이를 전처리 포팅 문제로 단정하면 안 된다.
+검증이 없는 학습 경로에서는 문제가 더 크다. `.tmp`가 10 에폭마다 무조건 덮이므로 승격되는 것은 '최적'이 아니라 '마지막 10의 배수 에폭' 스냅샷이다.
+
+현재는 `PyTorchModel.finalize_artifacts()`가 `.tmp` 승격 직후 디스크의 `.pt`를 `load_state_dict()`로 다시 읽고, 그 단일 상태에서만 ONNX를 내보낸다. 이어서 `verify_onnx_export()`가 학습 샘플 8장을 두 런타임에 통과시켜 디코딩 결과가 모두 일치하는지 확인하고, 하나라도 갈리거나 로짓 최대 오차가 0.5를 넘으면 예외를 던져 학습을 중단시킨다. TorchScript 산출물은 아무도 로드하지 않아 제거했다.
 
 ### 7.2 감지 설정과 모델 생성 설정이 혼용됨
 
-전처리와 sidecar 생성은 `detected_image_width`, `detected_label_length` 등을 사용하지만 `build_model()`은 생성자 원본 필드인 `image_width`, `label_length`를 사용한다. 학습 이미지 크기가 기본값과 다르면 PyTorch CNN은 일부 폭 변화에 동작해도 fixed-shape ONNX와 sidecar가 충돌한다. 현재 `dev` 모델의 200px ONNX와 250px 메타데이터 불일치가 알려진 사례다.
+전처리와 sidecar 생성은 `detected_image_width`, `detected_label_length` 등을 사용하지만 `build_model()`은 생성자 원본 필드인 `image_width`, `label_length`를 사용한다. 학습 이미지 크기가 기본값과 다르면 PyTorch CNN은 일부 폭 변화에 동작해도 fixed-shape ONNX와 sidecar가 충돌한다.
 
 ### 7.3 제공된 운영 문서 일부가 현재 코드와 다름
 

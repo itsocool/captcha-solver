@@ -49,7 +49,7 @@ uv run python apps/cli/tools/sync_models.py kshop      # 특정 캡차만
 
 ```
 apps/cli/models/
-├── supreme_court.onnx        # captcha_data/<id>/<rev>/model/model_full.pt.onnx 복사본
+├── supreme_court.onnx        # captcha_data/<id>/<rev>/model/model.onnx 복사본
 ├── supreme_court.meta.json   # {image_width, image_height, label_length, characters, threshold, preprocess}
 ├── gov24.onnx
 └── ...
@@ -148,7 +148,7 @@ cd captcha-cli-0.1.0-linux-x86_64
 ./pred.sh          # supreme_court: 10/10 일치
 ```
 
-용량 대부분은 모델(6종 55MB)입니다. 서비스 대상만 담으려면 패키징 전에 불필요한
+용량 대부분은 모델(4종 37MB)입니다. 서비스 대상만 담으려면 패키징 전에 불필요한
 `models/<id>.onnx`, `models/<id>.meta.json`을 지우면 됩니다.
 
 ### 배포 레이아웃
@@ -176,8 +176,9 @@ models/
 ### 검증
 
 ```bash
-cargo test                                                    # 디코더 단위 테스트 6개
+cargo test                                                    # 디코더 단위 테스트
 uv run python apps/cli/tools/compare_with_python.py --limit 100   # 파이썬 결과와 대조
+uv run python apps/cli/tools/verify_pth_onnx.py                   # model.pth 와 model.onnx 동등성
 ```
 
 실측 결과 (각 100장):
@@ -187,16 +188,19 @@ uv run python apps/cli/tools/compare_with_python.py --limit 100   # 파이썬 �
 | supreme_court | 100/100 | 0.0011 |
 | gov24 | 100/100 | 0.0066 |
 | wetax | 100/100 | 0.0019 |
-| kshop | 70/100 | 0.7757 |
+| kshop | 70/100 † | 0.7757 † |
 
 `samples/` 10장 기준으로는 supreme_court·gov24·wetax·kshop 모두 10/10입니다.
 
-### dev 모델은 현재 ONNX로 추론할 수 없습니다
+> † kshop 수치는 `model.pt` 와 `model.onnx` 의 가중치가 갈려 있던 시점의 측정입니다(아래 절 참고).
+> 그 원인은 해소됐고 현재 파이썬과 ONNX 는 101/101 일치하지만, 이 표는 Rust 바이너리가 필요해
+> 아직 재측정하지 못했습니다. `cargo build --release` 후 `compare_with_python.py` 를 다시 돌리세요.
 
-`dev`는 ONNX가 200×50으로 export되어 있는데 메타데이터(학습 이미지에서 감지한 크기)는 250×50입니다.
-`build_model()`이 생성자 기본값(200)으로 모델을 만들고 전처리는 감지값(250)으로 리사이즈하기 때문인데,
-PyTorch는 CNN이 폭에 유연해서 그냥 동작하지만 ONNX는 입력 크기가 고정이라 거부합니다.
-CLI는 이 경우 아래처럼 원인을 짚어 줍니다.
+### 모델 입력 크기와 메타데이터가 어긋나면 추론이 거부됩니다
+
+`build_model()`이 생성자 기본값으로 모델을 만드는 반면 전처리는 감지값으로 리사이즈하므로, 학습
+이미지 크기가 기본값과 다르면 두 값이 갈릴 수 있습니다. PyTorch는 CNN이 폭에 유연해서 그냥
+동작하지만 ONNX는 입력 크기가 고정이라 거부합니다. CLI는 이 경우 아래처럼 원인을 짚어 줍니다.
 
 ```
 Error: 모델 입력 크기(200×50)와 메타데이터 크기(250×50)가 다릅니다.
@@ -207,9 +211,10 @@ Error: 모델 입력 크기(200×50)와 메타데이터 크기(250×50)가 다�
 
 전처리 텐서 자체의 차이는 픽셀당 최대 0.10, 평균 0.0004~0.0015 수준입니다(리사이즈 필터 구현 차이).
 
-### kshop 불일치의 원인 — 포팅 문제가 아닙니다
+### kshop 불일치 — 해소됨 (포팅 문제가 아니었습니다)
 
-**`model_full.pt`와 `model_full.pt.onnx`의 가중치가 서로 다릅니다.** 동일한 입력 텐서를 두 아티팩트에 넣으면 결과가 갈립니다.
+`model_full.pt`와 `model_full.pt.onnx`의 **가중치가 서로 달랐던** 것이 원인이었습니다. 동일한 입력
+텐서를 두 아티팩트에 넣으면 결과가 갈렸습니다.
 
 ```
 정답(파일명): 050862
@@ -217,6 +222,26 @@ PyTorch(model_full.pt)  → 050186 (0.59)
 Rust CLI(onnx)          → 050862 (0.99)
 ```
 
-`core.py: train_model`이 학습 종료 시 베스트 체크포인트(`.tmp`)를 `.pt`로 승격한 뒤, JIT/ONNX는 **메모리에 남아 있는 마지막 에폭 가중치**로 export하기 때문입니다. kshop 100장 기준 정확도는 파이썬(.pt) 64%, CLI(.onnx) 86%로 오히려 ONNX 쪽이 좋습니다.
+`core.py: train_model`이 학습 종료 시 `.tmp` 체크포인트를 `.pt`로 승격한 뒤, JIT/ONNX 는
+**메모리에 남아 있는 마지막 에폭 가중치**로 export 했기 때문입니다. 승격된 `.tmp` 쪽이 오히려
+열세였습니다 — kshop pred 101장 기준 `.pt` 64/101, `.onnx` 87/101.
 
-정합성을 맞추려면 export 직전에 베스트 가중치를 다시 로드해야 합니다.
+측정으로 확인한 사실은 다음과 같습니다.
+
+| captcha | `.pt` vs `.onnx` 가중치 | `.pt` | `.onnx` |
+|---|---|---|---|
+| supreme_court | 달랐음 (로짓 0.11) | 200/200 | 200/200 |
+| gov24 | 달랐음 (로짓 2.99) | 200/200 | 200/200 |
+| wetax | 같았음 | 100/100 | 100/100 |
+| kshop | 달랐음 (로짓 7.82) | 64/101 | 87/101 |
+
+`model_jit.pt` 는 4종 모두 `.onnx` 와 가중치가 **완전히 동일**했습니다(둘 다 메모리 모델에서
+나왔으므로). 이를 이용해 `model.pt` 를 `model_jit.pt` 의 state dict 로 복구했고, 현재 `model.pt`
+와 `model.onnx` 는 4종 모두 예측이 101/101 일치합니다(로짓 오차 ~0.002, float 노이즈 수준).
+
+`model_jit.pt` 는 어디서도 로드하지 않는 데다 CUDA 로 trace 되어 CPU 에서 실행조차 되지 않아
+제거했습니다.
+
+코드 쪽 원인도 고쳤습니다. `finalize_artifacts()` 가 `.tmp` 승격이 끝난 뒤 **디스크의 `.pt` 를 다시
+읽어** ONNX 를 내보내고, 학습 샘플 8장으로 두 아티팩트의 예측 일치를 검증합니다. 하나라도
+갈리면 학습이 예외로 중단되므로 어긋난 아티팩트가 배포될 수 없습니다.

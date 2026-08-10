@@ -36,3 +36,6 @@ build/
 boot_out.log
 boot_err.log
 boot.pid
+
+### devserver.sh 상태 파일 ###
+.dev/

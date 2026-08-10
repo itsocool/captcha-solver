@@ -143,7 +143,7 @@ ctest --test-dir build --output-on-failure               # Linux (./ctest.sh 가
 
 - `decode` — CTC prefix beam search 단위 테스트 7개
 - `samples` — `apps/cli/samples/<id>/` 50장을 인식해 파일명(정답)과 대조.
-  대상은 `gov24`, `supreme_court`, `kshop`, `wetax`, `default` (`tests/samples.cmake` 의 `IDS`)
+  대상은 `gov24`, `supreme_court`, `kshop`, `wetax` (`tests/samples.cmake` 의 `IDS`)
 
 실측: Windows(MSVC 17.14 / x64), Linux(GCC 13.3 / x64) 양쪽 **전부 일치**, 예측 바이트 동일.
 
@@ -202,7 +202,6 @@ WpcDdu.png       WpcDdu     -          129 ms   ❌  Error: model input 200x50 !
 | kshop | 86/100 |
 
 kshop 86%는 `apps/cli/README.md` 에 기록된 ONNX 기준 정확도와 같은 수치입니다(모델 문제이며 포팅 문제가 아닙니다).
-`dev` 는 입력 크기 불일치로 전부 추론 실패합니다.
 
 ---
 
@@ -217,16 +216,13 @@ ONNX만으로는 **문자셋·레이블 길이·전처리 종류**를 알 수 �
   "label_length": 6, "characters": "0123456789", "threshold": 60, "preprocess": "default" }
 ```
 
-`apps/cli/tools/sync_models.py` 가 생성하며, `apps/cli/models/` 에 캡차 6종이 준비돼 있습니다.
+`apps/cli/tools/sync_models.py` 가 생성하며, `apps/cli/models/` 에 캡차 4종이 준비돼 있습니다.
 
 빌드 시 **`apps/cli/models/*.meta.json` 에 있는 모든 캡차**를 산출물 폴더로 복사합니다
-(`default`, `dev`, `gov24`, `kshop`, `supreme_court`, `wetax`). 모델 본체는
+(`gov24`, `kshop`, `supreme_court`, `wetax`). 모델 본체는
 `ConsoleApp.v4/<id>.model` 이 있으면 그걸 쓰고, 없으면 `apps/cli/models/<id>.onnx` 를
 `<id>.model` 이라는 이름으로 복사합니다. `sync_models.py` 로 모델을 추가하면 다음 빌드에
 자동으로 딸려옵니다(`file(GLOB CONFIGURE_DEPENDS)`).
-
-> `dev` 는 ONNX가 200×50으로 export됐는데 메타는 250×50이라 **추론이 안 됩니다**(원인은
-> `apps/cli/README.md` 참고). 복사는 되지만 실행하면 크기 불일치 메시지로 끊깁니다.
 
 > `ConsoleApp.v4/supreme_court.model` 은 `apps/cli/models/supreme_court.onnx` 와 **가중치가 다른 리비전**입니다
 > (입력·출력 shape는 같아 메타는 그대로 맞고, 샘플 10장도 10/10 통과합니다).

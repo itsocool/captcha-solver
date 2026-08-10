@@ -3,7 +3,7 @@
 저장소 루트의 FastAPI 웹 서비스(`web/`)를 Spring Boot 로 포팅한 것입니다.
 API 경로·요청/응답 형태·화면 구성이 모두 동일합니다.
 
-추론만 다릅니다. 파이썬은 PyTorch 로 `model_full.pt` 를 읽지만, JVM 에서는 그 파일을
+추론만 다릅니다. 파이썬은 PyTorch 로 `model.pth` 를 읽지만, JVM 에서는 그 파일을
 읽을 수 없어 **`apps/cli` 가 쓰는 것과 같은 ONNX 모델**을 ONNX Runtime 으로 돌립니다.
 전처리와 CTC 디코딩은 `apps/cli/src/{preprocess,decode}.rs` 를 그대로 옮겼습니다.
 

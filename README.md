@@ -6,8 +6,8 @@ PyTorch 학습부터 Python·Rust·Spring Boot 추론까지 한 저장소에서 
 
 | 방식 | 용도 | 모델/런타임 | 시작점 |
 |---|---|---|---|
-| Python CLI | 이미지 한 장, 개발·디버깅 | `model_full.pt`, Python/PyTorch | `uv run python main.py ...` |
-| FastAPI | 웹 UI와 HTTP API | `model_full.pt`, Python/PyTorch | `uv run fastapi dev web/app.py` |
+| Python CLI | 이미지 한 장, 개발·디버깅 | `model.pth`, Python/PyTorch | `uv run python main.py ...` |
+| FastAPI | 웹 UI와 HTTP API | `model.pth`, Python/PyTorch | `uv run fastapi dev web/app.py` |
 | Rust CLI | 독립 실행 파일·배포 | portable ONNX + `meta.json` | `apps/cli`의 `captcha-cli` |
 | Spring Boot | JVM HTTP 서비스 | portable ONNX + `meta.json` | `apps/springBoot` |
 
@@ -58,7 +58,7 @@ Python 원본은 다음 레이아웃을 사용합니다. 이미지 파일명(확
 ```text
 captcha_data/<captcha_id>/<rev>/
 ├── images/{train,pred}/
-└── model/{model_full.pt,model_jit.pt,model_full.pt.onnx}
+└── model/{model.pth,model.pt2,model.onnx}
 ```
 
 Rust·Spring은 portable 디렉터리로 ONNX와 메타데이터를 함께 배포합니다.
@@ -69,7 +69,7 @@ models/
 └── <captcha_id>.meta.json  # image_width, image_height, label_length, characters, threshold, preprocess
 ```
 
-등록된 CAPTCHA ID는 `default`, `dev`, `supreme_court`, `gov24`, `wetax`, `kshop` 여섯 가지입니다. DB의 기본 서비스 대상은 `supreme_court`, `gov24`, `wetax`, `kshop` 네 가지입니다. 학습 데이터가 있으면 정렬된 `images/train/*.png` 목록의 마지막 PNG를 열어 이미지 크기를 감지하고, 파일명에서 레이블 길이와 문자 집합을 감지합니다.
+등록된 CAPTCHA ID는 `supreme_court`, `gov24`, `wetax`, `kshop` 네 가지이며, 기본값은 `supreme_court`입니다. DB의 서비스 대상도 같은 네 가지입니다. 학습 데이터가 있으면 정렬된 `images/train/*.png` 목록의 마지막 PNG를 열어 이미지 크기를 감지하고, 파일명에서 레이블 길이와 문자 집합을 감지합니다.
 
 CRNN은 입력에서 특징 맵 높이 `H/8`, 시간축 너비 `W/4`를 출력합니다. 고정 길이 CTC 디코딩은 `W/4 >= label_length`를 요구하므로 모델 입력 폭을 레이블 길이보다 충분히 크게 유지하세요.
 
@@ -78,7 +78,7 @@ CRNN은 입력에서 특징 맵 높이 `H/8`, 시간축 너비 `W/4`를 출력�
 `train.py`와 `pred.py` 상단 변수를 수정한 뒤 실행합니다(명령 인자를 받는 스크립트가 아닙니다).
 
 ```bash
-uv run python train.py              # 학습, PT/JIT/ONNX 산출물 생성
+uv run python train.py              # 학습, model.pth + model.pt2 + model.onnx 생성 및 동등성 검증
 uv run python pred.py               # images/pred 배치 평가
 uv run python test_ctc_decode.py    # CTC 디코더 단위 검증
 ```
@@ -193,19 +193,20 @@ Push-Location apps/cli; cargo test; Pop-Location
 ```
 
 ```bash
-uv run python apps/cli/tools/compare_with_python.py --limit 100
+uv run python apps/cli/tools/compare_with_python.py --limit 100   # Rust CLI ↔ Python
+uv run python apps/cli/tools/verify_pth_onnx.py                   # model.pth ↔ model.onnx
 ```
 
 ```powershell
 Push-Location apps/springBoot; mvn test; Pop-Location
 ```
 
-모델을 동기화한 뒤 Python·Rust·Spring 샘플 결과와 신뢰도를 비교하세요. PT/JIT/ONNX는 학습 시점의 체크포인트가 다르면 서로 다른 예측을 낼 수 있으므로 export 후 동등성을 확인해야 합니다.
+모델을 동기화한 뒤 Python·Rust·Spring 샘플 결과와 신뢰도를 비교하세요. 체크포인트와 ONNX는 학습 시점이 다르면 서로 다른 예측을 낼 수 있으므로 export 후 동등성을 확인해야 합니다. `verify_pth_onnx.py`는 캡차별 최고 리비전의 `model.pth`와 `model.onnx`를 train+pred 전체 이미지로 대조하며, 디스크의 최고 리비전이 `engine.py` 등록과 어긋나면 경고합니다.
 
 ## 알려진 제약과 주의점
 
-- ONNX 입력은 고정 차원입니다. 감지된 기본 이미지 크기와 export 차원이 다르면(`dev` 사례) ONNX가 거부합니다.
-- 학습 종료 시 `model_full.pt`, JIT, ONNX가 서로 다른 가중치로 남을 수 있습니다. 배포 전 동일 체크포인트에서 재-export하고 `sync_models.py`를 다시 실행하세요.
+- ONNX 입력은 고정 차원입니다. 감지된 기본 이미지 크기와 export 차원이 다르면 ONNX가 거부합니다.
+- ~~학습 종료 시 체크포인트와 `model.onnx`가 서로 다른 가중치로 남을 수 있음~~ — 해소됐습니다. `finalize_artifacts()`가 확정된 `model.pth`를 디스크에서 다시 읽어 `model.pt2`와 `model.onnx`를 내보내고, 곧바로 학습 샘플로 체크포인트와 ONNX의 예측 일치를 검증합니다. 어긋나면 학습이 예외로 중단됩니다.
 - `core.py` import 시 CUDA/cuDNN을 탐색하고 전역 최적화를 설정합니다. 단순 import도 GPU probing을 일으킬 수 있습니다.
 - FastAPI 모델 캐시는 프로세스 로컬입니다. 여러 worker는 각각 모델을 로드하며 파일 변경은 자동 반영되지 않습니다.
 - `redistribute_train_pred`는 이미지를 이동하는 파괴적 작업입니다.
