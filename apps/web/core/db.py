@@ -21,10 +21,28 @@ def connect() -> sqlite3.Connection:
 	return conn
 
 
+def _add_missing_columns(conn: sqlite3.Connection) -> None:
+	"""CREATE TABLE IF NOT EXISTS 로는 못 따라가는 컬럼 추가를 보정한다.
+
+	SQLite 에는 ADD COLUMN IF NOT EXISTS 가 없어서 schema.sql 안에 둘 수 없다.
+	"""
+	added = [
+		("train_data_configs", "characters", "TEXT NOT NULL DEFAULT ''"),
+	]
+	for table, column, decl in added:
+		existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+		if not existing:
+			continue  # 테이블 자체가 없으면 schema.sql 이 최신 정의로 만든다
+		if column not in existing:
+			conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+			print(f"[db] {table}.{column} 컬럼 추가")
+
+
 def init_db() -> None:
 	"""schema.sql 적용. IF NOT EXISTS / INSERT OR IGNORE 라 반복 실행해도 안전하다."""
 	schema_path = _resolve(get_settings().db_schema_path)
 	with connect() as conn:
+		_add_missing_columns(conn)
 		conn.executescript(schema_path.read_text(encoding="utf-8"))
 
 
