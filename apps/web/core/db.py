@@ -21,17 +21,47 @@ def connect() -> sqlite3.Connection:
 	return conn
 
 
+def _add_missing_columns(conn: sqlite3.Connection) -> None:
+	"""CREATE TABLE IF NOT EXISTS 로는 못 따라가는 컬럼 추가를 보정한다.
+
+	SQLite 에는 ADD COLUMN IF NOT EXISTS 가 없어서 schema.sql 안에 둘 수 없다.
+	"""
+	added = [
+		("train_data_configs", "characters", "TEXT NOT NULL DEFAULT ''"),
+	]
+	for table, column, decl in added:
+		existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+		if not existing:
+			continue  # 테이블 자체가 없으면 schema.sql 이 최신 정의로 만든다
+		if column not in existing:
+			conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+			print(f"[db] {table}.{column} 컬럼 추가")
+
+
 def init_db() -> None:
-	"""schema.sql 적용. IF NOT EXISTS / INSERT OR IGNORE 라 반복 실행해도 안전하다."""
-	schema_path = _resolve(get_settings().db_schema_path)
+	"""schema.sql 과 시드 SQL 을 순서대로 적용한다.
+
+	둘 다 IF NOT EXISTS / INSERT OR IGNORE 라 반복 실행해도 안전하다.
+	스키마 파일이 없으면 기동을 막지만, 시드는 없어도 건너뛴다.
+	"""
+	settings = get_settings()
+	schema_path = _resolve(settings.db_schema_path)
+	seed_path = _resolve(settings.db_seed_path)
+
 	with connect() as conn:
+		_add_missing_columns(conn)
 		conn.executescript(schema_path.read_text(encoding="utf-8"))
+
+		if seed_path.is_file():
+			conn.executescript(seed_path.read_text(encoding="utf-8"))
+		else:
+			print(f"[db] 시드 파일이 없어 건너뜁니다: {seed_path}")
 
 
 def get_service_config(reload: bool = False) -> dict:
 	"""서비스 대상 캡차 목록과 기본 캡차 ID.
 
-	테이블이 비어 있거나 없으면 .env의 DEFAULT_CAPTCHA_ID만 서비스한다.
+	테이블이 비어 있거나 없으면 Settings.default_captcha_id 만 서비스한다.
 	반환: {"default_captcha_id": str, "serviced": [str], "source": "db" | "fallback"}
 	"""
 	global _SERVICE_CONFIG

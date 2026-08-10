@@ -17,6 +17,9 @@ CREATE TABLE IF NOT EXISTS train_data_configs (
 	image_width INTEGER NOT NULL DEFAULT 200 CHECK (image_width > 0),
 	image_height INTEGER NOT NULL DEFAULT 50 CHECK (image_height > 0),
 	label_length INTEGER NOT NULL DEFAULT 6 CHECK (label_length > 0),
+	-- 선언 문자 집합. 빈 문자열이면 images/train 파일명에서 자동 감지한다
+	-- (TrainData.characters 와 같은 의미).
+	characters TEXT NOT NULL DEFAULT '',
 	threshold INTEGER NOT NULL DEFAULT 255 CHECK (threshold BETWEEN 0 AND 255),
 	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -79,3 +82,23 @@ INSERT OR IGNORE INTO service_captchas(captcha_id, enabled, is_default, sort_ord
 
 INSERT OR IGNORE INTO schema_migrations(version, name)
 VALUES (2, 'service_captchas');
+
+-- 이름 붙은 문자 집합 상수 (원래 저장소 루트 data.json 의 constants 였고, 이제 여기가 유일한 출처)
+CREATE TABLE IF NOT EXISTS character_sets (
+	name TEXT PRIMARY KEY,
+	characters TEXT NOT NULL CHECK (length(characters) > 0),
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT OR IGNORE INTO character_sets(name, characters) VALUES
+	('DIGITS',            '0123456789'),
+	('LOWER_CASE',        'abcdefghijklmnopqrstuvwxyz'),
+	('UPPER_CASE',        'ABCDEFGHIJKLMNOPQRSTUVWXYZ'),
+	('ALPHABET',          'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'),
+	('ALPHA_NUMERIC',     '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'),
+	('CAPTCHA_CHAR_SETS', '2345678bcdefgmnpwxy'),
+	('DEV_CHAR_SETS',     '2345678ABCDEFGHKLMNPRSTUVWYZabcdefhklmnoprstuvwyz');
+
+INSERT OR IGNORE INTO schema_migrations(version, name)
+VALUES (3, 'train_data_configs_characters'), (4, 'character_sets');

@@ -10,8 +10,8 @@ from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 from typing import List, Tuple, Dict
 from tqdm import tqdm
-from dataclass import CaptchaType, TrainData
-from base_core import BaseModel
+from .dataclass import CaptchaType, TrainData
+from .base_core import BaseModel
 
 NEG_INF = float('-inf')
 
@@ -830,6 +830,7 @@ class PyTorchModel(BaseModel):
         os.makedirs(os.path.dirname(target), exist_ok=True)
 
         staging = target + '.writing'
+
         try:
             torch.save(self.model.state_dict(), staging)
             os.replace(staging, target)

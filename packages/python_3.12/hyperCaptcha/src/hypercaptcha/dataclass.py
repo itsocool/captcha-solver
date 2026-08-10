@@ -29,10 +29,10 @@ class _TrainInfo(BaseModel):
 
 
 class CaptchaType(BaseModel):
-    captcha_id: str = "supreme_court"
-    name: str = "대법원"
-    desc: str = "대법원 캡챠"
-    train_data: "TrainData" = Field(default_factory=lambda: TrainData(captcha_id="supreme_court"))
+    captcha_id: str
+    name: str
+    desc: str
+    train_data: "TrainData"
 
 
 class TrainData(BaseModel):

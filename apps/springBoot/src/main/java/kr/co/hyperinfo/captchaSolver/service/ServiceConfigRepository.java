@@ -19,7 +19,7 @@ import kr.co.hyperinfo.captchaSolver.config.CaptchaProperties;
 
 /**
  * SQLite 접근 계층. 서비스 대상 캡차 설정을 읽는다.
- * 파이썬의 {@code web/core/db.py} 와 같은 테이블({@code service_captchas})을 본다.
+ * 파이썬의 {@code apps/web/core/db.py} 와 같은 테이블({@code service_captchas})을 본다.
  */
 @Repository
 public class ServiceConfigRepository {

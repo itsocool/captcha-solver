@@ -1,19 +1,17 @@
 import os
-import sys
 import argparse
 import logging
 import time
 import json
-import engine
+from . import engine
 
 def get_base_path():
-    """PyInstaller 번들 환경에서 기본 경로를 반환합니다."""
-    if getattr(sys, 'frozen', False):
-        # PyInstaller로 패키징된 경우
-        return sys._MEIPASS
-    else:
-        # 일반 Python 스크립트로 실행되는 경우
-        return os.path.dirname(os.path.abspath(__file__))
+    """captcha_data/logs 를 찾을 기준 경로.
+
+    pip 설치된 패키지는 site-packages에 있으므로 모듈 위치가 아닌
+    실행 디렉토리를 기준으로 삼는다.
+    """
+    return os.getcwd()
 
 def setup_logging(verbose: bool = False):
     """파일 및 콘솔 로깅을 설정합니다."""

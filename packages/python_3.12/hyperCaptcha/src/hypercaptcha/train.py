@@ -1,6 +1,6 @@
 import os
-import engine
-from core import PyTorchModel
+from . import engine
+from .core import PyTorchModel
 
 captcha_id = 'supreme_court'
 loss_type = 'focal'
