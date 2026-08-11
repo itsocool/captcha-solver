@@ -16,6 +16,20 @@ UPPER_CASE: Final = string.ascii_uppercase
 ALPHABET: Final = string.ascii_letters
 ALPHA_NUMERIC: Final = string.digits + string.ascii_letters
 
+# kshop 원본은 263x54 다. 배경이 왼쪽 검정 → 오른쪽 흰색 가로 그라데이션이고 숫자는
+# 그 위에 검게 그려져서, 왼쪽 몇 자리는 배경과 거의 같은 색이 된다. 그래서 관심 영역만
+# 잘라내고 그라데이션을 걷어낸다.
+#
+# 크롭 박스는 PIL 규약대로 (left, top, right, bottom) 이고 결과는 166x48 이다.
+# 실측(train 500장) 기준 각 변에서 잘려나가는 양:
+#   좌  10  손실 없음 (숫자 획은 x>=16 부터)
+#   상   2  손실 없음 (y=0 은 테두리)
+#   우 176  손실 없음 (획 최우측이 정확히 176)
+#   하  50  숫자 획이 조금 잘리는 이미지 17/500 (3.4%) — 획 최하단은 52 까지 간다
+# y=0 과 y=53 의 테두리, x>=176 의 방해용 사선은 모두 빠진다.
+KSHOP_SOURCE_SIZE: Final = (263, 54)
+KSHOP_CROP: Final = (10, 2, 176, 50)
+
 
 class _TrainInfo(BaseModel):
     """Auto-detected training information."""
@@ -51,9 +65,7 @@ class CaptchaType(BaseModel):
             "label_length": td.detected_label_length,
             "characters": td.detected_characters,
             "threshold": td.threshold,
-            # ponytail: 전처리가 다른 캡차가 supreme_court 하나뿐이라 여기서 가른다.
-            #           두 번째가 생기면 TrainData 필드로 올릴 것.
-            "preprocess": "supreme_court" if self.captcha_id == "supreme_court" else "default",
+            "preprocess": td.preprocess,
             "blank_index": 0,
         }
 
@@ -62,6 +74,9 @@ class TrainData(BaseModel):
     captcha_id: str
     backend: str = "pytorch"
     rev: int = 0
+    # 전처리 종류. 모델 옆 meta.json 에 그대로 실려 Rust CLI / Spring Boot /
+    # ConsoleApp 이 같은 값을 보고 같은 전처리를 재현한다.
+    preprocess: str = "default"
     train_data_base_dir: str = "./captcha_data"
     image_width: int = 200
     image_height: int = 50
@@ -113,6 +128,24 @@ class TrainData(BaseModel):
             threshold=int(threshold)
         )
         self._train_info = info
+
+        # 모델 입력 크기는 파일 크기가 아니라 **전처리를 거친 뒤**의 크기다.
+        # 크롭하는 전처리(kshop)가 생기면서 둘이 갈렸다. 한 장 돌려서 확정한다.
+        # 위에서 _train_info 를 먼저 채워 둔 건 _default_preprocess 의 마지막 resize 가
+        # detected_* 를 참조하기 때문이다 (여기서 비워두면 순환한다).
+        try:
+            with Image.open(last) as im:
+                pw, ph = self.image_pre_process(im.copy()).size
+        except Exception:
+            return
+        if (pw, ph) != (int(iw), int(ih)):
+            self._train_info = _TrainInfo(
+                image_width=int(pw),
+                image_height=int(ph),
+                label_length=int(max_len),
+                characters=chars,
+                threshold=int(threshold)
+            )
 
     # --- detected values (auto from files, fallback to constructor default) ---
 
@@ -255,9 +288,43 @@ class TrainData(BaseModel):
         print(f"셔플 완료: 훈련 {len(train_images)}개, 추론 {len(pred_images)}개")
 
     def image_pre_process(self, image: Image.Image) -> Image.Image:
-        if self.captcha_id == "supreme_court":
+        if self.preprocess == "supreme_court":
             return self._supreme_court_preprocess(image)
+        if self.preprocess == "kshop":
+            return self._kshop_preprocess(image)
         return self._default_preprocess(image)
+
+    def _kshop_preprocess(self, image: Image.Image) -> Image.Image:
+        if image.mode == "RGBA":
+            background = Image.new("RGBA", image.size, (255, 255, 255, 255))
+            image = Image.alpha_composite(background, image).convert("RGB")
+        image = image.convert("L")
+
+        # 추론 입력이 원본 크기가 아닐 수 있어 기준 크기로 맞춘 뒤 자른다.
+        if image.size != KSHOP_SOURCE_SIZE:
+            image = image.resize(KSHOP_SOURCE_SIZE)
+        image = image.crop(KSHOP_CROP)
+
+        return self._flatten_column_background(image)
+
+    @staticmethod
+    def _flatten_column_background(image: Image.Image) -> Image.Image:
+        """세로 방향으로 균일한 배경 그라데이션을 걷어내 배경을 흰색으로 만든다.
+
+        배경이 x 에만 의존하므로 열마다 가장 밝은 값을 그 열의 배경으로 보고 255 가
+        되도록 스케일한다. 잉크(0 부근)는 0 근처에 남아 대비가 전 구간에서 복원된다.
+        실측상 왼쪽 끝 배경은 74, 오른쪽 끝은 189 인데 잉크는 어디서나 0 이다.
+
+        ponytail: 열 전체가 획으로 덮이면 그 열의 배경 추정이 획 값이 되어 하얗게
+                  날아간다. kshop 은 숫자가 y=6~39 라 위아래에 배경이 남아 안전하다.
+                  획이 세로로 꽉 차는 캡차가 생기면 열별 최댓값 대신 상위 분위수로 바꿀 것.
+        """
+        import numpy as np
+
+        a = np.asarray(image, dtype=np.float32)
+        bg = np.maximum(a.max(axis=0, keepdims=True), 1.0)
+        out = np.clip(a / bg * 255.0, 0.0, 255.0)
+        return Image.fromarray(out.astype(np.uint8), mode="L")
 
     def _default_preprocess(self, image: Image.Image) -> Image.Image:
         if image.mode == "RGBA":

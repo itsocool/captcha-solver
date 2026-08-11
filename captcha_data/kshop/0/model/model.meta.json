@@ -2,11 +2,11 @@
   "captcha_id": "kshop",
   "name": "kshop",
   "rev": 0,
-  "image_width": 263,
-  "image_height": 54,
+  "image_width": 166,
+  "image_height": 48,
   "label_length": 6,
   "characters": "0123456789",
   "threshold": 255,
-  "preprocess": "default",
+  "preprocess": "kshop",
   "blank_index": 0
 }

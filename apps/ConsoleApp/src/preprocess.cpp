@@ -84,6 +84,39 @@ Rgb supreme_court_canvas(const uint8_t* rgba, int w, int h, const ModelMeta& met
 	return canvas;
 }
 
+// kshop 원본 크기와 잘라낼 영역. dataclass.py 의 KSHOP_SOURCE_SIZE / KSHOP_CROP 와
+// 같은 영역이어야 한다. 파이썬은 PIL 규약의 (left, top, right, bottom) = (10, 2, 176, 50)
+// 이고 여기서는 x/y/w/h 로 적으므로 (10, 2, 166, 48) 이 된다.
+//
+// supreme_court ROI 가 meta 의 입력 크기에서 유도되는 것과 달리 여기 263x54 는
+// 자르기 '전' 크기라 meta(166x48)로는 알 수 없어 상수로 둔다.
+//
+// ponytail: 자르는 캡차가 세 번째로 생기면 이 상수들을 meta.json 으로 올릴 것.
+constexpr int kKshopSrcW = 263;
+constexpr int kKshopSrcH = 54;
+constexpr int kKshopCropX = 10;
+constexpr int kKshopCropY = 2;
+constexpr int kKshopCropW = 166;
+constexpr int kKshopCropH = 48;
+
+// 세로로 균일한 배경 그라데이션을 걷어내 배경을 희게 만든다.
+// 열마다 가장 밝은 값을 그 열의 배경으로 보고 255 가 되도록 스케일한다.
+// 파이썬이 float32 로 계산한 뒤 astype(np.uint8) 로 '버림'하므로 캐스팅으로 맞춘다.
+void flatten_column_background(std::vector<uint8_t>& gray, int w, int h) {
+	for (int x = 0; x < w; ++x) {
+		uint8_t bg = 1;
+		for (int y = 0; y < h; ++y) {
+			bg = std::max(bg, gray[static_cast<size_t>(y) * w + x]);
+		}
+		const float bgf = static_cast<float>(bg);
+		for (int y = 0; y < h; ++y) {
+			const size_t i = static_cast<size_t>(y) * w + x;
+			const float v = static_cast<float>(gray[i]) / bgf * 255.0f;
+			gray[i] = static_cast<uint8_t>(std::clamp(v, 0.0f, 255.0f));
+		}
+	}
+}
+
 }  // namespace
 
 std::vector<float> preprocess_image(const std::vector<uint8_t>& bytes, const ModelMeta& meta) {
@@ -113,6 +146,34 @@ std::vector<float> preprocess_image(const std::vector<uint8_t>& bytes, const Mod
 		gray[i] = luma601(rgb.px[i * 3], rgb.px[i * 3 + 1], rgb.px[i * 3 + 2]);
 	}
 	int gw = rgb.w, gh = rgb.h;
+
+	// kshop 전용 경로: 기준 크기로 맞춘 뒤 166x48 로 자르고 그라데이션을 걷어낸다.
+	// 배경이 왼쪽 검정 → 오른쪽 흰색이라 왼쪽 몇 자리가 배경과 같은 색이 된다.
+	// 다른 경로와 달리 임계값·테두리 제거·마지막 리사이즈를 타지 않는다 (파이썬과 동일).
+	if (meta.preprocess == "kshop") {
+		if (gw != kKshopSrcW || gh != kKshopSrcH) {
+			std::vector<uint8_t> scaled(static_cast<size_t>(kKshopSrcW) * kKshopSrcH);
+			if (stbir_resize(gray.data(), gw, gh, gw,
+			                 scaled.data(), kKshopSrcW, kKshopSrcH, kKshopSrcW,
+			                 STBIR_1CHANNEL, STBIR_TYPE_UINT8, STBIR_EDGE_CLAMP, STBIR_FILTER_CATMULLROM) == nullptr) {
+				throw std::runtime_error("이미지 리사이즈에 실패했습니다");
+			}
+			gray = std::move(scaled);
+			gw = kKshopSrcW;
+			gh = kKshopSrcH;
+		}
+
+		std::vector<uint8_t> cropped(static_cast<size_t>(kKshopCropW) * kKshopCropH);
+		for (int y = 0; y < kKshopCropH; ++y) {
+			const uint8_t* src = gray.data() + static_cast<size_t>(y + kKshopCropY) * gw + kKshopCropX;
+			std::copy(src, src + kKshopCropW, cropped.data() + static_cast<size_t>(y) * kKshopCropW);
+		}
+		flatten_column_background(cropped, kKshopCropW, kKshopCropH);
+
+		std::vector<float> out(cropped.size());
+		for (size_t i = 0; i < cropped.size(); ++i) out[i] = cropped[i] / 255.0f;
+		return out;
+	}
 
 	// image.point(lambda p: 255 if p > threshold else p)
 	// supreme_court 경로는 임계값을 적용하지 않는다(파이썬과 동일).

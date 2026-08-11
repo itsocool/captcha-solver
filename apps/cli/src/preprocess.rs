@@ -69,6 +69,62 @@ fn make_background_white(gray: &mut GrayImage) {
 	}
 }
 
+/// kshop 원본 크기와 잘라낼 영역 (x, y, w, h).
+///
+/// `dataclass.py`의 `KSHOP_SOURCE_SIZE` / `KSHOP_CROP`과 같은 영역이어야 한다.
+/// 파이썬은 PIL 규약의 (left, top, right, bottom) = (10, 2, 176, 50)이고
+/// 여기서는 (x, y, w, h)로 적으므로 (10, 2, 166, 48)이 된다.
+///
+/// supreme_court ROI가 meta의 입력 크기에서 유도되는 것과 달리, 여기 263x54는
+/// 자르기 **전** 크기라 meta(166x48)로는 알 수 없어 상수로 둔다.
+///
+/// ponytail: 자르는 캡차가 세 번째로 생기면 이 상수들을 meta.json으로 올릴 것.
+///           지금은 supreme_court가 각 클라이언트에 ROI를 박아둔 기존 방식을 따른다.
+const KSHOP_SOURCE: (u32, u32) = (263, 54);
+const KSHOP_CROP: (u32, u32, u32, u32) = (10, 2, 166, 48);
+
+/// 세로로 균일한 배경 그라데이션을 걷어내 배경을 희게 만든다.
+///
+/// 배경이 x에만 의존하므로 열마다 가장 밝은 값을 그 열의 배경으로 보고 255가 되도록
+/// 스케일한다. `dataclass.py: TrainData._flatten_column_background`와 같은 계산이며,
+/// 파이썬이 float32로 계산한 뒤 `astype(np.uint8)`로 **버림**하므로 `as u8`로 맞춘다.
+fn flatten_column_background(gray: &mut GrayImage) {
+	let (w, h) = gray.dimensions();
+	for x in 0..w {
+		let mut bg: u8 = 1;
+		for y in 0..h {
+			bg = bg.max(gray.get_pixel(x, y)[0]);
+		}
+		let bg = bg as f32;
+		for y in 0..h {
+			let v = gray.get_pixel(x, y)[0] as f32 / bg * 255.0;
+			gray.put_pixel(x, y, Luma([v.clamp(0.0, 255.0) as u8]));
+		}
+	}
+}
+
+/// kshop 전용 경로: 기준 크기로 맞춘 뒤 166x48로 자르고 그라데이션을 걷어낸다.
+///
+/// 배경이 왼쪽 검정 → 오른쪽 흰색 그라데이션이라 왼쪽 몇 자리가 배경과 같은 색이 된다.
+/// 다른 경로와 달리 임계값·테두리 제거·마지막 리사이즈를 타지 않는다 (파이썬과 동일).
+fn kshop_to_gray(img: &DynamicImage) -> GrayImage {
+	let rgb = if has_alpha(img) {
+		composite_on_white(img)
+	} else {
+		img.to_rgb8()
+	};
+
+	let mut gray = to_luma601(&rgb);
+	if gray.dimensions() != KSHOP_SOURCE {
+		gray = image::imageops::resize(&gray, KSHOP_SOURCE.0, KSHOP_SOURCE.1, FilterType::CatmullRom);
+	}
+
+	let (cx, cy, cw, ch) = KSHOP_CROP;
+	let mut gray = image::imageops::crop_imm(&gray, cx, cy, cw, ch).to_image();
+	flatten_column_background(&mut gray);
+	gray
+}
+
 /// supreme_court 전용 경로: 고정 ROI를 캔버스에 붙인다.
 ///
 /// 파이썬 원본은 RGBA 캔버스를 `255`로 채우는데, PIL은 이를 (255, 0, 0, 0)으로
@@ -93,6 +149,10 @@ pub fn preprocess(img: &DynamicImage, meta: &ModelMeta) -> Vec<f32> {
 }
 
 pub fn preprocess_to_gray(img: &DynamicImage, meta: &ModelMeta) -> GrayImage {
+	if meta.preprocess == "kshop" {
+		return kshop_to_gray(img);
+	}
+
 	let rgb = if meta.preprocess == "supreme_court" {
 		if has_alpha(img) {
 			composite_on_white(img)

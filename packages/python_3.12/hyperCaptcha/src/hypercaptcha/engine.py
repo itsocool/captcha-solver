@@ -12,6 +12,7 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data") -> Dict[s
 
     supreme_court = CaptchaType(captcha_id="supreme_court", name="대법원", desc="대법원 캡챠", train_data=TrainData(
         captcha_id="supreme_court",
+        preprocess="supreme_court",
         train_data_base_dir=train_data_base_dir,
         image_width=120,
         image_height=40,
@@ -32,6 +33,9 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data") -> Dict[s
 
     kshop = CaptchaType(captcha_id="kshop", name="kshop", desc="KT Shopping 캡챠", train_data=TrainData(
         captcha_id="kshop",
+        # 263x54 원본을 180x50 으로 잘라내고 배경 그라데이션을 걷어낸다.
+        # 모델 입력 크기는 전처리 결과(180x50)로 자동 감지된다.
+        preprocess="kshop",
         train_data_base_dir=train_data_base_dir,
         image_width=263,
         image_height=54,
@@ -85,10 +89,11 @@ def get_captcha_model(
 
 def train_model(
     model: BaseModel,
-    epochs: int = 60,
+    epochs: int = 80,
     batch_size: int = 32,
     earlystopping: bool = True,
-    early_stopping_patience: int = 8,
+    # 8 은 CTC 초기 정체 구간(무개선 7에폭 연속까지 발생)에 걸려 탈출 전에 죽는다.
+    early_stopping_patience: int = 15,
     learning_rate: float = 0.001,
     num_workers: int = 0,
     warmup_epochs: int = 0,
