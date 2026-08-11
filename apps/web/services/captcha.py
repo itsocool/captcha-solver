@@ -5,9 +5,12 @@ import tempfile
 from datetime import datetime
 
 from web.core.db import get_service_config
+from web.core.device import resolve as resolve_device
 
 
-_MODEL_CACHE = {}
+# 모델 인스턴스는 특정 디바이스에 묶인다(가중치가 그 디바이스에 올라가 있다).
+# 같은 캡차라도 cpu/cuda 는 별도 인스턴스여야 하므로 (captcha_id, device) 로 키를 잡는다.
+_MODEL_CACHE: dict[tuple[str, str], object] = {}
 _PRELOAD_STATUS: dict[str, str] = {}
 
 
@@ -36,18 +39,41 @@ def is_serviced(captcha_id: str) -> bool:
 
 
 def loaded_model_ids() -> list[str]:
-	"""가중치까지 로드된 captcha_id 목록 (engine 임포트 없이 조회)."""
-	return sorted(cid for cid, model in _MODEL_CACHE.items() if getattr(model, "model", None) is not None)
+	"""가중치까지 로드된 captcha_id 목록 (engine 임포트 없이 조회).
+
+	같은 캡차가 여러 디바이스에 올라가 있어도 id 는 한 번만 센다.
+	"""
+	return sorted({
+		captcha_id
+		for (captcha_id, _), model in _MODEL_CACHE.items()
+		if getattr(model, "model", None) is not None
+	})
 
 
-def get_model(captcha_id: str):
-	if captcha_id in _MODEL_CACHE:
-		return _MODEL_CACHE[captcha_id]
+def loaded_devices(captcha_id: str) -> list[str]:
+	"""해당 캡차가 실제로 올라가 있는 디바이스 목록."""
+	return sorted({
+		str(model.device)
+		for (cached_id, _), model in _MODEL_CACHE.items()
+		if cached_id == captcha_id and getattr(model, "model", None) is not None
+	})
+
+
+def get_model(captcha_id: str, device: str | None = None):
+	"""캡차/디바이스 조합의 모델 인스턴스. device=None 이면 자동 선택.
+
+	쓸 수 없는 디바이스를 요청하면 ValueError 가 올라온다.
+	"""
+	device_key = resolve_device(device)
+	cache_key = (captcha_id, device_key)
+
+	if cache_key in _MODEL_CACHE:
+		return _MODEL_CACHE[cache_key]
 
 	from hypercaptcha import engine
 
-	model = engine.get_captcha_model(captcha_id=captcha_id, verbose=0)
-	_MODEL_CACHE[captcha_id] = model
+	model = engine.get_captcha_model(captcha_id=captcha_id, verbose=0, device=device_key)
+	_MODEL_CACHE[cache_key] = model
 	return model
 
 
@@ -66,7 +92,9 @@ def preload_models() -> dict[str, str]:
 			model = get_model(captcha_id)
 			model.load_prediction_model()
 		except Exception as e:
-			_MODEL_CACHE.pop(captcha_id, None)
+			# 실패한 캡차는 디바이스와 무관하게 캐시에서 전부 걷어낸다.
+			for cache_key in [key for key in _MODEL_CACHE if key[0] == captcha_id]:
+				_MODEL_CACHE.pop(cache_key, None)
 			status[captcha_id] = f"skipped ({type(e).__name__}: {e})"
 			continue
 
@@ -95,8 +123,9 @@ def model_status() -> list[dict]:
 	rows = []
 	for captcha_id, captcha_type in engine.get_captcha_type_list().items():
 		train_data = captcha_type.train_data
-		model = _MODEL_CACHE.get(captcha_id)
-		loaded = model is not None and model.model is not None
+		# 같은 캡차가 cpu/cuda 양쪽에 올라가 있을 수 있어 디바이스를 모아서 표시한다.
+		devices = loaded_devices(captcha_id)
+		loaded = bool(devices)
 		model_path = train_data.get_model_path()
 		file_stat = os.stat(model_path) if os.path.exists(model_path) else None
 
@@ -107,7 +136,7 @@ def model_status() -> list[dict]:
 			"loaded": loaded,
 			"serviced": captcha_id in serviced,
 			"state": _PRELOAD_STATUS.get(captcha_id, "not serviced" if captcha_id not in serviced else "not loaded"),
-			"device": str(model.device) if model is not None else "-",
+			"device": ", ".join(devices) if devices else "-",
 			"rev": train_data.rev,
 			"image_size": f"{train_data.detected_image_width}×{train_data.detected_image_height}",
 			"label_length": train_data.detected_label_length,
@@ -136,12 +165,24 @@ def decode_image_data(image_data: str) -> bytes:
 		raise ValueError("image_data must be valid base64")
 
 
-def predict_from_bytes(captcha_id: str, image_bytes: bytes, filename: str = "captcha.png"):
+def predict_from_bytes(
+	captcha_id: str,
+	image_bytes: bytes,
+	filename: str = "captcha.png",
+	device: str | None = None,
+) -> tuple[str, float, str]:
+	"""단건 예측. (예측문자열, 신뢰도, 실제 사용한 디바이스) 를 돌려준다.
+
+	device 는 'auto'/'cpu'/'cuda' 또는 None(=auto). 쓸 수 없는 값이면 ValueError.
+	"""
 	if not image_bytes:
 		raise ValueError("image data is empty")
 
 	if not is_serviced(captcha_id):
 		raise ValueError(f"captcha_id '{captcha_id}' is not serviced")
+
+	# 모델을 만들기 전에 검증한다. 잘못된 디바이스는 예측 실패(500)가 아니라 요청 오류(400)다.
+	device_key = resolve_device(device)
 
 	from hypercaptcha import engine
 
@@ -151,7 +192,8 @@ def predict_from_bytes(captcha_id: str, image_bytes: bytes, filename: str = "cap
 		try:
 			with open(tmp_path, "wb") as out_f:
 				out_f.write(image_bytes)
-			model = get_model(captcha_id)
-			return engine.predict(model=model, image_path=tmp_path, verbose=0)
+			model = get_model(captcha_id, device_key)
+			prediction, confidence = engine.predict(model=model, image_path=tmp_path, verbose=0)
+			return prediction, confidence, str(model.device)
 		except Exception as e:
 			raise CaptchaPredictionError(str(e)) from e

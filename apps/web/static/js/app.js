@@ -9,6 +9,7 @@ const prediction = document.querySelector("#prediction");
 const confidence = document.querySelector("#confidence");
 const confidenceBar = document.querySelector("#confidence-bar");
 const elapsed = document.querySelector("#elapsed");
+const deviceUsed = document.querySelector("#device-used");
 const submit = form.querySelector("button[type=submit]");
 
 function showFile(file) {
@@ -54,6 +55,8 @@ function showResult(payload, roundTripMs) {
 	elapsed.textContent = typeof payload.elapsed_ms === "number"
 		? `${payload.elapsed_ms} ms`
 		: `${Math.round(roundTripMs)} ms`;
+	// 서버가 실제로 쓴 디바이스. auto 로 보냈을 때 무엇이 골라졌는지 여기서 확인한다.
+	deviceUsed.textContent = payload.device ?? "—";
 }
 
 form.addEventListener("submit", async (event) => {
@@ -63,7 +66,13 @@ form.addEventListener("submit", async (event) => {
 	const started = performance.now();
 	try {
 		const response = await fetch(form.action, {method: "POST", body: new FormData(form)});
-		showResult(await response.json(), performance.now() - started);
+		const payload = await response.json();
+		if (!response.ok) {
+			// FastAPI 는 오류를 {detail: "..."} 로 돌려준다. 디바이스를 쓸 수 없는 경우가 여기로 온다.
+			result.textContent = payload.detail ?? JSON.stringify(payload, null, 2);
+			return;
+		}
+		showResult(payload, performance.now() - started);
 	} catch (error) {
 		result.textContent = String(error);
 	} finally {

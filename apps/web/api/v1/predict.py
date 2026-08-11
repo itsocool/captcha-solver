@@ -14,18 +14,22 @@ from web.services.captcha import (
 router = APIRouter(tags=["api-v1"])
 
 
-def _response(captcha_id: str, prediction: str, confidence: float, started: float) -> PredictResponse:
+def _response(
+	captcha_id: str, prediction: str, confidence: float, device: str, started: float
+) -> PredictResponse:
 	return PredictResponse(
 		captcha_id=captcha_id,
 		prediction=prediction,
 		confidence=float(confidence),
 		elapsed_ms=round((perf_counter() - started) * 1000),
+		device=device,
 	)
 
 
 @router.post("/predictImage", response_model=PredictResponse)
 async def predict_image(
 	captcha_id: str | None = Form(None),
+	device: str | None = Form(None),
 	image: UploadFile = File(...),
 ):
 	started = perf_counter()
@@ -37,13 +41,15 @@ async def predict_image(
 	image_bytes = await image.read()
 
 	try:
-		prediction, confidence = predict_from_bytes(selected_captcha_id, image_bytes, image.filename)
+		prediction, confidence, used_device = predict_from_bytes(
+			selected_captcha_id, image_bytes, image.filename, device
+		)
 	except ValueError as e:
 		raise HTTPException(status_code=400, detail=str(e))
 	except CaptchaPredictionError as e:
 		raise HTTPException(status_code=500, detail=str(e))
 
-	return _response(selected_captcha_id, prediction, confidence, started)
+	return _response(selected_captcha_id, prediction, confidence, used_device, started)
 
 
 @router.post("/predictJson", response_model=PredictResponse)
@@ -53,10 +59,12 @@ async def predict_json(payload: PredictJsonRequest):
 
 	try:
 		image_bytes = decode_image_data(payload.image_data)
-		prediction, confidence = predict_from_bytes(selected_captcha_id, image_bytes)
+		prediction, confidence, used_device = predict_from_bytes(
+			selected_captcha_id, image_bytes, device=payload.device
+		)
 	except ValueError as e:
 		raise HTTPException(status_code=400, detail=str(e))
 	except CaptchaPredictionError as e:
 		raise HTTPException(status_code=500, detail=str(e))
 
-	return _response(selected_captcha_id, prediction, confidence, started)
+	return _response(selected_captcha_id, prediction, confidence, used_device, started)

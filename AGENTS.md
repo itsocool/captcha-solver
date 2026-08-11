@@ -98,6 +98,17 @@ captcha_data/<captcha_id>/<rev>/images/{train,pred}/
 
 Endpoints: `GET /health`, `POST /predict`
 
+### 연산 디바이스 선택
+
+`POST /api/v1/predictImage` (form) 와 `POST /api/v1/predictJson` (body) 는 선택적
+`device` 필드를 받는다: `auto`(기본) / `cpu` / `cuda`. 생략하면 auto 이고, auto 는
+CUDA 가용 시 CUDA, 아니면 CPU 다 (`PyTorchModel` 의 원래 동작). 응답의 `device` 에
+실제로 사용된 디바이스가 담긴다. 쓸 수 없는 디바이스를 요청하면 사유와 함께 400 이다.
+
+판정 로직은 `apps/web/core/device.py` 한 곳에 있다. 모델 인스턴스는 특정 디바이스에
+묶이므로 `services/captcha.py` 의 `_MODEL_CACHE` 키는 `(captcha_id, device)` 다 —
+`captcha_id` 만으로 캐시를 뒤지는 코드를 새로 쓰지 말 것.
+
 ## Gotchas
 
 - **No test suite** — verify by running `python -m hypercaptcha.train` or `.pred` with small dataset,

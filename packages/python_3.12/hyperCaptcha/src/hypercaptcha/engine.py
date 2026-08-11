@@ -44,14 +44,25 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data") -> Dict[s
         "kshop": kshop,
     }
 
-def get_captcha_model(train_data_base_dir: str = "./captcha_data", captcha_id: str = "supreme_court", verbose: int = 1) -> PyTorchModel:
+def get_captcha_model(
+    train_data_base_dir: str = "./captcha_data",
+    captcha_id: str = "supreme_court",
+    verbose: int = 1,
+    device: torch.device | str | None = None,
+) -> PyTorchModel:
     captcha_type_list: Dict[str, CaptchaType] = get_captcha_type_list(train_data_base_dir=train_data_base_dir)
 
     if captcha_id not in captcha_type_list:
         raise ValueError(f"Unsupported captcha_id: {captcha_id}")
 
     captcha_type = captcha_type_list[captcha_id]
-    return PyTorchModel(captcha_type=captcha_type, verbose=verbose)
+    # device=None 이면 PyTorchModel 이 cuda 가용 여부로 알아서 고른다 (기존 동작).
+    # 문자열로 받은 경우 torch.device 로 바꿔서 넘긴다. core 쪽이 device.type 을 본다.
+    return PyTorchModel(
+        captcha_type=captcha_type,
+        verbose=verbose,
+        device=torch.device(device) if device is not None else None,
+    )
 
 def train_model(
     model: BaseModel,
