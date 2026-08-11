@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+
+{% block page_title %}Predict{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+	<section class="rounded-2xl border border-border bg-card">
+		<div class="flex items-center justify-between border-b border-border px-6 py-5">
+			<h3 class="font-semibold">일괄 추론</h3>
+			<span class="text-sm text-muted-foreground">images/pred 전체</span>
+		</div>
+
+		<div class="grid gap-5 p-6 sm:grid-cols-2 xl:grid-cols-4">
+			<div>
+				<label class="mb-2 block text-sm font-medium" for="target">대상</label>
+				<div class="relative">
+					<select id="target" class="h-11 w-full appearance-none rounded-lg border border-border bg-transparent pr-10 pl-4 text-sm outline-none focus:border-brand focus:ring-3 focus:ring-brand/10">
+						{% for target in targets %}
+						<option
+							value="{{ target.captcha_id }}:{{ target.rev }}"
+							class="bg-card"
+							{% if not target.selectable %} disabled{% endif %}
+						>{{ target.name }} · {{ target.captcha_id }} rev{{ target.rev }} · {{ target.pred_count }}장{% if not target.selectable %} · {{ target.reason }}{% endif %}</option>
+						{% endfor %}
+					</select>
+					<svg class="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="m6 9 6 6 6-6"></path>
+					</svg>
+				</div>
+			</div>
+
+			<div>
+				<label class="mb-2 block text-sm font-medium" for="device">연산 디바이스</label>
+				<div class="relative">
+					<select id="device" class="h-11 w-full appearance-none rounded-lg border border-border bg-transparent pr-10 pl-4 text-sm outline-none focus:border-brand focus:ring-3 focus:ring-brand/10">
+						{% for option in device_options %}
+						<option value="{{ option.value }}" class="bg-card"{% if not option.available %} disabled{% endif %}{% if option.value == 'auto' %} selected{% endif %}>{{ option.label }}{% if not option.available %} · 사용 불가{% endif %}</option>
+						{% endfor %}
+					</select>
+					<svg class="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="m6 9 6 6 6-6"></path>
+					</svg>
+				</div>
+			</div>
+
+			<div class="flex items-end">
+				<button id="run" type="button" class="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-medium text-white transition-colors hover:bg-brand-hover disabled:opacity-60">
+					<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="M6 4v16l14-8-14-8Z"></path>
+					</svg>
+					실행
+				</button>
+			</div>
+
+			<div class="flex items-end">
+				<button id="stop" type="button" disabled class="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-border px-4 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40">
+					<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<rect x="6" y="6" width="12" height="12" rx="1.5"></rect>
+					</svg>
+					중단
+				</button>
+			</div>
+		</div>
+
+		<div class="border-t border-border px-6 py-4">
+			<div class="mb-2 flex items-center justify-between text-sm">
+				<span id="progress-label" class="text-muted-foreground">대기 중</span>
+				<span id="progress-count" class="font-mono text-muted-foreground">—</span>
+			</div>
+			<div class="h-2 w-full overflow-hidden rounded-full bg-border">
+				<div id="progress-bar" class="h-full w-0 rounded-full bg-brand transition-[width] duration-150"></div>
+			</div>
+		</div>
+	</section>
+
+	<section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+		{% for card in [
+			{"id": "stat-total", "label": "전체"},
+			{"id": "stat-match", "label": "일치"},
+			{"id": "stat-mismatch", "label": "불일치"},
+			{"id": "stat-accuracy", "label": "정확도"},
+			{"id": "stat-elapsed", "label": "소요 시간"}
+		] %}
+		<div class="rounded-2xl border border-border bg-card p-5">
+			<p class="text-sm text-muted-foreground">{{ card.label }}</p>
+			<p id="{{ card.id }}" class="mt-1 font-mono text-2xl font-semibold tracking-tight">—</p>
+		</div>
+		{% endfor %}
+	</section>
+
+	<section class="rounded-2xl border border-border bg-card">
+		<div class="border-b border-border px-6 py-5">
+			<h3 class="font-semibold">신뢰도 분포</h3>
+			<p class="mt-1 text-sm text-muted-foreground">구간별 일치/불일치 건수. 임계값을 어디에 둘지 판단하는 용도입니다.</p>
+		</div>
+		<div id="histogram" class="p-6"></div>
+	</section>
+
+	<section class="rounded-2xl border border-border bg-card">
+		<div class="flex flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-5">
+			<h3 class="font-semibold">오답 갤러리 <span id="mismatch-count" class="text-sm font-normal text-muted-foreground">—</span></h3>
+			<span class="text-sm text-muted-foreground">정답 → 예측 (신뢰도)</span>
+		</div>
+		<div id="gallery" class="grid gap-4 p-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+			<p class="text-sm text-muted-foreground">실행하면 틀린 항목이 여기에 쌓입니다.</p>
+		</div>
+	</section>
+
+	<section class="rounded-2xl border border-border bg-card">
+		<div class="flex flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-5">
+			<h3 class="font-semibold">전체 결과</h3>
+			<div class="flex items-center gap-3">
+				<label class="flex items-center gap-2 text-sm text-muted-foreground">
+					<input id="only-mismatch" type="checkbox" class="size-4 rounded border-border accent-[var(--brand)]">
+					불일치만
+				</label>
+				<div class="flex items-center gap-1">
+					<button id="page-prev" type="button" class="flex size-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:text-foreground disabled:opacity-40" disabled>
+						<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6"></path></svg>
+					</button>
+					<span id="page-label" class="min-w-20 text-center font-mono text-sm text-muted-foreground">—</span>
+					<button id="page-next" type="button" class="flex size-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:text-foreground disabled:opacity-40" disabled>
+						<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
+					</button>
+				</div>
+			</div>
+		</div>
+		<div class="overflow-x-auto">
+			<table class="w-full text-sm">
+				<thead class="border-b border-border text-left text-muted-foreground">
+					<tr>
+						<th class="px-6 py-3 font-medium">#</th>
+						<th class="px-6 py-3 font-medium">파일</th>
+						<th class="px-6 py-3 font-medium">정답</th>
+						<th class="px-6 py-3 font-medium">예측</th>
+						<th class="px-6 py-3 font-medium">신뢰도</th>
+						<th class="px-6 py-3 font-medium">결과</th>
+					</tr>
+				</thead>
+				<tbody id="rows"></tbody>
+			</table>
+		</div>
+	</section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', path='/js/predict.js') }}"></script>
+{% endblock %}

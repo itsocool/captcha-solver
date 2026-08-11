@@ -73,7 +73,8 @@
 	<body class="bg-background font-sans text-foreground antialiased">
 		<div class="flex min-h-screen">
 			<aside id="sidebar" class="fixed inset-y-0 left-0 z-50 w-[290px] -translate-x-full border-r border-border bg-surface px-5 transition-transform duration-200 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0">
-				<div class="flex h-16 items-center gap-3">
+				{# 로고도 Home 과 같은 곳으로 간다. #}
+				<a href="/" class="flex h-16 items-center gap-3" aria-label="Hyper Captcha 홈">
 					<span class="flex size-10 items-center justify-center rounded-xl bg-brand text-white">
 						<svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 							<path d="M12 3 4 6v6c0 5 3.4 8.2 8 9 4.6-.8 8-4 8-9V6l-8-3Z"></path>
@@ -81,34 +82,10 @@
 						</svg>
 					</span>
 					<span class="text-base font-semibold tracking-tight">Hyper Captcha</span>
-				</div>
+				</a>
 
 				<p class="mt-6 mb-3 text-xs font-medium tracking-wider text-muted-foreground uppercase">Menu</p>
-				<nav class="flex flex-col gap-1 text-sm font-medium">
-					{% set nav_active = "flex items-center gap-3 rounded-lg bg-brand-soft px-3 py-2.5 text-brand" %}
-					{% set nav_idle = "flex items-center gap-3 rounded-lg px-3 py-2.5 text-muted-foreground hover:bg-background hover:text-foreground" %}
-					<a href="/" class="{{ nav_active if active_nav == 'predict' else nav_idle }}"{% if active_nav == 'predict' %} aria-current="page"{% endif %}>
-						<svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-							<rect x="3" y="3" width="18" height="18" rx="2"></rect>
-							<path d="m3 15 5-5 4 4 3-3 6 6"></path>
-							<circle cx="8.5" cy="8.5" r="1.5"></circle>
-						</svg>
-						Captcha Solver
-					</a>
-					<a href="/docs" target="_blank" rel="noopener" class="{{ nav_idle }}">
-						<svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-							<path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15Z"></path>
-							<path d="M4 17.5h16"></path>
-						</svg>
-						API Docs
-					</a>
-					<a href="/status" class="{{ nav_active if active_nav == 'status' else nav_idle }}"{% if active_nav == 'status' %} aria-current="page"{% endif %}>
-						<svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-							<path d="M3 12h4l2 6 4-14 2 8h6"></path>
-						</svg>
-						Model Status
-					</a>
-				</nav>
+				{% include "_nav.html" %}
 			</aside>
 
 			<div id="overlay" class="fixed inset-0 z-40 hidden bg-black/40 lg:hidden"></div>

@@ -1,0 +1,52 @@
+{# 사이드바 메뉴. 항목이 늘 때 nav_items 에 한 줄만 추가하면 된다. #}
+
+{% macro nav_icon(name) %}
+	{%- if name == "solver" -%}
+	<svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<rect x="3" y="3" width="18" height="18" rx="2"></rect>
+		<path d="m3 15 5-5 4 4 3-3 6 6"></path>
+		<circle cx="8.5" cy="8.5" r="1.5"></circle>
+	</svg>
+	{%- elif name == "batch" -%}
+	<svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+		<rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+		<rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+		<path d="m14 17.5 2.5 2.5 4.5-4.5"></path>
+	</svg>
+	{%- elif name == "docs" -%}
+	<svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15Z"></path>
+		<path d="M4 17.5h16"></path>
+	</svg>
+	{%- elif name == "status" -%}
+	<svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<path d="M3 12h4l2 6 4-14 2 8h6"></path>
+	</svg>
+	{%- endif -%}
+{% endmacro %}
+
+{% set nav_items = [
+	{"href": "/", "key": "predict", "label": "Home", "icon": "solver"},
+	{"href": "/predict", "key": "batch_predict", "label": "Predict", "icon": "batch"},
+	{"href": "/docs", "key": "docs", "label": "API Docs", "icon": "docs", "external": true},
+	{"href": "/status", "key": "status", "label": "Model Status", "icon": "status"}
+] %}
+
+{% set nav_active = "flex items-center gap-3 rounded-lg bg-brand-soft px-3 py-2.5 text-brand" %}
+{% set nav_idle = "flex items-center gap-3 rounded-lg px-3 py-2.5 text-muted-foreground hover:bg-background hover:text-foreground" %}
+
+<nav class="flex flex-col gap-1 text-sm font-medium">
+	{% for item in nav_items %}
+	{% set is_active = (active_nav == item.key) and not item.external %}
+	<a
+		href="{{ item.href }}"
+		class="{{ nav_active if is_active else nav_idle }}"
+		{%- if item.external %} target="_blank" rel="noopener"{% endif %}
+		{%- if is_active %} aria-current="page"{% endif %}
+	>
+		{{ nav_icon(item.icon) }}
+		{{ item.label }}
+	</a>
+	{% endfor %}
+</nav>

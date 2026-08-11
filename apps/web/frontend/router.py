@@ -5,6 +5,7 @@ from fastapi.templating import Jinja2Templates
 from web.core.db import get_service_config
 from web.core.device import device_options
 from web.core.version import get_app_version
+from web.services.batch_predict import list_targets
 from web.services.captcha import list_captcha_types, model_status
 
 
@@ -24,6 +25,19 @@ def create_router(templates: Jinja2Templates) -> APIRouter:
 				"device_options": device_options(),
 				"app_version": get_app_version(),
 				"predict_image_url": "/api/v1/predictImage",
+			},
+		)
+
+	@router.get("/predict", response_class=HTMLResponse)
+	async def batch_predict(request: Request):
+		return templates.TemplateResponse(
+			request=request,
+			name="predict.html",
+			context={
+				"active_nav": "batch_predict",
+				"targets": list_targets(),
+				"device_options": device_options(),
+				"app_version": get_app_version(),
 			},
 		)
 
