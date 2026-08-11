@@ -2,7 +2,7 @@ import os, time
 import shutil, glob, random
 import numpy as np
 import torch
-from typing import List, Tuple, Optional, Dict
+from typing import Iterator, List, Tuple, Optional, Dict
 from tqdm import tqdm
 from .core import PyTorchModel
 from .base_core import BaseModel
@@ -44,11 +44,26 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data") -> Dict[s
         "kshop": kshop,
     }
 
+def with_rev(captcha_type: CaptchaType, rev: int) -> CaptchaType:
+    """같은 캡차의 다른 리비전을 가리키는 CaptchaType 사본.
+
+    TrainData 는 __init__ 에서 학습 이미지를 훑어 이미지 크기/문자셋/레이블 길이를
+    감지한다. 그래서 rev 만 바꿔 새로 만들면 그 리비전 기준으로 다시 감지된다.
+    """
+    td = captcha_type.train_data
+    return CaptchaType(
+        captcha_id=captcha_type.captcha_id,
+        name=captcha_type.name,
+        desc=captcha_type.desc,
+        train_data=TrainData(**{**td.model_dump(), "rev": rev}),
+    )
+
 def get_captcha_model(
     train_data_base_dir: str = "./captcha_data",
     captcha_id: str = "supreme_court",
     verbose: int = 1,
     device: torch.device | str | None = None,
+    rev: int | None = None,
 ) -> PyTorchModel:
     captcha_type_list: Dict[str, CaptchaType] = get_captcha_type_list(train_data_base_dir=train_data_base_dir)
 
@@ -56,6 +71,10 @@ def get_captcha_model(
         raise ValueError(f"Unsupported captcha_id: {captcha_id}")
 
     captcha_type = captcha_type_list[captcha_id]
+
+    # rev 를 주지 않으면 위 레지스트리에 박힌 기본 리비전을 그대로 쓴다.
+    if rev is not None and rev != captcha_type.train_data.rev:
+        captcha_type = with_rev(captcha_type, rev)
     # device=None 이면 PyTorchModel 이 cuda 가용 여부로 알아서 고른다 (기존 동작).
     # 문자열로 받은 경우 torch.device 로 바꿔서 넘긴다. core 쪽이 device.type 을 본다.
     return PyTorchModel(
@@ -103,52 +122,124 @@ def train_model(
         loss_type=loss_type,
     )
 
+def iter_batch_predict(
+    model: PyTorchModel,
+    pred_image_dir: str = None,
+    unk_token: str = "[UNK]",
+    loss_type: str = 'focal',
+) -> Iterator[dict]:
+    """일괄 추론 결과를 한 장씩 흘려보낸다.
+
+    batch_predict_model() 은 결과를 화면에 찍기만 해서 다른 곳에서 쓸 수 없었다.
+    루프를 이쪽으로 옮기고 batch_predict_model() 은 이 위의 출력 래퍼가 됐다.
+    웹의 진행률 스트리밍과 CLI 출력이 같은 추론 로직을 쓰게 하려는 것이다.
+
+    내보내는 이벤트는 셋이다:
+      {'type': 'start',   ...}  맨 처음 한 번. total 로 전체 장수를 알려준다.
+      {'type': 'item',    ...}  매 장마다. 실패한 장은 error 키가 붙는다.
+      {'type': 'summary', ...}  맨 마지막 한 번.
+    """
+    torch_model: PyTorchModel = model
+    train_data: TrainData = torch_model.train_data
+    torch_model.loss_type = loss_type
+    torch_model.use_amp = True
+
+    torch_model.load_prediction_model()
+
+    if pred_image_dir is not None:
+        pred_image_files = sorted(glob.glob(os.path.join(pred_image_dir, "*.*")))
+    else:
+        pred_image_files = train_data.get_data_files(train=False)
+
+    total = len(pred_image_files)
+
+    yield {
+        'type': 'start',
+        'captcha_id': train_data.captcha_id,
+        'rev': train_data.rev,
+        'device': str(torch_model.device),
+        'loss_type': loss_type,
+        'total': total,
+        'pred_image_dir': pred_image_dir or train_data.get_image_dir(train=False),
+    }
+
+    start = time.time()
+    match_count = 0
+
+    torch_model.model.eval()
+    with torch.no_grad():
+        for index, image_path in enumerate(pred_image_files):
+            image_name = os.path.basename(image_path)
+            expected = os.path.splitext(image_name)[0]
+
+            try:
+                pred_text, confidence = torch_model.predict(
+                    image_path=image_path,
+                    unk_token=unk_token,
+                    loss_type=loss_type,
+                )
+            except Exception as e:
+                # 한 장이 깨져도 전체를 멈추지 않는다. 실패는 불일치로 센다.
+                yield {
+                    'type': 'item', 'index': index, 'image': image_name,
+                    'expected': expected, 'pred': '', 'confidence': 0.0,
+                    'match': False, 'error': f"{type(e).__name__}: {e}",
+                }
+                continue
+
+            # 감지값 기준. 0800723b 에서 명시값 대신 detected_* 로 통일했다.
+            is_match = (pred_text == expected and len(pred_text) == train_data.detected_label_length)
+            if is_match:
+                match_count += 1
+
+            yield {
+                'type': 'item', 'index': index, 'image': image_name,
+                'expected': expected, 'pred': pred_text,
+                'confidence': float(confidence), 'match': is_match,
+            }
+
+    elapsed = time.time() - start
+
+    yield {
+        'type': 'summary',
+        'loss_type': loss_type,
+        'total': total,
+        'match': match_count,
+        'mismatch': total - match_count,
+        'accuracy': (match_count / total * 100) if total > 0 else 0.0,
+        'elapsed_sec': elapsed,
+    }
+
 def batch_predict_model(
     model: PyTorchModel,
     pred_image_dir: str = None,
     unk_token: str = "[UNK]",
     loss_type: str = 'focal',
 ) -> Dict[str, float]:
-    start = time.time()
-    torch_model: PyTorchModel = model
-    train_data: TrainData = torch_model.train_data
-    torch_model.loss_type = loss_type
-    torch_model.use_amp = True
-    
-    torch_model.load_prediction_model()
-    
-    if pred_image_dir is not None:
-        pred_image_files = sorted(glob.glob(os.path.join(pred_image_dir, "*.*")))
-    else:
-        pred_image_files = train_data.get_data_files(train=False)
-
     results = []
     mismatches = []
-    total = 0
-    match_count = 0
+    summary: Dict[str, float] = {}
+    progress = None
 
-    # 단순화된 루프: core.PyTorchModel.predict()를 호출하여 예측 및 신뢰도 획득
-    torch_model.model.eval()
-    with torch.no_grad():
-        for image_path in tqdm(pred_image_files, desc="Predicting"):
-            image_name = os.path.basename(image_path)
-            expected = os.path.splitext(image_name)[0]
-            pred_text, confidence = torch_model.predict(
-                image_path=image_path,
-                unk_token=unk_token,
-                loss_type=loss_type,
-            )
-            is_match = (pred_text == expected and len(pred_text) == train_data.detected_label_length)
-            if is_match:
-                match_count += 1
-            else:
-                mismatches.append({'image': image_name, 'expected': expected, 'pred': pred_text, 'confidence': confidence})
+    for event in iter_batch_predict(
+        model=model,
+        pred_image_dir=pred_image_dir,
+        unk_token=unk_token,
+        loss_type=loss_type,
+    ):
+        if event['type'] == 'start':
+            progress = tqdm(total=event['total'], desc="Predicting")
+        elif event['type'] == 'item':
+            if progress is not None:
+                progress.update(1)
+            results.append(event)
+            if not event['match']:
+                mismatches.append(event)
+        else:
+            summary = event
 
-            results.append({'image': image_name, 'expected': expected, 'pred': pred_text, 'confidence': confidence, 'match': is_match})
-            total += 1
-
-    end = time.time()
-    accuracy = (match_count / total * 100) if total > 0 else 0.0
+    if progress is not None:
+        progress.close()
 
     for r in results:
         status = "✅" if r['match'] else "❌"
@@ -161,14 +252,16 @@ def batch_predict_model(
 
     print("\n" + "=" * 70)
     print(f"Prediction Results:")
-    print(f"  Loss Type: {loss_type}")
-    print(f"  Total: {total}")
-    print(f"  Match: {match_count}")
-    print(f"  Mismatch: {total - match_count}")
-    print(f"  Accuracy: {accuracy:.2f}%")
-    print(f"  pred time: {end - start:.2f} sec")
+    print(f"  Loss Type: {summary['loss_type']}")
+    print(f"  Total: {summary['total']}")
+    print(f"  Match: {summary['match']}")
+    print(f"  Mismatch: {summary['mismatch']}")
+    print(f"  Accuracy: {summary['accuracy']:.2f}%")
+    print(f"  pred time: {summary['elapsed_sec']:.2f} sec")
     print("=" * 70)
     print("\nPrediction completed!")
+
+    return summary
 
 def predict(
     model: PyTorchModel,
