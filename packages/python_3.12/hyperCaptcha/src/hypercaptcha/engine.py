@@ -6,7 +6,7 @@ from typing import Iterator, List, Tuple, Optional, Dict
 from tqdm import tqdm
 from .core import PyTorchModel
 from .base_core import BaseModel
-from .dataclass import CaptchaType, TrainData
+from .dataclass import LOWER_CASE, CaptchaType, TrainData
 
 def get_captcha_type_list(train_data_base_dir: str = "./captcha_data") -> Dict[str, CaptchaType]:
 
@@ -41,11 +41,23 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data") -> Dict[s
         image_height=54,
     ))
 
+    # 유일하게 숫자가 아닌 캡차다. 라벨은 소문자 5글자이고 배경이 이미 흰색이라
+    # 전처리는 기본 경로를 그대로 쓴다 (물결선 노이즈 하나 외에 별다른 왜곡이 없다).
+    iptime = CaptchaType(captcha_id="iptime", name="ipTIME", desc="ipTIME 공유기 캡챠", train_data=TrainData(
+        captcha_id="iptime",
+        train_data_base_dir=train_data_base_dir,
+        image_width=200,
+        image_height=70,
+        label_length=5,
+        characters=list(LOWER_CASE),
+    ))
+
     return {
         "supreme_court": supreme_court,
         "gov24": gov24,
         "wetax": wetax,
         "kshop": kshop,
+        "iptime": iptime,
     }
 
 def with_rev(captcha_type: CaptchaType, rev: int) -> CaptchaType:
