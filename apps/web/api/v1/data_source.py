@@ -9,7 +9,9 @@ from web.services.data_source import (
 	clean_request,
 	draft_image_path,
 	is_running,
+	list_drafts,
 	list_targets,
+	rename_draft,
 	run,
 )
 
@@ -73,6 +75,33 @@ async def data_source_stream(
 			"X-Accel-Buffering": "no",
 		},
 	)
+
+
+@router.get("/data-source/drafts")
+async def data_source_drafts(
+	captcha_id: str = Query(...),
+	rev: int = Query(0),
+	limit: int | None = Query(None, ge=1),
+):
+	"""draft 에 쌓여 있는 이미지 목록. 갤러리 새로 고침이 이걸 읽는다.
+
+	limit 을 주지 않으면 전부 돌려준다.
+	"""
+	return JSONResponse(list_drafts(captcha_id, rev, limit))
+
+
+@router.post("/data-source/label")
+async def data_source_label(
+	captcha_id: str = Query(...),
+	rev: int = Query(0),
+	name: str = Query(...),
+	label: str = Query(...),
+):
+	"""draft 이미지에 라벨을 붙인다 (파일 이름 변경)."""
+	try:
+		return JSONResponse(rename_draft(captcha_id, rev, name, label))
+	except ValueError as e:
+		raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/data-source/image")

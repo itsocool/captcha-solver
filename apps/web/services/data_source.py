@@ -8,7 +8,6 @@ services/batch_predict.py 와 같은 규칙이다. FastAPI 를 모르는 순수 
 기존 관례). 라벨을 붙여 train/pred 로 옮기는 건 사람 몫이다.
 """
 
-import hashlib
 import re
 import threading
 import time
@@ -36,9 +35,10 @@ MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 # 대신 지켜야 할 선은 배포 쪽이다: 이 웹앱에는 인증이 없으므로 신뢰할 수 없는
 # 네트워크에 열어두면 안 된다 (기본 web_host=0.0.0.0 이니 방화벽/리버스 프록시로 막을 것).
 # 여기서는 메모리를 지키는 응답 크기 상한만 건다.
-# 같은 그림이 반복될 수 있어 내용 해시로 걸러낸다. 이 횟수만큼 연속으로 중복이면
-# 소스가 그림을 바꿔주지 않는다고 보고 멈춘다.
-DUPLICATE_STREAK_LIMIT = 30
+
+# 같은 그림이 와도 거르지 않는다. 캡차는 글자가 같아도 노이즈가 매번 달라 내용 해시가
+# 사실상 걸러주지 못하는데, 수백 장을 매번 다시 읽는 비용만 든다. 겹치는 그림은
+# 라벨을 붙이는 사람이 판단한다.
 
 
 class DataSourceBusy(Exception):
@@ -143,8 +143,55 @@ def draft_image_path(captcha_id: str, rev: int, image_name: str) -> Path:
 	return path
 
 
+def list_drafts(captcha_id: str, rev: int, limit: int | None = None) -> dict:
+	"""draft 에 쌓인 이미지 목록. 만들어진 순서(오래된 것부터)다.
+
+	이름순으로 정렬하면 라벨을 붙여 이름이 바뀔 때마다 자리가 튄다. 받은 순서는
+	라벨을 붙여도 그대로라 보고 있던 자리가 유지된다 (rename 은 mtime 을 건드리지
+	않는다). 같은 시각이면 이름으로 가른다.
+	limit 을 주지 않으면 전부 준다 — 라벨을 붙이려면 다 보여야 한다.
+	"""
+	directory = draft_dir(captcha_id, rev)
+	names = [
+		p.name for p in sorted(directory.glob("*.png"), key=lambda p: (p.stat().st_mtime, p.name))
+	] if directory.is_dir() else []
+	return {
+		"names": names[:limit] if limit else names,
+		"total": len(names),
+		"draft_dir": str(directory),
+	}
+
+
+def rename_draft(captcha_id: str, rev: int, name: str, label: str) -> dict:
+	"""draft 이미지에 라벨을 붙인다.
+
+	저장소 관례가 '파일 이름 = 정답' 이라(train/pred 를 보면 aaarv.png 식이다)
+	이름을 바꾸는 것이 곧 라벨링이다. 경로 탈출 방어는 draft_image_path 가 한다.
+	"""
+	source = draft_image_path(captcha_id, rev, name)
+
+	label = (label or "").strip()
+	if not label:
+		raise ValueError("라벨이 비었습니다")
+	if any(c in label for c in "/\\\0") or label in (".", ".."):
+		raise ValueError(f"파일 이름으로 쓸 수 없는 라벨입니다: {label!r}")
+
+	target = source.with_name(f"{label}.png")
+	if target == source:
+		return {"name": source.name, "renamed": False}
+	# rename 은 있는 파일을 조용히 덮어쓴다. 먼저 막는다.
+	if target.exists():
+		raise ValueError(f"이미 같은 이름이 있습니다: {target.name}")
+
+	source.rename(target)
+	return {"name": target.name, "renamed": True}
+
+
 def _next_index(directory: Path) -> int:
-	"""이어붙일 파일 번호. 기존 파일명이 숫자면 그 다음부터 센다."""
+	"""이어붙일 파일 번호. 기존에서 가장 큰 순번 + 1 이라 이름이 겹치지 않는다.
+
+	숫자가 아닌 이름(라벨을 붙여 바꾼 파일)은 순번으로 세지 않는다.
+	"""
 	largest = 0
 	for p in directory.glob("*.png"):
 		if p.stem.isdigit():
@@ -221,7 +268,7 @@ def run(captcha_id: str, rev: int, url: str, selector: str, count: int,
 
 	이벤트는 셋이다:
 	  {'type': 'start',   ...}  맨 처음 한 번. total 로 받을 장수를 알려준다.
-	  {'type': 'item',    ...}  매 장마다. 실패나 중복도 이 이벤트로 알린다.
+	  {'type': 'item',    ...}  매 장마다. 실패도 이 이벤트로 알린다.
 	  {'type': 'summary', ...}  맨 마지막 한 번.
 
 	학습과 달리 작업이 이 제너레이터 안에서 돌기 때문에, 소비자가 끊으면 다음 yield
@@ -240,22 +287,16 @@ def run(captcha_id: str, rev: int, url: str, selector: str, count: int,
 		target_dir.mkdir(parents=True, exist_ok=True)
 		index = _next_index(target_dir)
 
-		# 이미 있는 파일까지 포함해 중복을 거른다. 여러 번 나눠 모아도 안 겹친다.
-		seen: set[str] = set()
-		for existing in target_dir.glob("*.png"):
-			seen.add(hashlib.sha256(existing.read_bytes()).hexdigest())
-
 		yield {
 			"type": "start",
 			"captcha_id": request["captcha_id"], "rev": request["rev"],
 			"url": request["url"], "selector": request["selector"],
 			"total": request["count"], "draft_dir": str(target_dir),
-			"existing": len(seen), "start_index": index,
+			"existing": len(list(target_dir.glob("*.png"))), "start_index": index,
 		}
 
 		started = time.time()
-		saved = duplicated = failed = 0
-		duplicate_streak = 0
+		saved = failed = 0
 
 		with httpx.Client(timeout=REQUEST_TIMEOUT, follow_redirects=True) as client:
 			for i in range(request["count"]):
@@ -270,39 +311,21 @@ def run(captcha_id: str, rev: int, url: str, selector: str, count: int,
 						content = body
 						image_url = request["url"]
 					else:
-						if not request["selector"]:
-							raise DataSourceError(
-								f"응답이 이미지가 아닙니다 (content-type={content_type!r}). "
-								"CSS 셀렉터를 입력하세요."
-							)
+						# 셀렉터가 비면 페이지의 첫 이미지를 쓴다. 캡차 주소는 대개 그림
+						# 한 장만 있는 페이지라(ipTIME 의 captcha.cgi) 이걸로 충분하다.
 						html = body.decode("utf-8", errors="replace")
-						image_url = _pick_image_url(html, request["url"], request["selector"])
+						image_url = _pick_image_url(html, request["url"], request["selector"] or "img")
 						content, _ = _fetch(client, image_url)
 
 					png = _decode_png(content)
 				except Exception as e:
 					failed += 1
-					duplicate_streak = 0
 					yield {
 						"type": "item", "index": i, "saved": False,
 						"error": f"{type(e).__name__}: {e}",
 					}
 					continue
 
-				digest = hashlib.sha256(png).hexdigest()
-				if digest in seen:
-					duplicated += 1
-					duplicate_streak += 1
-					yield {"type": "item", "index": i, "saved": False, "duplicate": True,
-					       "image_url": image_url}
-					if duplicate_streak >= DUPLICATE_STREAK_LIMIT:
-						yield {"type": "item", "index": i, "saved": False,
-						       "error": f"같은 그림만 {DUPLICATE_STREAK_LIMIT}번 연속으로 와서 멈춥니다"}
-						break
-					continue
-
-				seen.add(digest)
-				duplicate_streak = 0
 				name = f"{index:06d}.png"
 				(target_dir / name).write_bytes(png)
 				index += 1
@@ -313,7 +336,7 @@ def run(captcha_id: str, rev: int, url: str, selector: str, count: int,
 		yield {
 			"type": "summary",
 			"requested": request["count"], "saved": saved,
-			"duplicated": duplicated, "failed": failed,
+			"failed": failed,
 			"draft_dir": str(target_dir),
 			"draft_total": len(list(target_dir.glob("*.png"))),
 			"elapsed_sec": time.time() - started,
