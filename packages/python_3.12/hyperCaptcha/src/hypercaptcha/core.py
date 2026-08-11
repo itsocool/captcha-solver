@@ -1,5 +1,6 @@
 import json
 import os
+import time
 import numpy as np
 import torch
 import torch.nn as nn
@@ -604,7 +605,8 @@ class PyTorchModel(BaseModel):
                    save_best: bool = True, model_path: str | None = None,
                    warmup_epochs: int = 5, early_stopping_patience: int = 0,
                    weight_decay: float = 1e-4, grad_clip: float = 5.0,
-                   loss_type: str = None, dropout: float = 0.1) -> List[float]:
+                   loss_type: str = None, dropout: float = 0.1,
+                   on_event=None) -> List[float]:
         """
         모델 학습 (PyTorch 2.0+ 최적화, AMP 지원)
         
@@ -621,11 +623,20 @@ class PyTorchModel(BaseModel):
             grad_clip: Gradient Clipping 최대값 (기본: 5.0)
             loss_type: 손실 함수 유형 ('ctc', 'focal')
             dropout: 모델 Dropout 비율 (기본: 0.1)
+            on_event: 진행 상황 콜백. dict 하나를 받는다 ('start' / 'epoch' / 'done').
+                      False 를 돌려주면 다음 에폭으로 넘어가지 않고 중단한다.
+                      웹의 진행률 스트리밍용이며, 주지 않으면 기존 동작 그대로다.
         """
+        def _emit(event_type: str, **payload) -> bool:
+            """진행 이벤트 전달. 콜백이 명시적으로 False 를 주면 중단 신호로 읽는다."""
+            if on_event is None:
+                return True
+            return on_event({'type': event_type, **payload}) is not False
+
         if self.model is None:
             self.model = self.build_model(dropout=dropout)
-            
-        model_path = model_path if model_path is not None else self.get_model_path()    
+
+        model_path = model_path if model_path is not None else self.get_model_path()
            
         # AdamW 옵티마이저 (weight decay 포함, fused=True for CUDA)
         use_fused = self.device.type == 'cuda' and hasattr(optim.AdamW, 'fused')
@@ -697,7 +708,22 @@ class PyTorchModel(BaseModel):
         # 학습 실행
         train_hist = []
         val_hist = []
-        
+        train_started_at = time.time()
+        stop_reason = ''
+        epochs_run = 0
+
+        _emit('start',
+              captcha_id=self.train_data.captcha_id, rev=self.train_data.rev,
+              device=str(self.device), epochs=epochs, loss_type=loss_type,
+              batch_size=getattr(train_loader, 'batch_size', None),
+              train_batches=len(train_loader),
+              val_batches=len(val_loader) if val_loader is not None else 0,
+              image_width=self.image_width, image_height=self.image_height,
+              label_length=self.label_length, characters=self.characters,
+              lr=lr, warmup_epochs=warmup_epochs,
+              early_stopping_patience=early_stopping_patience,
+              use_amp=scaler is not None, model_path=model_path)
+
         for epoch in range(epochs):
             # === Training Phase ===
             self.model.train()
@@ -785,12 +811,14 @@ class PyTorchModel(BaseModel):
                 print(log_msg)
             
             # === Early Stopping 및 Best Temp Model 저장 ===
+            improved = False
             if val_loader is not None and val_loss is not None:
                 if val_loss < best_val_loss:
+                    improved = True
                     best_val_loss = val_loss
                     best_epoch = epoch + 1
                     patience_counter = 0
-                    
+
                     # Best temp model 저장
                     if save_best:
                         self.save_model(model_path, temp=True)
@@ -798,10 +826,10 @@ class PyTorchModel(BaseModel):
                             print(f"  → Best temp model saved (val_loss: {val_loss:.4f})")
                 else:
                     patience_counter += 1
-                    
+
                     if self.verbose > 0:
                         print(f"  → No improvement for {patience_counter} epochs (best: {best_val_loss:.4f} at epoch {best_epoch})")
-                    
+
                     # Early stopping 체크
                     if early_stopping_patience > 0 and patience_counter >= early_stopping_patience:
                         # 저장과 export 는 루프 밖 한 곳에서만 한다.
@@ -809,26 +837,49 @@ class PyTorchModel(BaseModel):
                         if self.verbose > 0:
                             print(f"\n[Early Stopping] Triggered after {epoch + 1} epochs")
                             print(f"Best validation loss: {best_val_loss:.4f} at epoch {best_epoch}")
-                        break
+                        stop_reason = 'early_stopping'
             else:
                 # Validation이 없으면 매 epoch마다 저장
                 if save_best and (epoch + 1) % 10 == 0:
                     self.save_model(model_path, temp=True)
-        
+
+            epochs_run = epoch + 1
+            # 진행 상황을 밖으로 흘린다. 콜백이 False 를 돌려주면 그만 두라는 뜻이다
+            # (웹 UI 의 중단 버튼). 어느 쪽으로 끝나든 아래 아티팩트 확정은 그대로 탄다.
+            if not _emit('epoch',
+                         epoch=epochs_run, epochs=epochs,
+                         train_loss=avg_train_loss, val_loss=val_loss, lr=current_lr,
+                         best_val_loss=None if best_val_loss == float('inf') else best_val_loss,
+                         best_epoch=best_epoch, improved=improved,
+                         patience_counter=patience_counter,
+                         elapsed_sec=time.time() - train_started_at):
+                stop_reason = 'cancelled'
+
+            if stop_reason:
+                break
+
         # 체크포인트를 먼저 확정한 뒤, 그 파일 하나에서만 파생 아티팩트를 만든다.
         if os.path.exists(model_path + '.tmp'):
             os.replace(model_path + '.tmp', model_path)
         else:
             self.save_model(model_path)
 
-        self.finalize_artifacts(model_path)
+        artifacts = self.finalize_artifacts(model_path)
 
         if self.verbose > 0:
             print("=" * 70)
             print("Training completed.")
             if val_loader is not None:
                 print(f"Best validation loss: {best_val_loss:.4f} at epoch {best_epoch}")
-        
+
+        _emit('done',
+              epochs_run=epochs_run, epochs=epochs,
+              stop_reason=stop_reason or 'completed',
+              best_val_loss=None if best_val_loss == float('inf') else best_val_loss,
+              best_epoch=best_epoch,
+              elapsed_sec=time.time() - train_started_at,
+              artifacts=artifacts)
+
         return train_hist
     
     def save_model(self, model_path: str, temp: bool = False):

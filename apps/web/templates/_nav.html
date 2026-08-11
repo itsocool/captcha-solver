@@ -14,6 +14,12 @@
 		<rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
 		<path d="m14 17.5 2.5 2.5 4.5-4.5"></path>
 	</svg>
+	{%- elif name == "train" -%}
+	<svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<path d="M3 17c3.5 0 4.5-10 8-10s4.5 10 8 10"></path>
+		<circle cx="19" cy="17" r="2"></circle>
+		<path d="M3 21h18"></path>
+	</svg>
 	{%- elif name == "docs" -%}
 	<svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 		<path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15Z"></path>
@@ -29,6 +35,7 @@
 {% set nav_items = [
 	{"href": "/", "key": "predict", "label": "Home", "icon": "solver"},
 	{"href": "/predict", "key": "batch_predict", "label": "Predict", "icon": "batch"},
+	{"href": "/train", "key": "train", "label": "Training", "icon": "train"},
 	{"href": "/docs", "key": "docs", "label": "API Docs", "icon": "docs", "external": true},
 	{"href": "/status", "key": "status", "label": "Model Status", "icon": "status"}
 ] %}

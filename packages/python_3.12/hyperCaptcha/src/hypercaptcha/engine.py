@@ -94,9 +94,10 @@ def train_model(
     warmup_epochs: int = 0,
     loss_type: str = 'focal',
     use_amp: bool = True,
+    on_event=None,
 ):
     model.use_amp = use_amp
-    
+
     model.build_model()
 
     # Split dataset
@@ -120,6 +121,7 @@ def train_model(
         warmup_epochs=warmup_epochs,
         early_stopping_patience=patience,
         loss_type=loss_type,
+        on_event=on_event,
     )
 
 def iter_batch_predict(

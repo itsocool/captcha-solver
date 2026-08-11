@@ -7,6 +7,7 @@ from web.core.device import device_options
 from web.core.version import get_app_version
 from web.services.batch_predict import list_targets
 from web.services.captcha import list_captcha_types, model_status
+from web.services.train import LOSS_TYPES, PARAM_SPEC, list_targets as train_targets
 
 
 def create_router(templates: Jinja2Templates) -> APIRouter:
@@ -37,6 +38,21 @@ def create_router(templates: Jinja2Templates) -> APIRouter:
 				"active_nav": "batch_predict",
 				"targets": list_targets(),
 				"device_options": device_options(),
+				"app_version": get_app_version(),
+			},
+		)
+
+	@router.get("/train", response_class=HTMLResponse)
+	async def train(request: Request):
+		return templates.TemplateResponse(
+			request=request,
+			name="train.html",
+			context={
+				"active_nav": "train",
+				"targets": train_targets(),
+				"device_options": device_options(),
+				"param_spec": PARAM_SPEC,
+				"loss_types": LOSS_TYPES,
 				"app_version": get_app_version(),
 			},
 		)

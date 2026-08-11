@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+
+{% block page_title %}Training{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+	<section class="rounded-2xl border border-border bg-card">
+		<div class="flex items-center justify-between border-b border-border px-6 py-5">
+			<h3 class="font-semibold">모델 학습</h3>
+			<span class="text-sm text-muted-foreground">images/train 전체</span>
+		</div>
+
+		<div class="grid gap-5 p-6 sm:grid-cols-2 xl:grid-cols-4">
+			<div>
+				<label class="mb-2 block text-sm font-medium" for="target">대상</label>
+				<div class="relative">
+					<select id="target" class="h-11 w-full appearance-none rounded-lg border border-border bg-transparent pr-10 pl-4 text-sm outline-none focus:border-brand focus:ring-3 focus:ring-brand/10">
+						{% for target in targets %}
+						<option
+							value="{{ target.captcha_id }}:{{ target.rev }}"
+							class="bg-card"
+							data-has-model="{{ 1 if target.has_model else 0 }}"
+							data-label="{{ target.name }} · {{ target.captcha_id }} rev{{ target.rev }}"
+							{% if not target.selectable %} disabled{% endif %}
+						>{{ target.name }} · {{ target.captcha_id }} rev{{ target.rev }} · {{ target.train_count }}장{% if target.has_model %} · 모델 있음{% endif %}{% if not target.selectable %} · {{ target.reason }}{% endif %}</option>
+						{% endfor %}
+					</select>
+					<svg class="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="m6 9 6 6 6-6"></path>
+					</svg>
+				</div>
+			</div>
+
+			<div>
+				<label class="mb-2 block text-sm font-medium" for="device">연산 디바이스</label>
+				<div class="relative">
+					<select id="device" class="h-11 w-full appearance-none rounded-lg border border-border bg-transparent pr-10 pl-4 text-sm outline-none focus:border-brand focus:ring-3 focus:ring-brand/10">
+						{% for option in device_options %}
+						<option value="{{ option.value }}" class="bg-card"{% if not option.available %} disabled{% endif %}{% if option.value == 'auto' %} selected{% endif %}>{{ option.label }}{% if not option.available %} · 사용 불가{% endif %}</option>
+						{% endfor %}
+					</select>
+					<svg class="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="m6 9 6 6 6-6"></path>
+					</svg>
+				</div>
+			</div>
+
+			<div class="flex items-end">
+				<button id="run" type="button" class="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-medium text-white transition-colors hover:bg-brand-hover disabled:opacity-60">
+					<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="M6 4v16l14-8-14-8Z"></path>
+					</svg>
+					학습 시작
+				</button>
+			</div>
+
+			<div class="flex items-end">
+				<button id="stop" type="button" disabled class="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-border px-4 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40">
+					<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<rect x="6" y="6" width="12" height="12" rx="1.5"></rect>
+					</svg>
+					중단
+				</button>
+			</div>
+		</div>
+
+		<div class="border-t border-border px-6 py-5">
+			<div class="mb-4 flex items-center justify-between">
+				<h4 class="text-sm font-medium">학습 파라미터</h4>
+				<button id="reset-params" type="button" class="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">기본값으로</button>
+			</div>
+
+			<div class="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+				{% for field in [
+					{"id": "epochs", "label": "Epochs", "step": "1", "hint": "최대 에폭 수"},
+					{"id": "batch_size", "label": "Batch size", "step": "1", "hint": "미니배치 크기"},
+					{"id": "early_stopping_patience", "label": "Early stopping patience", "step": "1", "hint": "0 이면 비활성화"},
+					{"id": "learning_rate", "label": "Learning rate", "step": "0.0001", "hint": "AdamW 초기 학습률"},
+					{"id": "warmup_epochs", "label": "Warmup epochs", "step": "1", "hint": "0 이면 워밍업 없음"},
+					{"id": "train_ratio", "label": "Train ratio", "step": "0.05", "hint": "재분배할 때만 쓰인다"}
+				] %}
+				<div>
+					<label class="mb-2 block text-sm font-medium" for="{{ field.id }}">{{ field.label }}</label>
+					<input
+						id="{{ field.id }}"
+						type="number"
+						step="{{ field.step }}"
+						min="{{ param_spec[field.id][0] }}"
+						max="{{ param_spec[field.id][1] }}"
+						value="{{ param_spec[field.id][2] }}"
+						data-default="{{ param_spec[field.id][2] }}"
+						class="h-11 w-full rounded-lg border border-border bg-transparent px-4 text-sm outline-none focus:border-brand focus:ring-3 focus:ring-brand/10"
+					>
+					<p class="mt-1.5 text-xs text-muted-foreground">{{ field.hint }} · {{ param_spec[field.id][0] }} ~ {{ param_spec[field.id][1] }}</p>
+				</div>
+				{% endfor %}
+
+				<div>
+					<label class="mb-2 block text-sm font-medium" for="loss_type">Loss</label>
+					<div class="relative">
+						<select id="loss_type" data-default="focal" class="h-11 w-full appearance-none rounded-lg border border-border bg-transparent pr-10 pl-4 text-sm outline-none focus:border-brand focus:ring-3 focus:ring-brand/10">
+							{% for loss in loss_types %}
+							<option value="{{ loss }}" class="bg-card"{% if loss == 'focal' %} selected{% endif %}>{{ loss }}</option>
+							{% endfor %}
+						</select>
+						<svg class="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+							<path d="m6 9 6 6 6-6"></path>
+						</svg>
+					</div>
+					<p class="mt-1.5 text-xs text-muted-foreground">CTC 손실 계산 방식</p>
+				</div>
+
+				<div class="space-y-3 sm:col-span-2 xl:col-span-1">
+					<label class="flex items-center gap-2.5 text-sm">
+						<input id="use_amp" type="checkbox" checked data-default="1" class="size-4 rounded border-border accent-[var(--brand)]">
+						Mixed precision (AMP)
+					</label>
+					<label class="flex items-center gap-2.5 text-sm">
+						<input id="shuffle" type="checkbox" data-default="0" class="size-4 rounded border-border accent-[var(--brand)]">
+						<span>학습 전 train/pred 재분배</span>
+					</label>
+					<p class="text-xs text-warning">재분배는 디스크의 이미지를 실제로 옮깁니다. 되돌릴 수 없습니다.</p>
+				</div>
+			</div>
+		</div>
+
+		<div class="border-t border-border px-6 py-4">
+			<div class="mb-2 flex items-center justify-between text-sm">
+				<span id="progress-label" class="text-muted-foreground">대기 중</span>
+				<span id="progress-count" class="font-mono text-muted-foreground">—</span>
+			</div>
+			<div class="h-2 w-full overflow-hidden rounded-full bg-border">
+				<div id="progress-bar" class="h-full w-0 rounded-full bg-brand transition-[width] duration-150"></div>
+			</div>
+		</div>
+	</section>
+
+	<section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+		{% for card in [
+			{"id": "stat-epoch", "label": "에폭"},
+			{"id": "stat-train-loss", "label": "Train Loss"},
+			{"id": "stat-val-loss", "label": "Val Loss"},
+			{"id": "stat-best", "label": "Best Val Loss"},
+			{"id": "stat-elapsed", "label": "소요 시간"}
+		] %}
+		<div class="rounded-2xl border border-border bg-card p-5">
+			<p class="text-sm text-muted-foreground">{{ card.label }}</p>
+			<p id="{{ card.id }}" class="mt-1 font-mono text-2xl font-semibold tracking-tight">—</p>
+		</div>
+		{% endfor %}
+	</section>
+
+	<section class="rounded-2xl border border-border bg-card">
+		<div class="border-b border-border px-6 py-5">
+			<h3 class="font-semibold">손실 곡선</h3>
+			<p class="mt-1 text-sm text-muted-foreground">에폭별 train/val 손실. 둘이 벌어지기 시작하면 과적합 구간입니다.</p>
+		</div>
+		<div id="chart" class="p-6">
+			<p class="text-sm text-muted-foreground">학습을 시작하면 여기에 그려집니다.</p>
+		</div>
+	</section>
+
+	<section class="rounded-2xl border border-border bg-card">
+		<div class="flex flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-5">
+			<h3 class="font-semibold">에폭 기록</h3>
+			<span id="artifacts" class="text-sm text-muted-foreground">—</span>
+		</div>
+		<div class="overflow-x-auto">
+			<table class="w-full text-sm">
+				<thead class="border-b border-border text-left text-muted-foreground">
+					<tr>
+						<th class="px-6 py-3 font-medium">에폭</th>
+						<th class="px-6 py-3 font-medium">Train Loss</th>
+						<th class="px-6 py-3 font-medium">Val Loss</th>
+						<th class="px-6 py-3 font-medium">LR</th>
+						<th class="px-6 py-3 font-medium">경과</th>
+						<th class="px-6 py-3 font-medium">비고</th>
+					</tr>
+				</thead>
+				<tbody id="rows"></tbody>
+			</table>
+		</div>
+	</section>
+</div>
+
+<div id="confirm" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4">
+	<div class="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-xl">
+		<h3 class="text-lg font-semibold">기존 모델을 덮어씁니다</h3>
+		<p id="confirm-body" class="mt-3 text-sm text-muted-foreground"></p>
+		<p class="mt-3 text-sm text-muted-foreground">이전 버전은 Git LFS 히스토리에만 남습니다.</p>
+		<div class="mt-6 flex justify-end gap-3">
+			<button id="confirm-cancel" type="button" class="h-10 rounded-lg border border-border px-4 text-sm font-medium text-muted-foreground hover:text-foreground">취소</button>
+			<button id="confirm-ok" type="button" class="h-10 rounded-lg bg-brand px-4 text-sm font-medium text-white hover:bg-brand-hover">덮어쓰고 학습</button>
+		</div>
+	</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', path='/js/train.js') }}"></script>
+{% endblock %}
