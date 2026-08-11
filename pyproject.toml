@@ -59,7 +59,6 @@ url = "https://download.pytorch.org/whl/cu130"
 
 [tool.uv.workspace]
 members = [
-    "packages/python_3.12/captcha_solver",
     "packages/python_3.12/hyperCaptcha",
 ]
 
