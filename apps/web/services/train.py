@@ -155,13 +155,22 @@ def is_running() -> bool:
 	return _RUN_LOCK.locked()
 
 
-def run(captcha_id: str, rev: int, device: str | None = None, params: dict | None = None):
+def run(captcha_id: str, rev: int, device: str | None = None, params: dict | None = None,
+        cancel: threading.Event | None = None):
 	"""학습 이벤트 제너레이터.
 
 	core.PyTorchModel.train_model() 의 on_event 콜백이 큐로 밀어넣은 이벤트를
-	그대로 흘려보낸다. 소비자가 중간에 끊으면(GeneratorExit) 취소 플래그를 세워
-	워커가 다음 에폭 경계에서 스스로 빠져나온다. 에폭 도중에는 못 멈춘다 —
-	배치 추론과 달리 학습은 중간에 죽이면 체크포인트가 갈리기 때문이다.
+	그대로 흘려보낸다. 취소는 에폭 경계에서만 걸린다 — 배치 추론과 달리 학습은
+	중간에 죽이면 체크포인트가 갈리기 때문이다.
+
+	락은 **워커 스레드가** 잡고 푼다. 제너레이터의 finally 에서 풀면 안 된다:
+	이 제너레이터는 events.get() 으로 블로킹되는데, Starlette 은 동기 호출로 막힌
+	스레드풀 워커에 close 를 전달하지 못한다. 그래서 클라이언트가 끊겨도 finally 가
+	실행되지 않아 락이 잡힌 채 남았다. 락이 '작업이 도는 중'을 뜻하게 두면
+	소비자가 어떻게 사라지든 워커가 끝나는 시점에 정확히 풀린다.
+
+	cancel 은 호출부(API)가 넘기는 중단 플래그다. 위와 같은 이유로 제너레이터
+	종료에 기댈 수 없어서, 연결 끊김 감지는 API 쪽에서 하고 여기로 신호만 준다.
 	"""
 	target = find_target(captcha_id, rev)
 	if not target["selectable"]:
@@ -175,7 +184,7 @@ def run(captcha_id: str, rev: int, device: str | None = None, params: dict | Non
 		raise TrainBusy("이미 다른 학습이 실행 중입니다")
 
 	events: queue.Queue = queue.Queue()
-	cancelled = threading.Event()
+	cancelled = cancel if cancel is not None else threading.Event()
 	DONE = object()
 
 	def on_event(event: dict) -> bool:
@@ -220,9 +229,15 @@ def run(captcha_id: str, rev: int, device: str | None = None, params: dict | Non
 			events.put({"type": "error", "message": f"{type(e).__name__}: {e}"})
 		finally:
 			events.put(DONE)
+			_RUN_LOCK.release()
 
-	thread = threading.Thread(target=worker, name="captcha-train", daemon=True)
-	thread.start()
+	try:
+		thread = threading.Thread(target=worker, name="captcha-train", daemon=True)
+		thread.start()
+	except BaseException:
+		# 워커가 뜨지 못하면 아무도 락을 풀어주지 않는다.
+		_RUN_LOCK.release()
+		raise
 
 	try:
 		while True:
@@ -231,7 +246,6 @@ def run(captcha_id: str, rev: int, device: str | None = None, params: dict | Non
 				break
 			yield event
 	finally:
-		# 소비자가 끊었거나 정상 종료했거나. 어느 쪽이든 워커가 끝나야 락을 놓는다.
+		# close 가 실제로 도달했을 때를 위한 경로. 도달하지 못해도 워커가 스스로
+		# 끝나며 락을 풀기 때문에, 여기서 join 하거나 락을 만지지 않는다.
 		cancelled.set()
-		thread.join()
-		_RUN_LOCK.release()

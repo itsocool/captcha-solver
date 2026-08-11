@@ -1,5 +1,7 @@
 import json
+import threading
 
+import anyio
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
@@ -27,14 +29,31 @@ def _sse(event: str, payload: dict) -> str:
 	return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
-def _stream(captcha_id: str, rev: int, device: str | None, params: dict):
+async def _stream(request: Request, captcha_id: str, rev: int, device: str | None, params: dict):
 	"""SSE 프레임 제너레이터.
 
-	batch.py 와 같은 이유로 async 가 아닌 일반 def 다. 여기서는 학습 자체가
-	워커 스레드에 있지만, 큐를 기다리는 get() 이 블로킹이라 마찬가지다.
+	batch.py 와 달리 async 다. 학습 제너레이터는 큐 대기로 블로킹되는데, 그러면
+	Starlette 이 클라이언트 끊김을 알려줄 방법이 없다 (동기 호출로 막힌 스레드풀
+	워커에는 close 가 도달하지 못한다). 그래서 한 이벤트씩 스레드에서 받아오고,
+	매 이벤트 사이에 request.is_disconnected() 로 직접 확인해 취소를 건다.
+
+	확인 주기는 이벤트 하나(= 에폭 하나)다. 학습 중단은 원래 에폭 경계에서만
+	가능하므로 더 촘촘히 볼 이유가 없다.
 	"""
+	cancel = threading.Event()
+	events = run(captcha_id, rev, device, params, cancel=cancel)
+
 	try:
-		for event in run(captcha_id, rev, device, params):
+		while True:
+			if await request.is_disconnected():
+				cancel.set()
+				break
+			try:
+				event = await anyio.to_thread.run_sync(lambda: next(events, None))
+			except StopIteration:
+				break
+			if event is None:
+				break
 			yield _sse(event["type"], event)
 	except TrainBusy as e:
 		# is_running() 확인과 실제 락 획득 사이에 다른 요청이 끼어든 경우.
@@ -44,6 +63,9 @@ def _stream(captcha_id: str, rev: int, device: str | None, params: dict):
 		yield _sse("error", {"message": str(e)})
 	except Exception as e:
 		yield _sse("error", {"message": f"{type(e).__name__}: {e}"})
+	finally:
+		cancel.set()
+		events.close()
 
 
 @router.get("/train/stream")
@@ -79,7 +101,7 @@ async def train_stream(
 		raise HTTPException(status_code=409, detail="이미 다른 학습이 실행 중입니다")
 
 	return StreamingResponse(
-		_stream(captcha_id, rev, device, params),
+		_stream(request, captcha_id, rev, device, params),
 		media_type="text/event-stream",
 		headers={
 			"Cache-Control": "no-cache",

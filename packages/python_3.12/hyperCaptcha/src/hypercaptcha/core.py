@@ -858,6 +858,31 @@ class PyTorchModel(BaseModel):
             if stop_reason:
                 break
 
+        # 기존 모델이 더 낫다면 갈아치우지 않는다.
+        #
+        # 학습은 결과가 좋든 나쁘든 아티팩트를 덮어쓴다. 실제로 kshop 이 정체 구간에서
+        # 조기 종료된 채로 서빙 중이던 86% 모델을 0% 모델로 교체한 적이 있다.
+        # 같은 val_loader 로 기존 체크포인트를 재보면 비교가 공정하다.
+        incumbent_val_loss = None
+        if val_loader is not None and os.path.exists(model_path):
+            incumbent_val_loss = self._evaluate_checkpoint(model_path, val_loader, criterion)
+
+        if (incumbent_val_loss is not None and best_val_loss != float('inf')
+                and incumbent_val_loss <= best_val_loss):
+            if os.path.exists(model_path + '.tmp'):
+                os.remove(model_path + '.tmp')
+            if self.verbose > 0:
+                print("=" * 70)
+                print(f"기존 모델이 더 좋아 아티팩트를 유지한다 "
+                      f"(기존 {incumbent_val_loss:.4f} <= 이번 {best_val_loss:.4f})")
+            _emit('skipped',
+                  reason='incumbent_better',
+                  incumbent_val_loss=incumbent_val_loss,
+                  best_val_loss=best_val_loss,
+                  epochs_run=epochs_run, epochs=epochs,
+                  elapsed_sec=time.time() - train_started_at)
+            return train_hist
+
         # 체크포인트를 먼저 확정한 뒤, 그 파일 하나에서만 파생 아티팩트를 만든다.
         if os.path.exists(model_path + '.tmp'):
             os.replace(model_path + '.tmp', model_path)
@@ -882,6 +907,40 @@ class PyTorchModel(BaseModel):
 
         return train_hist
     
+    def _evaluate_checkpoint(self, checkpoint_path: str, val_loader: DataLoader, criterion) -> float | None:
+        """디스크의 기존 체크포인트를 지금 val_loader 로 재본다.
+
+        덮어쓰기 가드 전용이다. 비교할 수 없으면(구조가 바뀌어 로드 실패, 파일 손상 등)
+        None 을 돌려주고, 호출부는 비교를 포기하고 그냥 덮어쓴다. 입력 크기가 바뀐
+        재학습(예: kshop 263x54 -> 166x48)이 여기 걸려 막히면 안 되기 때문이다.
+        """
+        import copy
+
+        try:
+            # save_model 이 state_dict() 만 저장하므로 순수 텐서다. 임의 객체를
+            # 풀지 않도록 weights_only 를 켜둔다.
+            state = torch.load(checkpoint_path, map_location=self.device, weights_only=True)
+            if isinstance(state, dict):
+                state = state.get('model_state_dict', state)
+
+            incumbent = copy.deepcopy(self.model)
+            incumbent.load_state_dict(state)
+            incumbent.eval()
+
+            total, batches = 0.0, 0
+            with torch.no_grad():
+                for data, target in val_loader:
+                    data = data.to(device=self.device, non_blocking=True)
+                    target = target.to(device=self.device, non_blocking=True)
+                    _, loss = incumbent(data, target, criterion=criterion)
+                    total += float(loss)
+                    batches += 1
+            return total / batches if batches else None
+        except Exception as e:
+            if self.verbose > 0:
+                print(f"기존 모델과 비교할 수 없어 덮어쓰기 가드를 건너뛴다: {type(e).__name__}: {e}")
+            return None
+
     def save_model(self, model_path: str, temp: bool = False):
         """state dict 저장.
 

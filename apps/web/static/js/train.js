@@ -220,6 +220,18 @@ function start(captchaId, rev) {
 		updateProgress(payload.epoch);
 	});
 
+	source.addEventListener("skipped", (event) => {
+		// 학습 결과가 기존 모델보다 나빠서 아티팩트를 갈아치우지 않은 경우.
+		const payload = JSON.parse(event.data);
+		updateProgress(payload.epochs_run);
+		stat.elapsed.textContent = `${payload.elapsed_sec.toFixed(1)}s`;
+		artifacts.textContent = "기존 모델 유지 (교체 안 함)";
+		finish(
+			`기존 모델이 더 좋아 유지 · 기존 ${num(payload.incumbent_val_loss)} ` +
+			`vs 이번 ${num(payload.best_val_loss)} · ${payload.epochs_run}에폭`,
+		);
+	});
+
 	source.addEventListener("done", (event) => {
 		const payload = JSON.parse(event.data);
 		updateProgress(payload.epochs_run);
