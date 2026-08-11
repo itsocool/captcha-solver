@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block page_title %}Data Source{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+	<section class="rounded-2xl border border-border bg-card">
+		<div class="flex items-center justify-between border-b border-border px-6 py-5">
+			<h3 class="font-semibold">데이터 소스 추가</h3>
+			<span class="text-sm text-muted-foreground">images/draft 에 저장</span>
+		</div>
+
+		<div class="grid gap-5 p-6 sm:grid-cols-2 xl:grid-cols-4">
+			<div>
+				<label class="mb-2 block text-sm font-medium" for="target">캡차 ID</label>
+				<div class="relative">
+					<select id="target" class="h-11 w-full appearance-none rounded-lg border border-border bg-transparent pr-10 pl-4 text-sm outline-none focus:border-brand focus:ring-3 focus:ring-brand/10">
+						{% for target in targets %}
+						<option value="{{ target.captcha_id }}:{{ target.rev }}" class="bg-card">{{ target.name }} · {{ target.captcha_id }} rev{{ target.rev }} · draft {{ target.draft_count }}장</option>
+						{% endfor %}
+					</select>
+					<svg class="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="m6 9 6 6 6-6"></path>
+					</svg>
+				</div>
+				<p class="mt-1.5 text-xs text-muted-foreground">받은 이미지가 쌓일 대상</p>
+			</div>
+
+			<div class="sm:col-span-2">
+				<label class="mb-2 block text-sm font-medium" for="url">URL</label>
+				<input id="url" type="url" placeholder="https://example.com/login"
+					class="h-11 w-full rounded-lg border border-border bg-transparent px-4 text-sm outline-none focus:border-brand focus:ring-3 focus:ring-brand/10">
+				<p class="mt-1.5 text-xs text-muted-foreground">캡차가 있는 페이지 주소. 이미지 주소를 직접 넣어도 됩니다</p>
+			</div>
+
+			<div>
+				<label class="mb-2 block text-sm font-medium" for="count">파일 개수</label>
+				<input id="count" type="number" min="1" max="{{ max_count }}" value="100"
+					class="h-11 w-full rounded-lg border border-border bg-transparent px-4 text-sm outline-none focus:border-brand focus:ring-3 focus:ring-brand/10">
+				<p class="mt-1.5 text-xs text-muted-foreground">1 ~ {{ max_count }}</p>
+			</div>
+
+			<div class="sm:col-span-2 xl:col-span-2">
+				<label class="mb-2 block text-sm font-medium" for="selector">CSS 셀렉터</label>
+				<input id="selector" type="text" placeholder="#captchaImg"
+					class="h-11 w-full rounded-lg border border-border bg-transparent px-4 font-mono text-sm outline-none focus:border-brand focus:ring-3 focus:ring-brand/10">
+				<p class="mt-1.5 text-xs text-muted-foreground">캡차 이미지 요소를 가리키는 셀렉터. URL 이 이미지 자체면 비워 두세요</p>
+			</div>
+
+			<div class="flex items-end">
+				<button id="run" type="button" class="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-medium text-white transition-colors hover:bg-brand-hover disabled:opacity-60">
+					<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="M12 3v12"></path><path d="m7 12 5 5 5-5"></path><path d="M5 21h14"></path>
+					</svg>
+					추가
+				</button>
+			</div>
+
+			<div class="flex items-end">
+				<button id="stop" type="button" disabled class="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-border px-4 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40">
+					<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<rect x="6" y="6" width="12" height="12" rx="1.5"></rect>
+					</svg>
+					중단
+				</button>
+			</div>
+		</div>
+
+		<div class="border-t border-border px-6 py-4">
+			<div class="mb-2 flex items-center justify-between text-sm">
+				<span id="progress-label" class="text-muted-foreground">대기 중</span>
+				<span id="progress-count" class="font-mono text-muted-foreground">—</span>
+			</div>
+			<div class="h-2 w-full overflow-hidden rounded-full bg-border">
+				<div id="progress-bar" class="h-full w-0 rounded-full bg-brand transition-[width] duration-150"></div>
+			</div>
+		</div>
+	</section>
+
+	<section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+		{% for card in [
+			{"id": "stat-saved", "label": "저장"},
+			{"id": "stat-duplicated", "label": "중복"},
+			{"id": "stat-failed", "label": "실패"},
+			{"id": "stat-elapsed", "label": "소요 시간"}
+		] %}
+		<div class="rounded-2xl border border-border bg-card p-5">
+			<p class="text-sm text-muted-foreground">{{ card.label }}</p>
+			<p id="{{ card.id }}" class="mt-1 font-mono text-2xl font-semibold tracking-tight">—</p>
+		</div>
+		{% endfor %}
+	</section>
+
+	<section class="rounded-2xl border border-border bg-card">
+		<div class="flex flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-5">
+			<h3 class="font-semibold">받은 이미지 <span id="gallery-count" class="text-sm font-normal text-muted-foreground">—</span></h3>
+			<span id="draft-dir" class="font-mono text-xs text-muted-foreground">—</span>
+		</div>
+		<div id="gallery" class="grid gap-4 p-6 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-8">
+			<p class="text-sm text-muted-foreground">추가를 누르면 받은 이미지가 여기에 쌓입니다.</p>
+		</div>
+	</section>
+
+	<section class="rounded-2xl border border-border bg-card">
+		<div class="border-b border-border px-6 py-5">
+			<h3 class="font-semibold">기록</h3>
+			<p class="mt-1 text-sm text-muted-foreground">저장·중복·실패를 순서대로 보여줍니다.</p>
+		</div>
+		<div class="max-h-96 overflow-y-auto">
+			<table class="w-full text-sm">
+				<thead class="sticky top-0 border-b border-border bg-card text-left text-muted-foreground">
+					<tr>
+						<th class="px-6 py-3 font-medium">#</th>
+						<th class="px-6 py-3 font-medium">결과</th>
+						<th class="px-6 py-3 font-medium">파일</th>
+						<th class="px-6 py-3 font-medium">내용</th>
+					</tr>
+				</thead>
+				<tbody id="rows"></tbody>
+			</table>
+		</div>
+	</section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', path='/js/data_source.js') }}"></script>
+{% endblock %}
