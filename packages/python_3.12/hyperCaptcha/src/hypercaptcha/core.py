@@ -571,8 +571,8 @@ class PyTorchModel(BaseModel):
         Args:
             dropout: Dropout 비율 (기본: 0.1)
         """
-        img_width, img_height = self.train_data.image_width, self.train_data.image_height
-        
+        img_width, img_height = self.image_width, self.image_height
+
         if self.verbose > 0:
             print(f"Building CRNN model (dropout={dropout})")
         model = CRNN(
@@ -580,7 +580,7 @@ class PyTorchModel(BaseModel):
             output=self.num_classes,
             img_height=img_height,
             img_width=img_width,
-            label_length=self.train_data.label_length,
+            label_length=self.label_length,
             dropout=dropout,
             spec_augment=True,
         )
@@ -678,10 +678,10 @@ class PyTorchModel(BaseModel):
         if self.verbose > 0:
             print(f"\nStarting training for {epochs} epochs...")
             print(f"Model Configuration:")
-            model_w, model_h = self.train_data.image_width, self.train_data.image_height
+            model_w, model_h = self.image_width, self.image_height
             print(f"  - Model path: {model_path}")
             print(f"  - Model input size: {model_w}x{model_h}")
-            print(f"  - Label length: {self.train_data.label_length}")
+            print(f"  - Label length: {self.label_length}")
             print(f"  - Characters: {len(self.characters)}")
             print(f"  - Optimizer: AdamW (lr={lr}, weight_decay={weight_decay}, fused={use_fused})")
             print(f"  - Gradient Clipping: {grad_clip}")
@@ -935,7 +935,7 @@ class PyTorchModel(BaseModel):
         images = sorted(glob.glob(os.path.join(
             self.train_data.get_image_dir(train=True), "*.png")))[:num_samples]
         transform = get_eval_transform(self.train_data)
-        expected_length = self.train_data.label_length
+        expected_length = self.label_length
 
         sess = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
         input_name = sess.get_inputs()[0].name
@@ -988,7 +988,7 @@ class PyTorchModel(BaseModel):
         wrapper = _InferenceWrapper(self.model)
         wrapper.eval()
         dummy_input = torch.randn(
-            1, 1, self.train_data.image_height, self.train_data.image_width,
+            1, 1, self.image_height, self.image_width,
         ).to(self.device)
         return wrapper, dummy_input
 
@@ -1126,10 +1126,10 @@ class PyTorchModel(BaseModel):
         if self.model is None:
             raise ValueError("Model not loaded. Call load_prediction_model() first.")
         
-        # 고정 길이 디코딩: train_data.label_length 필요
-        expected_length = self.train_data.label_length
+        # 고정 길이 디코딩: label_length 필요
+        expected_length = self.label_length
         if expected_length is None:
-            raise ValueError("predict() requires train_data.label_length for fixed-length CTC beam decoding.")
+            raise ValueError("predict() requires label_length for fixed-length CTC beam decoding.")
         
         # Transform 적용: 추론용 (Augmentation 없음)
         transform = get_eval_transform(self.train_data)
@@ -1184,9 +1184,9 @@ class PyTorchModel(BaseModel):
         if self.model is None:
             raise ValueError("Model not loaded. Call load_prediction_model() first.")
         
-        expected_length = self.train_data.label_length
+        expected_length = self.label_length
         if expected_length is None:
-            raise ValueError("predict_batch() requires train_data.label_length for fixed-length CTC beam decoding.")
+            raise ValueError("predict_batch() requires label_length for fixed-length CTC beam decoding.")
         
         transform = get_eval_transform(self.train_data)
         self.model.eval()

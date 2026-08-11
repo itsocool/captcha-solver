@@ -105,15 +105,15 @@ class BaseModel(ABC):
     
     @property
     def label_length(self) -> int:
-        """레이블 길이"""
-        return self.train_data.label_length
-    
+        """레이블 길이 (감지된 값을 우선 사용)"""
+        return self.train_data.detected_label_length
+
     @property
     def image_width(self) -> int:
-        """이미지 너비"""
-        return self.train_data.image_width
-    
+        """이미지 너비 (감지된 값을 우선 사용)"""
+        return self.train_data.detected_image_width
+
     @property
     def image_height(self) -> int:
-        """이미지 높이"""
-        return self.train_data.image_height
+        """이미지 높이 (감지된 값을 우선 사용)"""
+        return self.train_data.detected_image_height

@@ -138,7 +138,7 @@ def batch_predict_model(
                 unk_token=unk_token,
                 loss_type=loss_type,
             )
-            is_match = (pred_text == expected and len(pred_text) == train_data.label_length)
+            is_match = (pred_text == expected and len(pred_text) == train_data.detected_label_length)
             if is_match:
                 match_count += 1
             else:
