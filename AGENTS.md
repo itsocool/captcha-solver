@@ -3,7 +3,12 @@
 ## Quick Start
 
 - Python 3.12 (`requires-python = "==3.12.*"`), package manager: **uv** (lockfile: `uv.lock`). 설치: `uv sync`
-- Run web API (dev): `uv run fastapi dev apps/web/app.py --host 0.0.0.0 --port 8000`
+- Run web API (dev): `./apps/web/server.sh start` (bash) 또는 `.\apps\web\server.ps1 start` (Windows)
+  - 둘 다 `start|stop|restart|status|logs` 를 제공하고 상태 파일은 `apps/web/.dev/` 를 공유한다
+  - ps1 옵션: `-Port` / `-BindHost` / `-NoReload` / `logs -Follow -Lines N`
+  - 포그라운드로 직접 띄우려면 저장소 루트에서
+    `uv run uvicorn web.app:app --host 0.0.0.0 --port 5000 --reload --reload-dir apps/web`
+    (`--reload-dir` 없이 띄우면 `captcha_data` 수만 장을 감시하느라 리로드가 사실상 멈춘다)
 - Run web API (prod): `docker compose up` (호스트 5001 → 컨테이너 8000)
 - Run CLI: `uv run hypercaptcha -c supreme_court -i captcha_data/<id>/images/<path>.png`
 

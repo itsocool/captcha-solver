@@ -23,8 +23,9 @@ db/*.sqlite3-shm
 apps/cli/target/
 apps/cli/dist/
 
-# server.sh 상태 파일 (PID/로그)
+# server.sh / server.ps1 상태 파일 (PID/로그)
 apps/web/.dev/
 
 # Serena 로컬 인덱스/설정
 .serena/
+
