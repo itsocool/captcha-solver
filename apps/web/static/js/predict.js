@@ -58,6 +58,20 @@ function percent(value) {
 	return `${(Math.floor(value * 100) / 100).toFixed(2)}%`;
 }
 
+// innerHTML 에 문자열(파일명·예측 등)을 끼울 때 HTML/속성 이스케이프. 파일명에 따옴표·
+// 꺾쇠가 섞여도 속성 밖으로 새거나 마크업이 주입되지 않게 한다.
+function escapeHtml(value) {
+	return String(value).replace(/[&<>"']/g, (ch) =>
+		({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[ch]));
+}
+
+// 신뢰도 색상: 0.95 이상 녹색, 0.9 이상 오렌지, 0.9 미만 레드.
+function confClass(confidence) {
+	if (confidence >= 0.95) return "text-success";
+	if (confidence >= 0.9) return "text-warning";
+	return "text-[#dc2626]";
+}
+
 function updateStats(summary) {
 	const total = items.length;
 	stat.total.textContent = context.total ? `${total} / ${context.total}` : String(total);
@@ -84,6 +98,47 @@ function imageUrl(item) {
 	return `/api/v1/batch/image?${params}`;
 }
 
+// 표 '파일' 링크를 클릭하면 원본 이미지를 팝업(라이트박스)으로 띄운다.
+const lightbox = document.createElement("div");
+lightbox.className = "fixed inset-0 z-50 hidden items-center justify-center bg-black/70 p-4";
+lightbox.innerHTML = `
+	<figure class="rounded-2xl border border-border bg-card p-3 shadow-xl">
+		<img class="max-h-[72vh] max-w-[86vw] rounded-lg bg-surface object-contain" alt="">
+		<figcaption class="mt-2 text-center font-mono text-sm text-muted-foreground"></figcaption>
+	</figure>`;
+document.body.append(lightbox);
+const lightboxImg = lightbox.querySelector("img");
+const lightboxCaption = lightbox.querySelector("figcaption");
+
+function openLightbox(name) {
+	lightboxImg.src = imageUrl({image: name});
+	lightboxImg.alt = name;
+	lightboxCaption.textContent = name;
+	lightbox.classList.replace("hidden", "flex");
+}
+function closeLightbox() {
+	lightbox.classList.replace("flex", "hidden");
+	lightboxImg.removeAttribute("src");
+}
+// 백드롭 클릭·Esc 로 닫는다 (이미지 자체 클릭은 유지).
+lightbox.addEventListener("click", (event) => {
+	if (event.target === lightbox) {
+		closeLightbox();
+	}
+});
+document.addEventListener("keydown", (event) => {
+	if (event.key === "Escape") {
+		closeLightbox();
+	}
+});
+// rows 는 매 렌더마다 innerHTML 이 갈리지만 tbody 자체는 유지되므로 위임으로 붙인다.
+rows.addEventListener("click", (event) => {
+	const trigger = event.target.closest("[data-image]");
+	if (trigger) {
+		openLightbox(trigger.dataset.image);
+	}
+});
+
 function addGalleryCard(item) {
 	if (gallery.querySelectorAll("figure").length >= GALLERY_LIMIT) {
 		return;
@@ -100,9 +155,9 @@ function addGalleryCard(item) {
 	const caption = document.createElement("figcaption");
 	caption.className = "border-t border-border px-3 py-2 text-xs";
 	caption.innerHTML =
-		`<span class="font-mono font-medium">${item.expected}</span>` +
+		`<span class="font-mono font-medium">${escapeHtml(item.expected)}</span>` +
 		`<span class="text-muted-foreground"> → </span>` +
-		`<span class="font-mono font-medium text-warning">${item.pred || "(실패)"}</span>` +
+		`<span class="font-mono font-medium text-warning">${escapeHtml(item.pred || "(실패)")}</span>` +
 		`<span class="ml-1 text-muted-foreground">(${item.confidence.toFixed(3)})</span>`;
 
 	figure.append(img, caption);
@@ -163,10 +218,10 @@ function renderTable() {
 			return `
 				<tr class="border-b border-border last:border-0">
 					<td class="px-6 py-2.5 font-mono text-muted-foreground">${item.index + 1}</td>
-					<td class="px-6 py-2.5 font-mono text-xs">${item.image}</td>
-					<td class="px-6 py-2.5 font-mono">${item.expected}</td>
-					<td class="px-6 py-2.5 font-mono ${item.match ? "" : "text-warning"}">${item.pred || "—"}</td>
-					<td class="px-6 py-2.5 font-mono text-muted-foreground">${item.confidence.toFixed(4)}</td>
+					<td class="px-6 py-2.5"><button type="button" data-image="${escapeHtml(item.image)}" title="이미지 보기" class="font-mono text-xs text-[var(--brand)] underline decoration-dotted underline-offset-2 hover:decoration-solid">${escapeHtml(item.image)}</button></td>
+					<td class="px-6 py-2.5 font-mono">${escapeHtml(item.expected)}</td>
+					<td class="px-6 py-2.5 font-mono ${item.match ? "" : "text-warning"}">${escapeHtml(item.pred || "—")}</td>
+					<td class="px-6 py-2.5 font-mono font-medium ${confClass(item.confidence)}">${item.confidence.toFixed(4)}</td>
 					<td class="px-6 py-2.5">${badge}</td>
 				</tr>`;
 		})
