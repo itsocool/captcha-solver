@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "ipTIME Captcha Solver",
+  "version": "0.1.0",
+  "description": "ipTIME 로그인 페이지(192.168.50.4)의 캡차 이미지(body > form > img)를 감지하면 활성화되어 captcha-solver 로 자동 인식·입력합니다.",
+  "permissions": ["declarativeContent"],
+  "host_permissions": [
+    "http://192.168.50.4/*",
+    "http://192.168.50.98:30008/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "ipTIME 캡차 인식 (대상 페이지에서 활성화)"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://192.168.50.4/sess-bin/login_session.cgi*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
