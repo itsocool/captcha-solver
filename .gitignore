@@ -23,6 +23,9 @@ db/*.sqlite3-shm
 apps/cli/target/
 apps/cli/dist/
 
+# sync_models.py 가 captcha_data 에서 만들어내는 배포용 모델 디렉터리
+/models/
+
 # server.sh / server.ps1 상태 파일 (PID/로그)
 apps/web/.dev/
 

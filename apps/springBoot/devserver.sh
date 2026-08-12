@@ -4,7 +4,7 @@
 #
 #   ./devserver.sh start|stop|restart|status
 #
-# application.yml 의 모델·DB 경로가 상대경로(../../apps/cli/models 등)라서 이 스크립트는
+# application.yml 의 모델·DB 경로가 상대경로(../../models 등)라서 이 스크립트는
 # 항상 자기 위치(apps/springBoot)로 이동한 뒤 maven 을 띄운다.
 #
 # 환경변수

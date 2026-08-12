@@ -39,7 +39,7 @@ def test_model_input_matches_preprocessed_size():
     kshop 전처리가 263x54 를 180x50 으로 자르면서 파일 크기와 모델 입력이 갈렸다.
     여기서 어긋나면 전처리는 A 크기로 주는데 모델은 B 크기로 만들어져,
     학습이 조용히 망가지거나 ONNX export 검증이 차원 불일치로 죽는다.
-    meta.json 도 같은 값을 실어야 Rust CLI / Spring Boot / ConsoleApp 이 재현할 수 있다.
+    meta.json 도 같은 값을 실어야 Rust CLI / Spring Boot / WinConsoleApp 이 재현할 수 있다.
     """
     import glob
 

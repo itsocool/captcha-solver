@@ -1,7 +1,7 @@
-"""CLI가 쓸 모델 자산을 `apps/cli/models/`에 동기화한다.
+"""CLI가 쓸 모델 자산을 저장소 루트의 `models/`에 동기화한다.
 
-- `{captcha_id}.onnx`      : captcha_data/<id>/<rev>/model/model.onnx 복사본
-- `{captcha_id}.ort`       : 같은 디렉터리의 model.ort 복사본 (ConsoleApp 이 쓴다. 없으면 건너뜀)
+- `{captcha_id}.ort`       : captcha_data/<id>/<rev>/model/model.ort 복사본 (Rust CLI·WinConsoleApp 이 쓴다. 없으면 건너뜀)
+- `{captcha_id}.onnx`      : 같은 디렉터리의 model.onnx 복사본 (Spring Boot 가 쓴다)
 - `{captcha_id}.meta.json` : 문자셋·크기·전처리 종류 등 CLI가 알아야 할 메타데이터
 
 CLI는 ONNX만으로는 문자셋과 전처리 방식을 알 수 없으므로 메타데이터가 반드시 필요하다.
@@ -14,7 +14,7 @@ import shutil
 import sys
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-MODELS_DIR = os.path.join(REPO_ROOT, "apps", "cli", "models")
+MODELS_DIR = os.path.join(REPO_ROOT, "models")
 
 from hypercaptcha import engine
 

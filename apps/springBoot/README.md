@@ -24,7 +24,7 @@ java -jar target\captchaSolver-0.0.1-SNAPSHOT.jar
 
 기본 포트는 5000 이며 <http://localhost:5000> 에서 예측 화면이 열립니다.
 
-> 상대 경로 기본값(`../../apps/cli/models`)을 쓰므로 **`apps/springBoot` 를 작업
+> 상대 경로 기본값(`../../models`)을 쓰므로 **`apps/springBoot` 를 작업
 > 디렉터리로 두고** 실행해야 합니다. 다른 곳에서 띄우려면 아래 설정을 절대경로로 덮어쓰세요.
 
 ---
@@ -35,7 +35,7 @@ java -jar target\captchaSolver-0.0.1-SNAPSHOT.jar
 
 | 키 | 기본값 | 설명 |
 |---|---|---|
-| `captcha.models-dir` | `../../apps/cli/models` | `<id>.onnx` 와 `<id>.meta.json` 이 있는 디렉터리 |
+| `captcha.models-dir` | `../../models` | `<id>.onnx` 와 `<id>.meta.json` 이 있는 디렉터리 |
 | `captcha.db-path` | `../../db/captchaSolver.sqlite3` | 서비스 설정 SQLite 파일 |
 | `captcha.schema-path` | `../../db/schema.sql` | 기동 시 멱등 적용 |
 | `captcha.beam-width` | `10` | CTC prefix beam search 너비 |
@@ -89,7 +89,7 @@ FastAPI 는 `Form(...)` 으로 받으므로 `PredictImageForm` 스키마를 직�
 
 ## 파이썬 구현과의 일치 검증
 
-`apps/cli/samples` 의 서비스 대상 캡차 40장을 Rust CLI 와 대조했습니다.
+서비스 대상 캡차 40장을 Rust CLI 와 대조했습니다.
 
 | | 결과 |
 |---|---|

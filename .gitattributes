@@ -7,3 +7,7 @@
 *.onnx filter=lfs diff=lfs merge=lfs -text
 *.pth filter=lfs diff=lfs merge=lfs -text
 *.pt2 filter=lfs diff=lfs merge=lfs -text
+
+# packages/ 의 배포 산출물 (NSIS 설치 파일, 확장 프로그램 zip)
+packages/**/*.exe filter=lfs diff=lfs merge=lfs -text
+packages/**/*.zip filter=lfs diff=lfs merge=lfs -text

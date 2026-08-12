@@ -50,7 +50,7 @@ class CaptchaType(BaseModel):
         """모델 옆에 놓이는 사이드카 메타데이터.
 
         모델 파일만으로는 문자셋·레이블 길이·전처리 종류를 알 수 없어서 Rust CLI /
-        Spring Boot / ConsoleApp 이 이 JSON 을 함께 읽는다. 학습이 `model.meta.json` 으로
+        Spring Boot / WinConsoleApp 이 이 JSON 을 함께 읽는다. 학습이 `model.meta.json` 으로
         저장하고, `sync_models.py` 가 배포용으로 같은 내용을 복사한다.
         """
         td = self.train_data
@@ -78,7 +78,7 @@ class TrainData(BaseModel):
     backend: str = "pytorch"
     rev: int = 0
     # 전처리 종류. 모델 옆 meta.json 에 그대로 실려 Rust CLI / Spring Boot /
-    # ConsoleApp 이 같은 값을 보고 같은 전처리를 재현한다.
+    # WinConsoleApp 이 같은 값을 보고 같은 전처리를 재현한다.
     preprocess: str = "default"
     train_data_base_dir: str = "./captcha_data"
     image_width: int = 200
@@ -87,7 +87,7 @@ class TrainData(BaseModel):
     characters: List[str] = Field(default_factory=list)
     threshold: int = 255
     # 전처리 크롭 영역 PIL (left, top, right, bottom). None 이면 크롭 없음.
-    # meta.json 에 실려 Rust CLI / Spring Boot / ConsoleApp 이 하드코딩 대신 이 값을 읽는다.
+    # meta.json 에 실려 Rust CLI / Spring Boot / WinConsoleApp 이 하드코딩 대신 이 값을 읽는다.
     # 크롭 전 기준 크기는 (image_width, image_height) 이고, 추론 입력이 그 크기가
     # 아니면 먼저 리사이즈한 뒤 자른다.
     crop: List[int] | None = None
@@ -218,7 +218,7 @@ class TrainData(BaseModel):
         return os.path.join(self.get_model_base_dir(), "model.pt2")
 
     def get_onnx_path(self) -> str:
-        """ONNX 산출물. Rust CLI / Spring Boot / ConsoleApp 이 읽는다."""
+        """ONNX 산출물. Rust CLI / Spring Boot / WinConsoleApp 이 읽는다."""
         return os.path.join(self.get_model_base_dir(), "model.onnx")
 
     def get_meta_path(self) -> str:

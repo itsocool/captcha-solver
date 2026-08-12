@@ -122,7 +122,7 @@ sequenceDiagram
 
 ### 4.4 Rust/Java ONNX 흐름
 
-1. `sync_models.py`가 Python 모델 경로의 ONNX를 `apps/cli/models/<id>.onnx`로 복사한다.
+1. `sync_models.py`가 Python 모델 경로의 ONNX를 `models/<id>.onnx`로 복사한다.
 2. 같은 시점의 감지 크기, 라벨 길이, 문자셋, threshold, 전처리 종류를 `<id>.meta.json`에 기록한다.
 3. Rust CLI 또는 Spring Boot가 이미지와 sidecar를 읽어 Python/PIL 동작에 맞춘 전처리를 수행한다.
 4. ONNX Runtime이 추론하고, 각 구현의 log-softmax 및 고정 길이 CTC beam decoder가 결과를 만든다.

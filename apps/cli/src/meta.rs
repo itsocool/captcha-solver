@@ -42,7 +42,7 @@ impl ModelMeta {
 		Ok(meta)
 	}
 
-	/// 모델 경로에서 사이드카 경로를 추정한다. `foo.onnx` -> `foo.meta.json`
+	/// 모델 경로에서 사이드카 경로를 추정한다. `foo.ort` -> `foo.meta.json`
 	pub fn sidecar_path(model_path: &Path) -> PathBuf {
 		model_path.with_extension("meta.json")
 	}

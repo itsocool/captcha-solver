@@ -988,7 +988,7 @@ class PyTorchModel(BaseModel):
         산출물의 역할:
             model.pth       - state_dict 체크포인트. 파이썬 추론과 재학습의 기준.
             model.pt2       - torch.export 아카이브. 그래프까지 고정해 파이썬 코드 없이 로드.
-            model.onnx      - ONNX. Rust CLI / Spring Boot / ConsoleApp 이 읽는다.
+            model.onnx      - ONNX. Rust CLI / Spring Boot / WinConsoleApp 이 읽는다.
             model.ort       - ONNX 를 ORT 포맷으로 구운 것. 로드가 빠르고 minimal build 가 읽는다.
             model.meta.json - 문자셋·크기·전처리 종류. 모델 파일만으로는 알 수 없다.
 

@@ -23,10 +23,10 @@ captcha-cli --list                                # 사용 가능한 모델 목�
 
 | 옵션 | 기본값 | 설명 |
 |------|--------|------|
-| `-c, --captcha-id` | `supreme_court` | 모델 디렉터리의 `<id>.onnx` 사용 |
+| `-c, --captcha-id` | `supreme_court` | 모델 디렉터리의 `<id>.ort` 사용 |
 | `-i, --image` | (필수) | 이미지 경로. `-`이면 stdin |
 | `--models-dir` | 실행 파일 옆 `models/` | 모델 디렉터리 |
-| `-m, --model` | — | ONNX 파일 직접 지정 (`--captcha-id` 무시) |
+| `-m, --model` | — | 모델 파일 직접 지정 (`--captcha-id` 무시). 확장자로 포맷을 가리므로 `.onnx` 도 그대로 받습니다 |
 | `--meta` | `<모델>.meta.json` | 메타데이터 경로 |
 | `--beam-width` | `10` | Beam Search 너비 |
 | `--threads` | `1` | ONNX Runtime intra-op 스레드 수 |
@@ -40,7 +40,7 @@ captcha-cli --list                                # 사용 가능한 모델 목�
 
 ## 모델 준비
 
-CLI는 ONNX만으로는 **문자셋·레이블 길이·전처리 종류**를 알 수 없습니다. 저장소 루트에서 아래를 실행하면 `models/`에 ONNX와 메타데이터가 함께 복사됩니다.
+CLI는 ONNX만으로는 **문자셋·레이블 길이·전처리 종류**를 알 수 없습니다. 저장소 루트에서 아래를 실행하면 루트의 `models/`(git 추적 대상 아님)에 ONNX와 메타데이터가 함께 복사됩니다.
 
 ```bash
 uv run python apps/cli/tools/sync_models.py            # 전체
@@ -48,45 +48,18 @@ uv run python apps/cli/tools/sync_models.py kshop      # 특정 캡차만
 ```
 
 ```
-apps/cli/models/
-├── supreme_court.onnx        # captcha_data/<id>/<rev>/model/model.onnx 복사본
+models/
+├── supreme_court.ort         # captcha_data/<id>/<rev>/model/model.ort 복사본
 ├── supreme_court.meta.json   # {image_width, image_height, label_length, characters, threshold, preprocess}
-├── gov24.onnx
+├── gov24.ort
 └── ...
 ```
 
+`.ort` 는 ONNX Runtime 이 그래프 최적화까지 마친 결과를 flatbuffer 로 구운 **ORT 포맷**이라
+세션을 열 때 최적화를 다시 돌리지 않습니다. `sync_models.py` 가 `.onnx` 도 함께 복사하므로
+`-m <파일>.onnx` 로 직접 지정하면 예전 파일도 그대로 씁니다.
+
 모델을 재학습했다면 `sync_models.py`를 다시 돌려야 CLI에 반영됩니다.
-
----
-
-## 샘플 이미지와 배치 확인
-
-`samples/<captcha_id>/`에 캡차별 검증용 이미지 10장씩을 담아 두었습니다(파일명 = 정답).
-
-```bash
-./pred.sh                # supreme_court 샘플 전체 인식 + 정답 대조
-./pred.sh kshop          # 다른 캡차
-```
-
-```powershell
-.\pred.ps1               # Windows (pred.cmd 는 이걸 부르는 런처)
-.\pred.ps1 kshop
-```
-
-> Windows 출력은 `pred.ps1` 이 담당합니다. `.cmd` 는 콘솔 코드페이지로 읽히기 때문에
-> 배치 파일 안의 한글이 CP949/CP437 에서 깨지고, `chcp 65001` 로도 고쳐지지 않습니다
-> (파일 중간에 코드페이지를 바꾸면 cmd 파서가 깨지고, 65001→949 복원은 콘솔 버퍼를 지웁니다).
-> `pred.ps1` 은 UTF-8 BOM 으로 저장되어 있어야 Windows PowerShell 5.1 이 한글을 제대로 읽습니다.
-
-```
-이미지              정답        예측        신뢰도     시간
---------------------------------------------------------------
-001741.png       001741     001741     0.9995     48 ms  O
-...
-supreme_court: 10/10 일치
-```
-
-모두 일치하면 종료 코드 0, 하나라도 틀리면 1입니다(CI에 그대로 물릴 수 있습니다).
 
 ---
 
@@ -99,7 +72,8 @@ supreme_court: 10/10 일치
 ```bash
 cd apps/cli
 cargo build --release
-# → target/release/captcha-cli (약 24MB, ONNX Runtime 정적 링크)
+cp -r ../../models target/release/          # 실행 파일 옆에 모델 배치
+# → target/release/captcha-cli (약 24MB, ONNX Runtime 정적 링크) + target/release/models/
 ```
 
 `ldd`로 확인하면 `libstdc++`, `libc`만 참조합니다. **`libonnxruntime.so`를 따로 배포할 필요가 없습니다.**
@@ -113,9 +87,16 @@ Windows에서 직접 빌드 (권장):
 ```powershell
 # Visual Studio Build Tools(MSVC) + Rust 설치 후
 cd apps\cli
-cargo build --release
-# → target\release\captcha-cli.exe
+.\build.ps1                  # cargo build --release + config.json 의 모델 배치
+# → target\release\captcha-cli.exe + target\release\models\
 ```
+
+| 스크립트 | 하는 일 |
+|----------|---------|
+| `build.ps1` | `cargo build` 후 `config.json` 이 정한 캡차 모델을 실행 파일 옆으로 복사 |
+| `pack.ps1` | `build.ps1` 호출 후 NSIS 설치 파일 생성, `packages\cli\` 에 배치 |
+
+`.\build.ps1 -Config Debug` 는 debug 빌드, `-Clean` 은 `cargo clean` 후 빌드입니다.
 
 Linux에서 크로스 빌드하려면 [`cargo-xwin`](https://github.com/rust-cross/cargo-xwin)을 씁니다.
 
@@ -125,43 +106,48 @@ rustup target add x86_64-pc-windows-msvc
 cargo xwin build --release --target x86_64-pc-windows-msvc
 ```
 
-> Windows용 프리빌트에는 DirectML 등이 포함되어 있어 빌드 산출물 디렉터리에 `*.dll`이 함께 생성됩니다(`DirectML.dll`, 약 18MB). **exe와 같은 폴더에 담아 배포**하세요. 아래 패키징 스크립트가 자동으로 챙깁니다.
+> Windows용 프리빌트에는 DirectML 등이 포함되어 있어 빌드 산출물 디렉터리에 `*.dll`이 함께 생성됩니다(`DirectML.dll`, 약 18MB). **exe와 같은 폴더에 담아 배포**하세요. `pack.ps1` 이 자동으로 챙깁니다.
 
-### 배포 패키지 만들기
+### Windows — 설치 파일 (NSIS)
 
-```bash
-tools/package.sh
-# → dist/captcha-cli-0.1.0-linux-x86_64.tar.gz (약 60MB)
-```
+NSIS(`winget install NSIS.NSIS`) 설치 후:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools\package.ps1
-# → dist\captcha-cli-0.1.0-windows-x86_64.zip (약 67MB)
+cd apps\cli
+.\pack.ps1
+# → packages\cli\captcha-cli-0.1.0-win64-setup.exe + config.json
 ```
 
-실행 파일 + `models/` + `samples/` + `README.md` + `pred.sh`/`pred.cmd`를 묶습니다.
-압축을 풀면 그 자리에서 바로 동작합니다.
+`%ProgramFiles%\captcha-cli\bin\` 에 exe + DLL + `models/` + README 를 풀고, 설치 마법사가
+`bin` 을 PATH 에 추가할지 묻습니다. 제어판에서 제거할 수 있습니다.
+`.nsi` 는 `pack.ps1` 이 `dist\` 에 만들어 쓰므로 따로 관리할 파일이 없습니다.
 
-```bash
-tar -xzf captcha-cli-0.1.0-linux-x86_64.tar.gz
-cd captcha-cli-0.1.0-linux-x86_64
-./pred.sh          # supreme_court: 10/10 일치
+#### 담을 캡차 유형 고르기
+
+어떤 유형을 담을지는 **`config.json`** 의 `captchas` 배열이 정합니다(WinConsoleApp 과 같은 형식).
+
+```json
+{
+  "captchas": ["gov24", "iptime"]
+}
 ```
 
-용량 대부분은 모델(4종 37MB)입니다. 서비스 대상만 담으려면 패키징 전에 불필요한
-`models/<id>.onnx`, `models/<id>.meta.json`을 지우면 됩니다.
+`build.ps1` 이 매번 `target\<profile>\models\` 를 새로 만들므로 목록에서 뺀 유형은 바로 사라집니다.
+**`config.json` 이 없으면 `supreme_court` 하나만** 담고, 목록에 적은 유형이 루트 `models/` 에
+없으면 빌드가 **실패**합니다 — 유형이 빠진 배포본이 조용히 나가는 것보다 낫기 때문입니다.
 
 ### 배포 레이아웃
 
 ```
 captcha-cli(.exe)
 models/
-├── supreme_court.onnx
+├── supreme_court.ort
 ├── supreme_court.meta.json
 └── ...
 ```
 
-`--models-dir`를 주지 않으면 **실행 파일과 같은 폴더의 `models/`**를 먼저 찾고, 없으면 개발 편의를 위해 크레이트의 `models/`로 폴백합니다.
+`--models-dir`를 주지 않으면 **실행 파일과 같은 폴더의 `models/`**를 먼저 찾고, 없으면 저장소 루트의 `models/`로 폴백합니다.
+`build.ps1` 이 빌드 후 루트 `models/` 를 `target/<profile>/models/` 로 복사하므로, 빌드 산출물 디렉터리를 통째로 옮겨도 그대로 동작합니다.
 
 ---
 
@@ -176,7 +162,6 @@ models/
 ### 검증
 
 ```bash
-cargo test                                                    # 디코더 단위 테스트
 uv run python apps/cli/tools/compare_with_python.py --limit 100   # 파이썬 결과와 대조
 uv run python apps/cli/tools/verify_pth_onnx.py                   # model.pth 와 model.onnx 동등성
 ```
@@ -189,8 +174,6 @@ uv run python apps/cli/tools/verify_pth_onnx.py                   # model.pth �
 | gov24 | 100/100 | 0.0066 |
 | wetax | 100/100 | 0.0019 |
 | kshop | 70/100 † | 0.7757 † |
-
-`samples/` 10장 기준으로는 supreme_court·gov24·wetax·kshop 모두 10/10입니다.
 
 > † kshop 수치는 `model.pt` 와 `model.onnx` 의 가중치가 갈려 있던 시점의 측정입니다(아래 절 참고).
 > 그 원인은 해소됐고 현재 파이썬과 ONNX 는 101/101 일치하지만, 이 표는 Rust 바이너리가 필요해

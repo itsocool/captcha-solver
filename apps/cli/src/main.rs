@@ -17,7 +17,7 @@ use crate::meta::ModelMeta;
 #[derive(Parser, Debug)]
 #[command(name = "captcha-cli", version, about = "ONNX 모델로 캡차 이미지를 인식합니다")]
 struct Args {
-	/// 캡차 ID (models 디렉터리의 <id>.onnx 사용)
+	/// 캡차 ID (models 디렉터리의 <id>.ort 사용)
 	#[arg(short = 'c', long, default_value = "supreme_court")]
 	captcha_id: String,
 
@@ -29,7 +29,7 @@ struct Args {
 	#[arg(long)]
 	models_dir: Option<PathBuf>,
 
-	/// ONNX 파일을 직접 지정 (--captcha-id 무시)
+	/// 모델 파일을 직접 지정 (--captcha-id 무시). 확장자로 포맷을 가리므로 .onnx 도 받는다
 	#[arg(short = 'm', long)]
 	model: Option<PathBuf>,
 
@@ -58,7 +58,7 @@ struct Args {
 	dump_input: Option<PathBuf>,
 }
 
-/// 실행 파일 옆의 `models/`를 우선 사용하고, 개발 중에는 크레이트의 `models/`로 폴백한다.
+/// 실행 파일 옆의 `models/`를 우선 사용하고, 개발 중에는 저장소 루트의 `models/`로 폴백한다.
 fn default_models_dir() -> PathBuf {
 	if let Ok(exe) = std::env::current_exe() {
 		if let Some(dir) = exe.parent() {
@@ -68,7 +68,7 @@ fn default_models_dir() -> PathBuf {
 			}
 		}
 	}
-	PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("models")
+	PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../models")
 }
 
 fn list_models(models_dir: &Path) -> Result<()> {
@@ -77,7 +77,7 @@ fn list_models(models_dir: &Path) -> Result<()> {
 		.filter_map(|entry| entry.ok())
 		.filter_map(|entry| {
 			let path = entry.path();
-			if path.extension().and_then(|e| e.to_str()) == Some("onnx") {
+			if path.extension().and_then(|e| e.to_str()) == Some("ort") {
 				path.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string())
 			} else {
 				None
@@ -169,7 +169,7 @@ fn main() -> Result<()> {
 
 	let model_path = match &args.model {
 		Some(path) => path.clone(),
-		None => models_dir.join(format!("{}.onnx", args.captcha_id)),
+		None => models_dir.join(format!("{}.ort", args.captcha_id)),
 	};
 	if !model_path.is_file() {
 		bail!(

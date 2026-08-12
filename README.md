@@ -65,7 +65,8 @@ Rust·Spring은 portable 디렉터리로 ONNX와 메타데이터를 함께 배�
 
 ```text
 models/
-├── <captcha_id>.onnx
+├── <captcha_id>.ort        # Rust CLI 가 읽는 ORT 포맷
+├── <captcha_id>.onnx       # Spring Boot 가 읽는 ONNX
 └── <captcha_id>.meta.json  # image_width, image_height, label_length, characters, threshold, preprocess
 ```
 
@@ -116,7 +117,7 @@ uv run fastapi dev apps/web/app.py --host 0.0.0.0 --port 8000
 uv run python apps/cli/tools/sync_models.py       # 전체 ONNX + meta.json 동기화
 Push-Location apps/cli; cargo build --release; Pop-Location
 Push-Location apps/cli; cargo test; Pop-Location
-Push-Location apps/cli; .\target\release\captcha-cli.exe -c supreme_court -i .\samples\supreme_court\001741.png --json; Pop-Location
+Push-Location apps/cli; .\target\release\captcha-cli.exe -c supreme_court -i <이미지.png> --json; Pop-Location
 ```
 
 재학습 후 `sync_models.py`를 다시 실행하세요. `--models-dir`, `--meta`, `--beam-width`, `--threads`, `--list`, stdin(`-i -`) 옵션과 Windows 빌드는 [Rust CLI 문서](apps/cli/README.md)에 있습니다.
@@ -130,7 +131,7 @@ Push-Location apps/springBoot; mvn -DskipTests package; Pop-Location
 Push-Location apps/springBoot; java -jar target\captchaSolver-0.0.1-SNAPSHOT.jar; Pop-Location
 ```
 
-기본 포트는 5000이며 모델·DB 기본 상대 경로는 각각 `../../apps/cli/models`, `../../db/captchaSolver.sqlite3`입니다. 상세 설정과 API 문서는 [Spring Boot 문서](apps/springBoot/README.md)를 참고하세요.
+기본 포트는 5000이며 모델·DB 기본 상대 경로는 각각 `../../models`, `../../db/captchaSolver.sqlite3`입니다. 상세 설정과 API 문서는 [Spring Boot 문서](apps/springBoot/README.md)를 참고하세요.
 
 ## 공통 REST API
 
