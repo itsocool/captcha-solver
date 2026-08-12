@@ -123,9 +123,9 @@ function updateProgress(done) {
 }
 
 function renderChart() {
-	// 처음 2개 에폭은 손실이 지나치게 커서(정체 구간 초반) 나머지 곡선을 눌러버린다.
-	// 3번째 데이터부터 그려 의미 있는 구간에 y축을 맞춘다.
-	const SKIP = 2;
+	// 처음 10개 에폭은 손실이 커서(정체 구간) 나머지 곡선을 눌러버린다.
+	// 11번째 데이터부터 그려 의미 있는 구간에 y축을 맞춘다.
+	const SKIP = 10;
 	if (epochs.length <= SKIP) {
 		return;
 	}
