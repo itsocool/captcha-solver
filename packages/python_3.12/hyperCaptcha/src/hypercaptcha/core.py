@@ -1219,25 +1219,37 @@ class PyTorchModel(BaseModel):
         if self.verbose > 0:
             print(f"ORT exported: {ort_path}")
 
-    def _apply_meta_charset(self) -> None:
-        """추론용 문자셋을 모델 옆 meta.json(학습 당시 값)으로 맞춘다.
+    def _apply_meta(self) -> None:
+        """추론용 문자셋·입력 크기를 모델 옆 meta.json(학습 당시 값)으로 고정한다.
 
-        체크포인트의 출력 크기는 학습 때 문자셋으로 고정된다. 그 뒤 train 파일명이
-        바뀌면(라벨 오타 수정 등) detected_characters 가 달라져 build_model 이 다른
-        출력 크기를 만들고 load_state_dict 가 shape mismatch 로 죽는다. 배포되는 모델의
-        진실은 함께 저장된 meta.json 이므로 그걸 우선한다. meta 가 없으면 감지값을 쓴다.
+        체크포인트의 구조(출력층 크기·CNN 입력 크기)는 학습 때 문자셋·이미지 크기로
+        고정된다. 그 뒤 train 파일이 바뀌거나(라벨 수정) 비면(전부 pred 로 이동 등)
+        detected_* 가 달라져 build_model 이 다른 구조를 만들고 load_state_dict 가
+        shape mismatch 로 죽는다. 배포되는 모델의 진실은 함께 저장된 meta.json 이므로
+        그걸 우선한다. meta 가 없거나 값이 빠지면 감지값으로 폴백한다.
         """
         import json
+        from .dataclass import _TrainInfo
         meta_path = self.train_data.get_meta_path()
         if not os.path.exists(meta_path):
             return
         try:
             with open(meta_path, encoding="utf-8") as f:
-                chars = json.load(f).get("characters")
+                meta = json.load(f)
         except (OSError, ValueError):
             return
-        if not chars:
+        chars = meta.get("characters")
+        iw, ih, ll = meta.get("image_width"), meta.get("image_height"), meta.get("label_length")
+        if not (chars and iw and ih and ll):
             return
+        # 감지 캐시를 meta 로 못박아 detected_*(크기·길이·문자셋)가 train 디렉터리
+        # 상태와 무관하게 meta 를 돌려주게 한다. (전처리의 크롭 기준 크기는 생성자
+        # image_width/height 를 쓰므로 여기 영향받지 않는다.)
+        self.train_data._train_info = _TrainInfo(
+            image_width=int(iw), image_height=int(ih), label_length=int(ll),
+            characters=chars, threshold=int(meta.get("threshold", self.train_data.threshold)),
+        )
+        # 모델의 문자 매핑도 meta 기준으로 다시 세운다 (출력층 크기 = len+1).
         self._char_list = list(chars)
         self.char_to_idx = {char: idx + 1 for idx, char in enumerate(self._char_list)}
         self.idx_to_char = {idx: char for char, idx in self.char_to_idx.items()}
@@ -1249,8 +1261,8 @@ class PyTorchModel(BaseModel):
         if model_path is None:
             model_path = self.train_data.get_model_path()
 
-        # 체크포인트와 출력 크기를 맞추려면 문자셋을 meta.json 기준으로 세운 뒤 빌드한다.
-        self._apply_meta_charset()
+        # 체크포인트와 구조(문자셋·입력 크기)를 맞추려면 meta.json 기준으로 세운 뒤 빌드한다.
+        self._apply_meta()
         self.model = self.build_model()
         self.model.load_state_dict(torch.load(model_path, map_location=self.device, weights_only=False))
         self.model.eval()
