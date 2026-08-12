@@ -13,6 +13,7 @@ from web.services.train import (
 	list_targets,
 	load_params,
 	request_stop,
+	save_params,
 	start,
 )
 
@@ -34,6 +35,22 @@ async def train_targets():
 async def train_params(captcha_id: str = Query(...), rev: int = Query(0)):
 	"""대상(캡차, 리비전)의 저장된 학습 파라미터. 없으면 기본값을 돌려준다."""
 	return JSONResponse({"params": load_params(captcha_id, rev)})
+
+
+@router.post("/train/params")
+async def train_params_save(request: Request, captcha_id: str = Query(...), rev: int = Query(0)):
+	"""폼 파라미터를 저장한다. 학습을 시작하지 않아도 대상별로 유지된다.
+
+	페이지를 떠났다 돌아와도 값이 남도록, 편집 시점에 프런트가 이걸 호출한다.
+	"""
+	raw = {name: request.query_params.get(name) for name in PARAM_SPEC}
+	raw["loss_type"] = request.query_params.get("loss_type")
+	raw["use_amp"] = request.query_params.get("use_amp")
+	try:
+		saved = save_params(captcha_id, rev, raw)
+	except ValueError as e:
+		raise HTTPException(status_code=400, detail=str(e))
+	return JSONResponse({"saved": True, "params": saved})
 
 
 @router.post("/train/start")

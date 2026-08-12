@@ -96,13 +96,14 @@ async function loadParamsForTarget() {
 	if (!targetSelect.value) {
 		return;
 	}
-	const [captchaId, rev] = targetSelect.value.split(":");
+	const requested = targetSelect.value; // 응답이 늦게 와도 그 사이 바뀐 대상을 덮지 않게 고정
+	const [captchaId, rev] = requested.split(":");
 	try {
 		const res = await fetch(
 			`/api/v1/train/params?captcha_id=${encodeURIComponent(captchaId)}&rev=${encodeURIComponent(rev)}`,
 		);
-		if (!res.ok) {
-			return; // 실패하면 서버가 렌더한 기본값을 그대로 둔다
+		if (!res.ok || targetSelect.value !== requested) {
+			return; // 실패했거나 그새 대상이 바뀌었으면 버린다 (기본값/새 대상 유지)
 		}
 		const data = await res.json();
 		applyParams(data.params || {});
@@ -233,14 +234,24 @@ function attachStream() {
 	source.addEventListener("start", (event) => {
 		const payload = JSON.parse(event.data);
 		context.totalEpochs = payload.epochs;
-		// 이어보기: 실행 중인 대상/디바이스를 폼에 반영한다.
-		// (프로그램적 .value 설정은 change 이벤트를 띄우지 않아 재귀 로드가 없다.)
+		// 이어보기: 실행 중인 대상/디바이스/파라미터를 폼에 반영한다. 저장값이 아니라
+		// '지금 돌고 있는 값'이라야 맞다 (다시 열었을 때 epochs 등이 어긋나던 버그).
+		// (프로그램적 .value 설정은 change 이벤트를 띄우지 않아 재귀 로드/저장이 없다.)
 		if (payload.captcha_id !== undefined && payload.rev !== undefined) {
 			targetSelect.value = `${payload.captcha_id}:${payload.rev}`;
 		}
 		if (payload.device) {
 			deviceSelect.value = payload.device;
 		}
+		applyParams({
+			epochs: payload.epochs,
+			batch_size: payload.batch_size,
+			learning_rate: payload.lr,
+			warmup_epochs: payload.warmup_epochs,
+			early_stopping_patience: payload.early_stopping_patience,
+			loss_type: payload.loss_type,
+			use_amp: payload.use_amp,
+		});
 		progressLabel.textContent =
 			`학습 중 · ${payload.device} · ${payload.loss_type} · ` +
 			`${payload.image_width}x${payload.image_height} · batch ${payload.batch_size}` +
@@ -403,27 +414,44 @@ resetButton.addEventListener("click", () => {
 		input.checked = input.dataset.default === "1";
 	});
 	document.querySelector("#loss_type").value = document.querySelector("#loss_type").dataset.default;
+	saveCurrentParams(); // 기본값으로 되돌린 것도 유지되도록 저장
+});
+
+// 파라미터를 편집하면 그 즉시 대상별로 저장한다 — 학습을 시작하지 않고 페이지를
+// 떠나도 값이 유지된다. applyParams 의 프로그램적 설정은 change 를 안 띄우므로
+// 대상 전환/이어보기로 폼을 채울 때 저장이 되돌아 실행되지 않는다.
+async function saveCurrentParams() {
+	if (!targetSelect.value) {
+		return;
+	}
+	const [captchaId, rev] = targetSelect.value.split(":");
+	const query = new URLSearchParams({captcha_id: captchaId, rev, ...collectParams()});
+	try {
+		await fetch(`/api/v1/train/params?${query}`, {method: "POST"});
+	} catch (_) {
+		/* 무시: 저장 실패는 치명적이지 않다 */
+	}
+}
+[...NUMBER_FIELDS, ...CHECKBOX_FIELDS, "loss_type"].forEach((id) => {
+	document.querySelector(`#${id}`).addEventListener("change", saveCurrentParams);
 });
 
 // 대상을 바꾸면 그 대상의 저장된 학습 파라미터를 불러와 폼을 채운다.
 targetSelect.addEventListener("change", loadParamsForTarget);
-// 첫 진입에도 현재 선택된 대상의 저장값을 반영한다.
-loadParamsForTarget();
 
-// 이미 백그라운드에서 학습이 돌고 있으면(다른 탭·이전 방문에서 시작) 진행 스트림에
-// 붙어 지금까지의 히스토리를 재생하고 실시간으로 이어 보여준다.
-async function resumeIfRunning() {
+// 초기화: 학습이 돌고 있으면 스트림에 붙어 '실행 중 파라미터'로 폼을 채우고, 아니면
+// 선택된 대상의 저장 파라미터를 불러온다. 둘을 동시에 하면 저장값이 실행 중 값을
+// 덮어써 epochs 등이 어긋나므로, 하나만 한다.
+async function init() {
 	try {
 		const res = await fetch("/api/v1/train/targets");
-		if (!res.ok) {
+		if (res.ok && (await res.json()).running) {
+			attachStream();
 			return;
 		}
-		const data = await res.json();
-		if (data.running) {
-			attachStream();
-		}
 	} catch (_) {
-		/* 무시: 재접속 실패는 치명적이지 않다 */
+		/* 무시: 실패하면 저장값 로드로 폴백 */
 	}
+	loadParamsForTarget();
 }
-resumeIfRunning();
+init();

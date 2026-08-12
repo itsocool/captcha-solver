@@ -1227,11 +1227,38 @@ class PyTorchModel(BaseModel):
         if self.verbose > 0:
             print(f"ORT exported: {ort_path}")
 
+    def _apply_meta_charset(self) -> None:
+        """추론용 문자셋을 모델 옆 meta.json(학습 당시 값)으로 맞춘다.
+
+        체크포인트의 출력 크기는 학습 때 문자셋으로 고정된다. 그 뒤 train 파일명이
+        바뀌면(라벨 오타 수정 등) detected_characters 가 달라져 build_model 이 다른
+        출력 크기를 만들고 load_state_dict 가 shape mismatch 로 죽는다. 배포되는 모델의
+        진실은 함께 저장된 meta.json 이므로 그걸 우선한다. meta 가 없으면 감지값을 쓴다.
+        """
+        import json
+        meta_path = self.train_data.get_meta_path()
+        if not os.path.exists(meta_path):
+            return
+        try:
+            with open(meta_path, encoding="utf-8") as f:
+                chars = json.load(f).get("characters")
+        except (OSError, ValueError):
+            return
+        if not chars:
+            return
+        self._char_list = list(chars)
+        self.char_to_idx = {char: idx + 1 for idx, char in enumerate(self._char_list)}
+        self.idx_to_char = {idx: char for char, idx in self.char_to_idx.items()}
+        self.idx_to_char[0] = ''  # blank
+        self.num_classes = len(self._char_list)
+
     def load_prediction_model(self, model_path: str = None) -> nn.Module:
         """모델 로드."""
         if model_path is None:
             model_path = self.train_data.get_model_path()
-        
+
+        # 체크포인트와 출력 크기를 맞추려면 문자셋을 meta.json 기준으로 세운 뒤 빌드한다.
+        self._apply_meta_charset()
         self.model = self.build_model()
         self.model.load_state_dict(torch.load(model_path, map_location=self.device, weights_only=False))
         self.model.eval()

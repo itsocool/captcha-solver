@@ -120,6 +120,36 @@ def get_train_params(captcha_id: str, rev: int) -> dict | None:
 		return None
 
 
+def save_train_config(captcha_id: str, rev: int, config: dict, backend: str = "pytorch") -> None:
+	"""학습 시작 시 그 대상의 학습 정보(감지된 문자셋·크기·전처리)를 DB 에 반영한다.
+
+	라벨을 고치면 감지 문자셋이 바뀌는데 train_data_configs 는 그대로라 기록이 낡는다.
+	학습을 시작할 때 실제로 쓰는 값으로 맞춘다. 실패는 삼켜 학습을 막지 않는다.
+	config 키: image_width, image_height, label_length, characters, threshold, preprocess, crop.
+	"""
+	try:
+		with connect() as conn:
+			conn.execute(
+				"INSERT INTO train_data_configs"
+				" (captcha_id, backend, rev, image_width, image_height, label_length,"
+				"  characters, threshold, preprocess, crop, updated_at)"
+				" VALUES (?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)"
+				" ON CONFLICT(captcha_id, backend, rev) DO UPDATE SET"
+				"  image_width=excluded.image_width, image_height=excluded.image_height,"
+				"  label_length=excluded.label_length, characters=excluded.characters,"
+				"  threshold=excluded.threshold, preprocess=excluded.preprocess,"
+				"  crop=excluded.crop, updated_at=CURRENT_TIMESTAMP",
+				(
+					captcha_id, backend, rev,
+					config["image_width"], config["image_height"], config["label_length"],
+					config["characters"], config["threshold"], config["preprocess"],
+					json.dumps(config["crop"]) if config.get("crop") else None,
+				),
+			)
+	except (sqlite3.Error, KeyError) as e:
+		print(f"[db] train_data_configs 갱신 실패: {e}")
+
+
 def save_train_params(captcha_id: str, rev: int, params: dict) -> None:
 	"""학습 파라미터를 (캡차, 리비전) 키로 upsert 한다. 실패해도 학습은 계속되게 삼킨다."""
 	try:

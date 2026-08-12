@@ -187,6 +187,17 @@ def _persist_params(captcha_id: str, rev: int, params: dict) -> None:
 	save_train_params(captcha_id, rev, {k: params[k] for k in PERSIST_PARAMS if k in params})
 
 
+def save_params(captcha_id: str, rev: int, raw: dict) -> dict:
+	"""폼에서 온 파라미터를 검증·저장한다. 학습을 시작하지 않아도 대상별로 유지된다.
+
+	학습 시작 때만 저장하면 '값만 바꾸고 페이지를 떠나면' 사라진다. 편집이 저장되도록
+	이 경로를 따로 둔다. 잘못된 값은 clean_params 가 ValueError 로 튕긴다.
+	"""
+	params = clean_params(raw)
+	_persist_params(captcha_id, rev, params)
+	return params
+
+
 class _TrainSession:
 	"""진행 중 학습 하나의 상태. 이벤트를 버퍼에 쌓고 여러 구독자에게 재생/중계한다."""
 
@@ -312,6 +323,23 @@ def start(captcha_id: str, rev: int, device: str | None = None, params: dict | N
 				model = engine.get_captcha_model(
 					captcha_id=captcha_id, verbose=1, device=device_key, rev=rev,
 				)
+
+			# 학습 시작 시점의 학습 정보를 DB 에 반영한다. 라벨을 고치면 감지 문자셋이
+			# 바뀌는데 기록은 낡은 채 남아서, 실제로 학습에 쓰는 값으로 맞춘다.
+			# (모델 sidecar meta.json 은 여기서 쓰지 않는다 — 학습이 discard/중단되면
+			#  meta 만 새 값이 되고 model.pth 는 옛 것이라 추론이 깨진다. finalize 에서
+			#  모델과 함께 쓴다.)
+			td = model.train_data
+			from web.core.db import save_train_config
+			save_train_config(captcha_id, rev, {
+				"image_width": td.image_width,
+				"image_height": td.image_height,
+				"label_length": td.detected_label_length,
+				"characters": td.detected_characters,
+				"threshold": td.threshold,
+				"preprocess": td.preprocess,
+				"crop": td.crop,
+			})
 
 			engine.train_model(
 				model=model,
