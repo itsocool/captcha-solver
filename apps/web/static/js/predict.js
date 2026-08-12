@@ -136,8 +136,8 @@ function renderHistogram() {
 				})
 				.join("")}
 		</div>
-		<div class="mt-2 flex gap-1 font-mono text-[11px] text-muted-foreground">
-			${buckets.map((_, i) => `<div class="flex-1 text-center">${i % 2 === 0 ? (i / BUCKETS).toFixed(1) : ""}</div>`).join("")}
+		<div class="mt-2 flex gap-1 font-mono text-[9px] text-muted-foreground">
+			${buckets.map((_, i) => `<div class="flex-1 text-center">${(i / BUCKETS).toFixed(2)}</div>`).join("")}
 		</div>
 		<div class="mt-4 flex gap-4 text-xs text-muted-foreground">
 			<span class="flex items-center gap-1.5"><span class="size-2.5 rounded-sm bg-success"></span>일치</span>
