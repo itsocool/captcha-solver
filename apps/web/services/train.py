@@ -10,7 +10,6 @@ hypercaptcha 임포트는 함수 안에서 한다.
 yield 한다. 학습 루프 자체를 제너레이터로 뒤집는 것보다 훨씬 작은 변경이다.
 """
 
-import queue
 import threading
 from pathlib import Path
 
@@ -22,10 +21,11 @@ from web.core.device import resolve as resolve_device
 # 일괄 추론과 별개의 락이라 둘이 동시에 돌 수는 있는데, 그건 사용자가 감수할 몫이다.
 _RUN_LOCK = threading.Lock()
 
-# 실행 중인 학습의 중단 채널. 학습이 한 번에 하나뿐이라 모듈 전역 하나면 된다.
-# cancel 이 서면 에폭 경계에서 멈추고, discard 까지 서면 best(.tmp)를 버리고 멈춘다.
-_ACTIVE: dict | None = None
-_ACTIVE_GUARD = threading.Lock()
+# 진행 중인(또는 방금 끝난) 학습 세션. 학습이 한 번에 하나뿐이라 전역 하나면 된다.
+# 이벤트를 버퍼에 쌓아 두므로, Training 페이지를 벗어났다 다시 열어도 히스토리를
+# 재생하고 실시간으로 이어 볼 수 있다. SSE 연결과 학습 수명은 완전히 분리된다.
+_SESSION: "_TrainSession | None" = None
+_SESSION_GUARD = threading.Lock()
 
 CAPTCHA_DATA_DIR = BASE_DIR / "captcha_data"
 
@@ -187,8 +187,56 @@ def _persist_params(captcha_id: str, rev: int, params: dict) -> None:
 	save_train_params(captcha_id, rev, {k: params[k] for k in PERSIST_PARAMS if k in params})
 
 
+class _TrainSession:
+	"""진행 중 학습 하나의 상태. 이벤트를 버퍼에 쌓고 여러 구독자에게 재생/중계한다."""
+
+	def __init__(self, captcha_id: str, rev: int):
+		self.captcha_id = captcha_id
+		self.rev = rev
+		self.events: list[dict] = []
+		self.done = threading.Event()
+		self.cancel = threading.Event()
+		self.discard = threading.Event()
+		self._cond = threading.Condition()
+
+	def emit(self, event: dict) -> None:
+		with self._cond:
+			self.events.append(event)
+			self._cond.notify_all()
+
+	def finish(self) -> None:
+		self.done.set()
+		with self._cond:
+			self._cond.notify_all()
+
+	def stream(self):
+		"""버퍼에 쌓인 이벤트를 처음부터 재생하고, 끝날 때까지 새 이벤트를 흘린다.
+
+		구독자마다 독립된 인덱스를 쓰므로 몇 개가 동시에 붙어도 되고, 이미 끝난
+		세션에 붙으면 히스토리('start'~'done')를 전부 재생하고 바로 끝난다.
+		"""
+		idx = 0
+		while True:
+			with self._cond:
+				while idx >= len(self.events) and not self.done.is_set():
+					self._cond.wait(timeout=1.0)
+				batch = self.events[idx:]
+				idx = len(self.events)
+				finished = self.done.is_set() and idx >= len(self.events)
+			for event in batch:
+				yield event
+			if finished:
+				return
+
+
 def is_running() -> bool:
 	return _RUN_LOCK.locked()
+
+
+def current_session() -> "_TrainSession | None":
+	"""진행 중이거나 방금 끝난 학습 세션. 없으면 None."""
+	with _SESSION_GUARD:
+		return _SESSION
 
 
 def request_stop(save: bool = True) -> bool:
@@ -197,32 +245,24 @@ def request_stop(save: bool = True) -> bool:
 	에폭 경계에서 걸리므로 진행 중인 에폭 하나는 마저 돈다. 돌고 있는 학습이
 	없으면 False. (중단 취소는 요청을 안 보내면 되므로 API 가 없다.)
 	"""
-	with _ACTIVE_GUARD:
-		active = _ACTIVE
-	if active is None:
+	session = current_session()
+	if session is None or session.done.is_set():
 		return False
 	if not save:
-		active["discard"].set()
-	active["cancel"].set()
+		session.discard.set()
+	session.cancel.set()
 	return True
 
 
-def run(captcha_id: str, rev: int, device: str | None = None, params: dict | None = None,
-        cancel: threading.Event | None = None):
-	"""학습 이벤트 제너레이터.
+def start(captcha_id: str, rev: int, device: str | None = None, params: dict | None = None) -> None:
+	"""백그라운드 학습을 시작한다. 진행 상황은 current_session().stream() 으로 본다.
 
-	core.PyTorchModel.train_model() 의 on_event 콜백이 큐로 밀어넣은 이벤트를
-	그대로 흘려보낸다. 취소는 에폭 경계에서만 걸린다 — 배치 추론과 달리 학습은
-	중간에 죽이면 체크포인트가 갈리기 때문이다.
+	학습은 워커 스레드에서 돌고 SSE 연결과 수명이 분리된다 — 페이지를 벗어나도
+	계속 돌고, 다시 열면 stream() 이 히스토리를 재생하며 이어 보여준다. 이벤트는
+	세션 버퍼에 쌓이고, 중단은 request_stop() 이 세션 플래그로 건다.
 
-	락은 **워커 스레드가** 잡고 푼다. 제너레이터의 finally 에서 풀면 안 된다:
-	이 제너레이터는 events.get() 으로 블로킹되는데, Starlette 은 동기 호출로 막힌
-	스레드풀 워커에 close 를 전달하지 못한다. 그래서 클라이언트가 끊겨도 finally 가
-	실행되지 않아 락이 잡힌 채 남았다. 락이 '작업이 도는 중'을 뜻하게 두면
-	소비자가 어떻게 사라지든 워커가 끝나는 시점에 정확히 풀린다.
-
-	cancel 은 호출부(API)가 넘기는 중단 플래그다. 위와 같은 이유로 제너레이터
-	종료에 기댈 수 없어서, 연결 끊김 감지는 API 쪽에서 하고 여기로 신호만 준다.
+	검증 오류/디바이스 오류는 요청 오류(ValueError/TrainError)로 올라오고,
+	이미 학습이 돌고 있으면 TrainBusy.
 	"""
 	target = find_target(captcha_id, rev)
 	if not target["selectable"]:
@@ -238,21 +278,17 @@ def run(captcha_id: str, rev: int, device: str | None = None, params: dict | Non
 	if not _RUN_LOCK.acquire(blocking=False):
 		raise TrainBusy("이미 다른 학습이 실행 중입니다")
 
-	events: queue.Queue = queue.Queue()
-	cancelled = cancel if cancel is not None else threading.Event()
-	discard = threading.Event()
-	DONE = object()
-
-	global _ACTIVE
-	with _ACTIVE_GUARD:
-		_ACTIVE = {"cancel": cancelled, "discard": discard}
+	session = _TrainSession(captcha_id, rev)
+	global _SESSION
+	with _SESSION_GUARD:
+		_SESSION = session
 
 	def on_event(event: dict):
-		events.put(event)
-		if not cancelled.is_set():
+		session.emit(event)
+		if not session.cancel.is_set():
 			return True
 		# 'discard' 는 core 가 best(.tmp)를 버리고 멈추라는 신호로 읽는다.
-		return "discard" if discard.is_set() else False
+		return "discard" if session.discard.is_set() else False
 
 	def worker():
 		try:
@@ -271,7 +307,7 @@ def run(captcha_id: str, rev: int, device: str | None = None, params: dict | Non
 				moved = engine.redistribute_train_pred(
 					image_dir=image_dir, train_ratio=params["train_ratio"], verbose=False,
 				)
-				events.put({"type": "shuffle", **moved})
+				session.emit({"type": "shuffle", **moved})
 				# 재분배 뒤에는 감지 정보(장수)가 바뀌므로 모델을 다시 만든다.
 				model = engine.get_captcha_model(
 					captcha_id=captcha_id, verbose=1, device=device_key, rev=rev,
@@ -289,31 +325,19 @@ def run(captcha_id: str, rev: int, device: str | None = None, params: dict | Non
 				on_event=on_event,
 			)
 		except Exception as e:
-			events.put({"type": "error", "message": f"{type(e).__name__}: {e}"})
+			session.emit({"type": "error", "message": f"{type(e).__name__}: {e}"})
 		finally:
-			global _ACTIVE
-			with _ACTIVE_GUARD:
-				_ACTIVE = None
-			events.put(DONE)
+			# 세션(_SESSION)은 일부러 비우지 않는다 — 끝난 뒤에도 다시 열면 마지막
+			# 결과를 재생해 보여줄 수 있게. 락만 풀어 다음 학습을 받을 수 있게 한다.
+			session.finish()
 			_RUN_LOCK.release()
 
 	try:
-		thread = threading.Thread(target=worker, name="captcha-train", daemon=True)
-		thread.start()
+		threading.Thread(target=worker, name="captcha-train", daemon=True).start()
 	except BaseException:
-		# 워커가 뜨지 못하면 아무도 락을 풀어주지 않는다.
-		with _ACTIVE_GUARD:
-			_ACTIVE = None
+		# 워커가 뜨지 못하면 아무도 락을 풀어주지 않는다. 세션도 끝으로 표시해
+		# 구독자가 무한 대기하지 않게 한다.
+		session.emit({"type": "error", "message": "학습 스레드를 시작하지 못했습니다"})
+		session.finish()
 		_RUN_LOCK.release()
 		raise
-
-	try:
-		while True:
-			event = events.get()
-			if event is DONE:
-				break
-			yield event
-	finally:
-		# close 가 실제로 도달했을 때를 위한 경로. 도달하지 못해도 워커가 스스로
-		# 끝나며 락을 풀기 때문에, 여기서 join 하거나 락을 만지지 않는다.
-		cancelled.set()

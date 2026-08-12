@@ -222,30 +222,33 @@ function askOverwrite(label) {
 	});
 }
 
-function start(captchaId, rev) {
+// 진행 중(또는 방금 끝난) 학습 세션에 붙는다. 히스토리를 재생받으므로 페이지를
+// 다시 열어도 지금까지의 진행 상황이 그대로 그려진다. 학습 시작과는 분리돼 있다.
+function attachStream() {
 	reset();
-	const params = collectParams();
-	context = {totalEpochs: Number(params.epochs)};
+	context = {totalEpochs: 0};
 	setRunning(true);
-	progressLabel.textContent = "모델 준비 중...";
-
-	const query = new URLSearchParams({
-		captcha_id: captchaId,
-		rev,
-		device: deviceSelect.value,
-		...params,
-	});
-	source = new EventSource(`/api/v1/train/stream?${query}`);
+	source = new EventSource(`/api/v1/train/stream`);
 
 	source.addEventListener("start", (event) => {
 		const payload = JSON.parse(event.data);
 		context.totalEpochs = payload.epochs;
+		// 이어보기: 실행 중인 대상/디바이스를 폼에 반영한다.
+		// (프로그램적 .value 설정은 change 이벤트를 띄우지 않아 재귀 로드가 없다.)
+		if (payload.captcha_id !== undefined && payload.rev !== undefined) {
+			targetSelect.value = `${payload.captcha_id}:${payload.rev}`;
+		}
+		if (payload.device) {
+			deviceSelect.value = payload.device;
+		}
 		progressLabel.textContent =
 			`학습 중 · ${payload.device} · ${payload.loss_type} · ` +
 			`${payload.image_width}x${payload.image_height} · batch ${payload.batch_size}` +
 			`${payload.use_amp ? " · AMP" : ""}`;
 		updateProgress(0);
 	});
+
+	source.addEventListener("idle", () => finish("대기 중"));
 
 	source.addEventListener("shuffle", (event) => {
 		const payload = JSON.parse(event.data);
@@ -312,6 +315,33 @@ function start(captchaId, rev) {
 	});
 }
 
+// 백그라운드 학습을 시작한 뒤 진행 스트림에 붙는다. 시작 요청은 즉시 반환되고
+// 학습은 워커 스레드에서 돈다 — 이 페이지를 벗어나도 계속된다.
+async function startTraining(captchaId, rev) {
+	progressLabel.textContent = "모델 준비 중...";
+	setRunning(true);
+	const query = new URLSearchParams({
+		captcha_id: captchaId,
+		rev,
+		device: deviceSelect.value,
+		...collectParams(),
+	});
+	try {
+		const res = await fetch(`/api/v1/train/start?${query}`, {method: "POST"});
+		if (!res.ok) {
+			const detail = await res.json().catch(() => ({}));
+			setRunning(false);
+			progressLabel.textContent = `시작 실패: ${detail.detail || res.status}`;
+			return;
+		}
+	} catch (_) {
+		setRunning(false);
+		progressLabel.textContent = "시작 실패: 네트워크 오류";
+		return;
+	}
+	attachStream();
+}
+
 runButton.addEventListener("click", async () => {
 	const option = targetSelect.selectedOptions[0];
 	if (!option || !targetSelect.value) {
@@ -322,7 +352,7 @@ runButton.addEventListener("click", async () => {
 	if (option.dataset.hasModel === "1" && !(await askOverwrite(option.dataset.label))) {
 		return;
 	}
-	start(captchaId, rev);
+	startTraining(captchaId, rev);
 });
 
 // 중단 다이얼로그: best 저장하고 중단 / 저장 없이 중단 / 중단 취소.
@@ -379,3 +409,21 @@ resetButton.addEventListener("click", () => {
 targetSelect.addEventListener("change", loadParamsForTarget);
 // 첫 진입에도 현재 선택된 대상의 저장값을 반영한다.
 loadParamsForTarget();
+
+// 이미 백그라운드에서 학습이 돌고 있으면(다른 탭·이전 방문에서 시작) 진행 스트림에
+// 붙어 지금까지의 히스토리를 재생하고 실시간으로 이어 보여준다.
+async function resumeIfRunning() {
+	try {
+		const res = await fetch("/api/v1/train/targets");
+		if (!res.ok) {
+			return;
+		}
+		const data = await res.json();
+		if (data.running) {
+			attachStream();
+		}
+	} catch (_) {
+		/* 무시: 재접속 실패는 치명적이지 않다 */
+	}
+}
+resumeIfRunning();

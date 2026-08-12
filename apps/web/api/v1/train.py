@@ -1,5 +1,4 @@
 import json
-import threading
 
 import anyio
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -9,13 +8,12 @@ from web.services.train import (
 	PARAM_SPEC,
 	TrainBusy,
 	TrainError,
-	clean_params,
-	find_target,
+	current_session,
 	is_running,
 	list_targets,
 	load_params,
 	request_stop,
-	run,
+	start,
 )
 
 
@@ -24,13 +22,46 @@ router = APIRouter(tags=["api-v1"])
 
 @router.get("/train/targets")
 async def train_targets():
-	return JSONResponse({"targets": list_targets(), "running": is_running()})
+	session = current_session()
+	active = None
+	if session is not None and not session.done.is_set():
+		# 이어보기용: 어떤 대상이 돌고 있는지 알려 준다.
+		active = {"captcha_id": session.captcha_id, "rev": session.rev}
+	return JSONResponse({"targets": list_targets(), "running": is_running(), "active": active})
 
 
 @router.get("/train/params")
 async def train_params(captcha_id: str = Query(...), rev: int = Query(0)):
 	"""대상(캡차, 리비전)의 저장된 학습 파라미터. 없으면 기본값을 돌려준다."""
 	return JSONResponse({"params": load_params(captcha_id, rev)})
+
+
+@router.post("/train/start")
+async def train_start(
+	request: Request,
+	captcha_id: str = Query(...),
+	rev: int = Query(0),
+	device: str | None = Query(None),
+):
+	"""백그라운드 학습을 시작한다. 진행 상황은 GET /train/stream 으로 본다.
+
+	학습은 SSE 연결과 분리된 워커 스레드에서 돈다 — 페이지를 벗어나도 계속되고,
+	다시 열면 stream 이 히스토리를 재생한다. 파라미터는 이름이 여럿이라 쿼리스트링을
+	통째로 넘기고, 검증·기본값 채우기는 services/train.clean_params 한 곳에서 한다.
+	"""
+	params_raw = {name: request.query_params.get(name) for name in PARAM_SPEC}
+	params_raw["loss_type"] = request.query_params.get("loss_type")
+	params_raw["use_amp"] = request.query_params.get("use_amp")
+	params_raw["shuffle"] = request.query_params.get("shuffle")
+
+	try:
+		start(captcha_id, rev, device, params_raw)
+	except TrainBusy as e:
+		raise HTTPException(status_code=409, detail=str(e))
+	except (ValueError, TrainError) as e:
+		raise HTTPException(status_code=400, detail=str(e))
+
+	return JSONResponse({"started": True, "captcha_id": captcha_id, "rev": rev})
 
 
 @router.post("/train/stop")
@@ -49,79 +80,41 @@ def _sse(event: str, payload: dict) -> str:
 	return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
-async def _stream(request: Request, captcha_id: str, rev: int, device: str | None, params: dict):
-	"""SSE 프레임 제너레이터.
+async def _stream_session(request: Request):
+	"""현재 세션에 붙어 히스토리를 재생하고 실시간 진행률을 흘린다.
 
-	batch.py 와 달리 async 다. 학습 제너레이터는 큐 대기로 블로킹되는데, 그러면
-	Starlette 이 클라이언트 끊김을 알려줄 방법이 없다 (동기 호출로 막힌 스레드풀
-	워커에는 close 가 도달하지 못한다). 그래서 한 이벤트씩 스레드에서 받아오고,
-	매 이벤트 사이에 request.is_disconnected() 로 직접 확인해 취소를 건다.
-
-	확인 주기는 이벤트 하나(= 에폭 하나)다. 학습 중단은 원래 에폭 경계에서만
-	가능하므로 더 촘촘히 볼 이유가 없다.
+	연결이 끊겨도 학습은 취소하지 않는다 (백그라운드에서 계속). 끊긴 연결에 대고
+	쓰지 않도록 이벤트를 받은 뒤 is_disconnected 를 확인하고, 세션 stream 은
+	버퍼에 이벤트를 남겨 두므로 다시 접속하면 처음부터 다시 재생된다.
 	"""
-	cancel = threading.Event()
-	events = run(captcha_id, rev, device, params, cancel=cancel)
+	session = current_session()
+	if session is None:
+		yield _sse("idle", {"message": "진행 중인 학습이 없습니다"})
+		return
 
+	frames = session.stream()
 	try:
 		while True:
-			if await request.is_disconnected():
-				cancel.set()
-				break
-			try:
-				event = await anyio.to_thread.run_sync(lambda: next(events, None))
-			except StopIteration:
-				break
+			# 세션 stream 은 이벤트/종료까지 블로킹하므로 스레드에서 한 개씩 받는다.
+			event = await anyio.to_thread.run_sync(lambda: next(frames, None))
 			if event is None:
 				break
+			if await request.is_disconnected():
+				break
 			yield _sse(event["type"], event)
-	except TrainBusy as e:
-		# is_running() 확인과 실제 락 획득 사이에 다른 요청이 끼어든 경우.
-		yield _sse("error", {"message": str(e)})
-	except (ValueError, TrainError) as e:
-		# 스트림이 이미 열린 뒤라 HTTP 상태 코드를 못 바꾼다. 오류도 이벤트로 보낸다.
-		yield _sse("error", {"message": str(e)})
-	except Exception as e:
-		yield _sse("error", {"message": f"{type(e).__name__}: {e}"})
 	finally:
-		cancel.set()
-		events.close()
+		frames.close()
 
 
 @router.get("/train/stream")
-async def train_stream(
-	request: Request,
-	captcha_id: str = Query(...),
-	rev: int = Query(0),
-	device: str | None = Query(None),
-):
-	"""학습 진행 상황 SSE. EventSource 가 GET 만 지원해서 GET 이다.
+async def train_stream(request: Request):
+	"""진행 중(또는 방금 끝난) 학습 세션 SSE. EventSource 가 GET 만 지원해서 GET 이다.
 
-	학습 파라미터는 이름이 여럿이라 하나씩 Query 로 받는 대신 쿼리스트링을
-	통째로 넘긴다. 검증과 기본값 채우기는 services/train.clean_params 한 곳에서 한다.
+	시작은 POST /train/start 가 한다. 이 엔드포인트는 붙어서 보기만 한다 — 파라미터가
+	없고, 여러 탭이 동시에 붙어도 각자 히스토리를 재생받는다.
 	"""
-	params_raw = {name: request.query_params.get(name) for name in PARAM_SPEC}
-	params_raw["loss_type"] = request.query_params.get("loss_type")
-	params_raw["use_amp"] = request.query_params.get("use_amp")
-	params_raw["shuffle"] = request.query_params.get("shuffle")
-
-	# 시작 전에 확인 가능한 오류는 스트림을 열기 전에 상태 코드로 알린다.
-	try:
-		from web.core.device import resolve as resolve_device
-
-		target = find_target(captcha_id, rev)
-		if not target["selectable"]:
-			raise HTTPException(status_code=400, detail=target["reason"] or "학습할 수 없는 대상입니다")
-		resolve_device(device)
-		params = clean_params(params_raw)
-	except ValueError as e:
-		raise HTTPException(status_code=400, detail=str(e))
-
-	if is_running():
-		raise HTTPException(status_code=409, detail="이미 다른 학습이 실행 중입니다")
-
 	return StreamingResponse(
-		_stream(request, captcha_id, rev, device, params),
+		_stream_session(request),
 		media_type="text/event-stream",
 		headers={
 			"Cache-Control": "no-cache",
