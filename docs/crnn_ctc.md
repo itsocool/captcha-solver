@@ -158,7 +158,7 @@ class FocalCTCLoss(nn.Module):
 
 ## 3. PyTorchModel
 
-PyTorch 기반 CAPTCHA 인식 모델 클래스. `BaseModel`을 상속받습니다.
+PyTorch 기반 CAPTCHA 인식 모델 클래스.
 
 ### 3.1 초기화 및 설정
 

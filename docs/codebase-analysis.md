@@ -40,7 +40,7 @@ graph TD
 
 - 캡차 레지스트리는 `engine.get_captcha_type_list()`에 하드코딩되어 있다. 현재 `supreme_court`, `gov24`, `wetax`, `kshop` 네 종류다.
 - 라벨은 별도 어노테이션 파일 없이 PNG 파일명에서 얻는다. `091082.png`의 정답은 `091082`다.
-- `BaseModel`이 공통 인터페이스를 정의하지만 구현은 `PyTorchModel` 하나뿐이다.
+- 모델 구현은 `PyTorchModel` 하나뿐이다.
 - 웹 서비스 대상은 모델 레지스트리와 별도로 SQLite `service_captchas`가 결정한다. 등록됐지만 서비스 대상이 아닐 수 있다.
 - FastAPI와 Spring Boot는 시작 시 서비스 대상 모델을 메모리에 미리 올리고 워밍업한다. 누락 모델은 서버 시작을 막지 않으며 상태를 `degraded`로 만든다.
 - Python은 PyTorch state dict를, Rust와 Java는 ONNX를 사용하므로 내보낸 아티팩트 정합성이 매우 중요하다.
@@ -50,7 +50,6 @@ graph TD
 | 구성요소 | 파일 경로 | 책임 |
 | :--- | :--- | :--- |
 | `TrainData`, `CaptchaType` | `dataclass.py` | 경로 생성, 학습 이미지 감지, 문자셋/라벨 길이 결정, 이미지 전처리 |
-| `BaseModel` | `base_core.py` | 모델 구현이 따라야 할 학습·저장·추론 인터페이스와 공통 속성 |
 | `CRNN`, `PyTorchModel` | `core.py` | CNN-BiLSTM 모델, 데이터 로더, 학습, 체크포인트, 내보내기, 추론 |
 | CTC 디코더 | `core.py` | 고정 길이 prefix beam search와 후보 사후확률 기반 confidence 계산 |
 | 엔진 | `engine.py` | 캡차 레지스트리, 모델 팩토리, 학습/단건/배치 예측, 데이터 재분배 |
@@ -246,7 +245,7 @@ Spring Boot 4.1.0, Java 25, ONNX Runtime 1.23.0을 사용한다. 기본 서버 �
 
 ### 새 모델 백엔드 추가
 
-`BaseModel`을 구현하고 `engine.get_captcha_model()`의 팩토리를 확장할 수 있다. 현재 `engine.py`와 여러 호출부가 `PyTorchModel` 구체 타입과 `.model`, `.device`, `.load_prediction_model()`에 의존하므로 완전한 다형성을 원하면 먼저 엔진/서비스가 추상 인터페이스만 사용하도록 경계를 정리해야 한다.
+`engine.get_captcha_model()`의 팩토리를 확장하면 된다. 현재 `engine.py`와 여러 호출부가 `PyTorchModel` 구체 타입과 `.model`, `.device`, `.load_prediction_model()`에 의존하므로, 백엔드가 둘 이상 필요해지는 시점에 그때 공통 인터페이스를 뽑아내는 편이 낫다.
 
 ### API 확장
 

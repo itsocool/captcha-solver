@@ -7,7 +7,7 @@
 이 문서는 코드를 빠르게 이해하고 생산적으로 작업하기 위한 핵심 정보만 간결하게 정리합니다. 변경 전후에는 `hypercaptcha/train.py` / `hypercaptcha/pred.py` 같은 스크립트를 참고하세요.
 
 ### 한눈에 보는 아키텍처
-- 주요 모듈: `engine.py` (학습/추론 엔트리), `dataclass.py` (데이터/경로 규약), `base_core.py` (공통 인터페이스)
+- 주요 모듈: `engine.py` (학습/추론 엔트리), `dataclass.py` (데이터/경로 규약), `core.py` (`PyTorchModel`)
 - 데이터 레이아웃: `captcha_data/<captcha_id>/<rev>/images/{train,pred}` — 이미지 파일명(확장자 제외)이 레이블입니다. 예: `captcha_data/kshop/0/images/train/abc12.png` → 레이블 `abc12`.
 - 모델 파일: 같은 `captcha_data/<id>/<rev>/model/` 디렉터리에 다섯 가지가 놓입니다 — `model.pth` (state dict 체크포인트), `model.pt2` (`torch.export` 아카이브), `model.onnx` (ONNX), `model.ort` (ORT 포맷), `model.meta.json` (사이드카 메타데이터). TorchScript(`model_jit.pt`)와 Keras(`weights.keras`)는 더 이상 사용하지 않습니다.
 

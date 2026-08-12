@@ -39,12 +39,14 @@ text, confidence = engine.predict(model=model, image_path="sample.png")
 
 ### 공개 심볼
 
-| 심볼 | 원본 모듈 |
-|------|-----------|
-| `hypercaptcha.engine` | `engine.py` |
-| `hypercaptcha.PyTorchModel` | `core.py` |
-| `hypercaptcha.BaseModel` | `base_core.py` |
-| `hypercaptcha.CaptchaType`, `hypercaptcha.TrainData` | `dataclass.py` |
+패키지 최상위에는 `__version__` 만 있습니다. 나머지는 서브모듈에서 직접 가져옵니다 —
+`core` 가 import 시점에 CUDA 를 건드리므로 최상위에서 재노출하지 않습니다.
+
+| 심볼 | import |
+|------|--------|
+| `engine` | `from hypercaptcha import engine` |
+| `PyTorchModel` | `from hypercaptcha.core import PyTorchModel` |
+| `CaptchaType`, `TrainData` | `from hypercaptcha.dataclass import CaptchaType, TrainData` |
 
 등록된 캡차 ID는 `supreme_court`, `gov24`, `wetax`, `kshop` 네 가지입니다
 (`engine.get_captcha_type_list()`).

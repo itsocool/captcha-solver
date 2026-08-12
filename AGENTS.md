@@ -28,7 +28,6 @@ Single-repo PyTorch captcha solver. 라이브러리 코드는 `packages/python_3
 | `hypercaptcha/engine.py` | Entrypoints: `get_captcha_model()`, `train_model()`, `predict()`, `batch_predict_model()`, `redistribute_train_pred()` |
 | `hypercaptcha/core.py` | `PyTorchModel` (CRNN build/train/eval), `FocalCTCLoss`, transforms, dataset |
 | `hypercaptcha/dataclass.py` | `TrainData`, `CaptchaType` (Pydantic models); paths, char sets, image preprocessing |
-| `hypercaptcha/base_core.py` | `BaseModel` abstract interface |
 | `hypercaptcha/cli.py` | CLI predictor. `hypercaptcha` 콘솔 스크립트 / `python -m hypercaptcha` |
 | `apps/web/app.py` | FastAPI + Uvicorn (`/health`, `/predict` endpoints), model cached in memory |
 | `hypercaptcha/train.py` / `hypercaptcha/pred.py` | Thin wrappers around `engine` (edit hardcoded vars at top). `python -m hypercaptcha.train` / `.pred` |

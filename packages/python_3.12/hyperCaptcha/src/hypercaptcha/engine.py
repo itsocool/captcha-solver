@@ -5,7 +5,6 @@ import torch
 from typing import Iterator, List, Tuple, Optional, Dict
 from tqdm import tqdm
 from .core import PyTorchModel
-from .base_core import BaseModel
 from .dataclass import LOWER_CASE, CaptchaType, TrainData
 
 def get_captcha_type_list(train_data_base_dir: str = "./captcha_data") -> Dict[str, CaptchaType]:
@@ -105,7 +104,7 @@ def get_captcha_model(
     )
 
 def train_model(
-    model: BaseModel,
+    model: PyTorchModel,
     epochs: int = 80,
     batch_size: int = 32,
     earlystopping: bool = True,

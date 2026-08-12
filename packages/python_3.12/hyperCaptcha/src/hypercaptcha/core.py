@@ -13,7 +13,6 @@ from PIL import Image
 from typing import List, Tuple, Dict
 from tqdm import tqdm
 from .dataclass import CaptchaType, TrainData
-from .base_core import BaseModel
 
 NEG_INF = float('-inf')
 
@@ -397,13 +396,11 @@ class CaptchaDataset(Dataset):
         
         return image, label
 
-class PyTorchModel(BaseModel):
+class PyTorchModel:
     """
     PyTorch 기반 CAPTCHA 인식 모델
-    
-    BaseModel을 상속받아 구현합니다.
     """
-    
+
     def __init__(
         self,
         captcha_type: CaptchaType,
@@ -414,7 +411,9 @@ class PyTorchModel(BaseModel):
         loss_type: str = 'focal',
         model_dir: str | None = None,
     ):
-        super().__init__(captcha_type, verbose)
+        self.captcha_type = captcha_type
+        self.train_data: TrainData = captcha_type.train_data
+        self.verbose = verbose
         self.use_compile = use_compile
         self.use_amp = use_amp
         self.loss_type = loss_type
@@ -436,8 +435,7 @@ class PyTorchModel(BaseModel):
                 print("Mixed Precision: Enabled")
         
         # Character mappings (1-based, 0 = blank)
-        # BaseModel의 characters property 사용 (detected_characters 우선)
-        char_set = self.characters  # BaseModel.property
+        char_set = self.characters  # detected_characters 우선
         self._char_list = list(char_set) if isinstance(char_set, str) else list("".join(char_set))
         self.char_to_idx = {char: idx + 1 for idx, char in enumerate(self._char_list)}
         self.idx_to_char = {idx: char for char, idx in self.char_to_idx.items()}
@@ -448,7 +446,30 @@ class PyTorchModel(BaseModel):
         default_model_dir = self.captcha_type.train_data.get_model_base_dir()
         self.model_dir = model_dir if model_dir is not None else default_model_dir
 
-    
+    # 아래 넷은 감지값(detected_*)을 우선한다. 생성자 기본값과 갈리면 감지값이 맞다.
+    @property
+    def characters(self) -> str:
+        detected = self.train_data.detected_characters
+        return "".join(detected) if isinstance(detected, list) else detected
+
+    @property
+    def label_length(self) -> int:
+        return self.train_data.detected_label_length
+
+    @property
+    def image_width(self) -> int:
+        return self.train_data.detected_image_width
+
+    @property
+    def image_height(self) -> int:
+        return self.train_data.detected_image_height
+
+    def get_model_path(self) -> str:
+        return self.train_data.get_model_path()
+
+    def get_model_base_dir(self) -> str:
+        return self.train_data.get_model_base_dir()
+
     def split_dataset(self, batch_size: int = 16, train_size: float = 0.8,
                      shuffle: bool = True, num_workers: int = 0,
                      pin_memory: bool = True, persistent_workers: bool = None,
