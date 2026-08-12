@@ -25,7 +25,7 @@ const stat = {
 const PAGE_SIZE = 100;
 // 오답 썸네일을 무한정 쌓으면 1000장짜리 실행에서 DOM 이 감당을 못 한다.
 const GALLERY_LIMIT = 60;
-const BUCKETS = 10;
+const BUCKETS = 20;
 
 let source = null;
 let items = [];
@@ -110,7 +110,7 @@ function addGalleryCard(item) {
 }
 
 function renderHistogram() {
-	// 신뢰도 0~1 을 10 구간으로 나눠 일치/불일치를 쌓아 보여준다.
+	// 신뢰도 0~1 을 20 구간으로 나눠 일치/불일치를 쌓아 보여준다.
 	const buckets = Array.from({length: BUCKETS}, () => ({match: 0, mismatch: 0}));
 	items.forEach((item) => {
 		const index = Math.min(BUCKETS - 1, Math.floor(item.confidence * BUCKETS));
@@ -120,7 +120,7 @@ function renderHistogram() {
 	const peak = Math.max(1, ...buckets.map((b) => b.match + b.mismatch));
 
 	histogram.innerHTML = `
-		<div class="flex items-end gap-2" style="height: 180px">
+		<div class="flex items-end gap-1" style="height: 180px">
 			${buckets
 				.map((bucket) => {
 					const total = bucket.match + bucket.mismatch;
@@ -136,8 +136,8 @@ function renderHistogram() {
 				})
 				.join("")}
 		</div>
-		<div class="mt-2 flex gap-2 font-mono text-[11px] text-muted-foreground">
-			${buckets.map((_, i) => `<div class="flex-1 text-center">${(i / BUCKETS).toFixed(1)}</div>`).join("")}
+		<div class="mt-2 flex gap-1 font-mono text-[11px] text-muted-foreground">
+			${buckets.map((_, i) => `<div class="flex-1 text-center">${i % 2 === 0 ? (i / BUCKETS).toFixed(1) : ""}</div>`).join("")}
 		</div>
 		<div class="mt-4 flex gap-4 text-xs text-muted-foreground">
 			<span class="flex items-center gap-1.5"><span class="size-2.5 rounded-sm bg-success"></span>일치</span>
