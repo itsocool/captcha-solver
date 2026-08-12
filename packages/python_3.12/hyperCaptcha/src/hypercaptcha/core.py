@@ -650,22 +650,14 @@ class PyTorchModel(BaseModel):
         )
 
         # Loss 함수 선택
-        loss_type = loss_type or self.loss_type or 'ctc'
+        loss_type = loss_type or self.loss_type or 'focal'
         self.loss_type = loss_type
-        if loss_type == 'focal':
-            criterion = FocalCTCLoss(gamma=2.0)
-            if self.verbose > 0:
-                print(f"Using FocalCTCLoss (gamma=2.0)")
-        elif loss_type == 'ctc':
-            criterion = nn.CTCLoss(
-                blank=0,           # blank 인덱스 명시
-                reduction='mean',  # 배치 평균
-                zero_infinity=True # inf/nan 방지
-            )
-            if self.verbose > 0:
-                print(f"Using standard CTCLoss")
-        else:
-            raise ValueError("Unsupported loss_type: {0}. Use 'ctc' or 'focal'.".format(loss_type))
+        # Plain CTC 는 제거했다 — blank 지배·초기 정체에 focal 이 낫고 실측(iptime/kshop 99%)도 그 편이다.
+        if loss_type != 'focal':
+            raise ValueError("Unsupported loss_type: {0}. Only 'focal' is supported.".format(loss_type))
+        criterion = FocalCTCLoss(gamma=2.0)
+        if self.verbose > 0:
+            print(f"Using FocalCTCLoss (gamma=2.0)")
         
         # AMP GradScaler (Mixed Precision Training)
         scaler = GradScaler(device=self.device.type) if self.use_amp and self.device.type == 'cuda' else None

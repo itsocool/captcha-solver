@@ -123,15 +123,19 @@ function updateProgress(done) {
 }
 
 function renderChart() {
-	if (!epochs.length) {
+	// 처음 2개 에폭은 손실이 지나치게 커서(정체 구간 초반) 나머지 곡선을 눌러버린다.
+	// 3번째 데이터부터 그려 의미 있는 구간에 y축을 맞춘다.
+	const SKIP = 2;
+	if (epochs.length <= SKIP) {
 		return;
 	}
+	const visible = epochs.slice(SKIP);
 	// 손실은 스케일이 제각각이라 축 눈금 대신 최소/최대만 적고 선 두 개를 겹쳐 그린다.
 	const series = [
 		{key: "train_loss", color: "var(--brand)", label: "train"},
 		{key: "val_loss", color: "var(--warning)", label: "val"},
 	];
-	const values = epochs
+	const values = visible
 		.flatMap((e) => [e.train_loss, e.val_loss])
 		.filter((v) => v !== null && v !== undefined);
 	const min = Math.min(...values);
@@ -141,11 +145,11 @@ function renderChart() {
 	const H = 100;
 
 	const path = (key) => {
-		const points = epochs
+		const points = visible
 			.map((e, i) => [i, e[key]])
 			.filter(([, v]) => v !== null && v !== undefined)
 			.map(([i, v]) => {
-				const x = epochs.length > 1 ? (i / (epochs.length - 1)) * W : 0;
+				const x = visible.length > 1 ? (i / (visible.length - 1)) * W : 0;
 				const y = H - ((v - min) / span) * H;
 				return `${x.toFixed(2)},${y.toFixed(2)}`;
 			});
@@ -160,9 +164,9 @@ function renderChart() {
 			${path("val_loss")}
 		</svg>
 		<div class="mt-2 flex justify-between font-mono text-[11px] text-muted-foreground">
-			<span>epoch 1</span>
+			<span>epoch ${visible[0].epoch}</span>
 			<span>${min.toFixed(4)} ~ ${max.toFixed(4)}</span>
-			<span>epoch ${epochs.length}</span>
+			<span>epoch ${visible[visible.length - 1].epoch}</span>
 		</div>
 		<div class="mt-4 flex gap-4 text-xs text-muted-foreground">
 			${series

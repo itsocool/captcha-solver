@@ -29,7 +29,7 @@ _SESSION_GUARD = threading.Lock()
 
 CAPTCHA_DATA_DIR = BASE_DIR / "captcha_data"
 
-LOSS_TYPES = ("focal", "ctc")
+LOSS_TYPES = ("focal",)
 
 # UI 가 넘길 수 있는 학습 파라미터와 허용 범위. 값은 train.py 의 기본값을 그대로 따른다.
 # (min, max, default) — 범위를 벗어나면 400 으로 돌려보낸다.
