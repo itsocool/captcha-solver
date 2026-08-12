@@ -18,6 +18,8 @@ class Settings(BaseSettings):
 	)
 
 	app_title: str = "Captcha Solver"
+	# 표시용 앱 버전. .env 의 APP_VERSION 으로 이미지 재빌드 없이 올린다(비면 pyproject 폴백).
+	app_version: str = ""
 	default_captcha_id: str = "supreme_court"
 	web_host: str = "0.0.0.0"
 	web_port: int = 5000
