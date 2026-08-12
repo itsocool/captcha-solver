@@ -21,7 +21,16 @@ COPY packages/python_3.12/hyperCaptcha/pyproject.toml packages/python_3.12/hyper
      ./packages/python_3.12/hyperCaptcha/
 RUN uv sync --frozen --no-dev --no-install-workspace
 
-COPY . .
+# COPY . . 대신 실행에 필요한 것만 복사한다. .dockerignore 가 images/·*.sqlite3·.env 를
+# 이미 걸러내지만, 여기서 대상을 좁혀 불필요한 파일이 이미지에 들어가지 않게 한다.
+#   apps/web                     : FastAPI 앱(라우터·서비스·templates·static·favicon)
+#   packages/.../hyperCaptcha/src: 워크스페이스 패키지(추론·전처리) 소스 (매니페스트는 위에서 복사)
+#   db                           : schema.sql·seed (기동 시 init_db 가 읽는다)
+#   captcha_data                 : 모델(onnx/ort/pth/meta). compose 는 볼륨으로 덮어쓴다.
+COPY apps/web ./apps/web
+COPY packages/python_3.12/hyperCaptcha/src ./packages/python_3.12/hyperCaptcha/src
+COPY db ./db
+COPY captcha_data ./captcha_data
 RUN uv sync --frozen --no-dev
 
 EXPOSE 8000
@@ -29,4 +38,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
 
-CMD ["fastapi", "run", "apps/web/app.py", "--host", "0.0.0.0", "--port", "8000"]
+# 개발 서버(fastapi dev): 자동 리로드·상세 오류. 컨테이너 밖에서 붙으려면 0.0.0.0.
+# 코드 변경을 실시간 반영하려면 compose 에서 소스를 볼륨 마운트해야 한다(주석 참고).
+CMD ["fastapi", "dev", "apps/web/app.py", "--host", "0.0.0.0", "--port", "8000"]
