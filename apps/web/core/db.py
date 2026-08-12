@@ -1,4 +1,5 @@
 """SQLite 접근 계층. 서비스 대상 캡차 설정을 읽는다."""
+import json
 import sqlite3
 from pathlib import Path
 
@@ -28,6 +29,8 @@ def _add_missing_columns(conn: sqlite3.Connection) -> None:
 	"""
 	added = [
 		("train_data_configs", "characters", "TEXT NOT NULL DEFAULT ''"),
+		("train_data_configs", "preprocess", "TEXT NOT NULL DEFAULT 'default'"),
+		("train_data_configs", "crop", "TEXT"),
 	]
 	for table, column, decl in added:
 		existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
@@ -92,3 +95,41 @@ def get_service_config(reload: bool = False) -> dict:
 		}
 
 	return _SERVICE_CONFIG
+
+
+def get_train_params(captcha_id: str, rev: int) -> dict | None:
+	"""Training 페이지에서 (캡차, 리비전)별로 마지막에 쓴 학습 파라미터. 없으면 None.
+
+	DB 조회가 실패하거나 저장된 JSON 이 깨졌으면 None 을 돌려주고, 호출부가 기본값을 쓴다.
+	"""
+	try:
+		with connect() as conn:
+			row = conn.execute(
+				"SELECT params FROM train_run_params WHERE captcha_id = ? AND rev = ?",
+				(captcha_id, rev),
+			).fetchone()
+	except sqlite3.Error as e:
+		print(f"[db] train_run_params 조회 실패: {e}")
+		return None
+
+	if not row:
+		return None
+	try:
+		return json.loads(row["params"])
+	except (ValueError, TypeError):
+		return None
+
+
+def save_train_params(captcha_id: str, rev: int, params: dict) -> None:
+	"""학습 파라미터를 (캡차, 리비전) 키로 upsert 한다. 실패해도 학습은 계속되게 삼킨다."""
+	try:
+		with connect() as conn:
+			conn.execute(
+				"INSERT INTO train_run_params(captcha_id, rev, params, updated_at)"
+				" VALUES (?, ?, ?, CURRENT_TIMESTAMP)"
+				" ON CONFLICT(captcha_id, rev) DO UPDATE SET"
+				" params = excluded.params, updated_at = CURRENT_TIMESTAMP",
+				(captcha_id, rev, json.dumps(params, ensure_ascii=False)),
+			)
+	except sqlite3.Error as e:
+		print(f"[db] train_run_params 저장 실패: {e}")

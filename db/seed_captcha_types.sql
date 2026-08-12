@@ -26,7 +26,8 @@ INSERT OR IGNORE INTO captcha_types(captcha_id, name, description) VALUES
 	-- 여기서는 data.json 값을 따랐다.
 	('gov24',         '정부24',  '정부24 캡챠'),
 	('wetax',         'WETAX',   'WETAX 캡챠'),
-	('kshop',         'kshop',   'KT Shopping 캡챠');
+	('kshop',         'kshop',   'KT Shopping 캡챠'),
+	('iptime',        'ipTIME',  'ipTIME 공유기 캡챠');
 
 -- ---------------------------------------------------------------------------
 -- train_data_configs: 캡차별 학습/전처리 설정
@@ -40,14 +41,24 @@ INSERT OR IGNORE INTO captcha_types(captcha_id, name, description) VALUES
 -- 숫자 라벨이라 engine 이 파일명에서 감지하는 문자 집합과도 일치한다.
 -- UNIQUE (captcha_id, backend, rev) 로 중복 삽입이 막힌다.
 -- ---------------------------------------------------------------------------
+-- image_width/image_height 는 크롭 **전** 원본 크기다 (crop 좌표계). preprocess/crop 은
+-- engine.get_captcha_type_list() 의 값과 일치해야 한다. crop 은 PIL [left,top,right,bottom].
 INSERT OR IGNORE INTO train_data_configs(
 	captcha_id, backend, rev, train_data_base_dir,
-	image_width, image_height, label_length, characters, threshold
+	image_width, image_height, label_length, characters, threshold, preprocess, crop
 ) VALUES
-	('supreme_court', 'pytorch', 0, './captcha_data', 120, 40, 6, '0123456789', 255),
-	('gov24',         'pytorch', 1, './captcha_data', 200, 50, 6, '0123456789',  60),
-	('wetax',         'pytorch', 0, './captcha_data', 200, 60, 6, '0123456789', 255),
-	('kshop',         'pytorch', 0, './captcha_data', 263, 54, 6, '0123456789', 255);
+	('supreme_court', 'pytorch', 0, './captcha_data', 120, 40, 6, '0123456789', 255, 'supreme_court', NULL),
+	('gov24',         'pytorch', 1, './captcha_data', 200, 50, 6, '0123456789',  60, 'default', NULL),
+	('wetax',         'pytorch', 0, './captcha_data', 200, 60, 6, '0123456789', 255, 'default', NULL),
+	('kshop',         'pytorch', 0, './captcha_data', 263, 54, 6, '0123456789', 255, 'kshop', '[10, 2, 176, 50]'),
+	('iptime',        'pytorch', 0, './captcha_data', 200, 70, 5, 'abcdefghijklmnopqrstuvwxyz', 255, 'iptime', '[27, 10, 195, 70]');
+
+-- 이미 시드된 행은 INSERT OR IGNORE 가 건드리지 않으므로 preprocess/crop 을 UPDATE 로 보정한다.
+-- UPDATE 는 멱등이라 반복 실행해도 안전하다 (마이그레이션 6: preprocess/crop 컬럼 추가분).
+UPDATE train_data_configs SET preprocess = 'supreme_court'
+	WHERE captcha_id = 'supreme_court' AND backend = 'pytorch' AND rev = 0;
+UPDATE train_data_configs SET preprocess = 'kshop', crop = '[10, 2, 176, 50]'
+	WHERE captcha_id = 'kshop' AND backend = 'pytorch' AND rev = 0;
 
 -- ---------------------------------------------------------------------------
 -- train_data_characters: 문자 단위로 쪼갠 표현 (문자별 정렬 순서가 필요할 때만 사용)

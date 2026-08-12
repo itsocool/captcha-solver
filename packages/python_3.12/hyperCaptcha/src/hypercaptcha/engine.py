@@ -33,18 +33,23 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data") -> Dict[s
 
     kshop = CaptchaType(captcha_id="kshop", name="kshop", desc="KT Shopping 캡챠", train_data=TrainData(
         captcha_id="kshop",
-        # 263x54 원본을 180x50 으로 잘라내고 배경 그라데이션을 걷어낸다.
-        # 모델 입력 크기는 전처리 결과(180x50)로 자동 감지된다.
+        # 263x54 원본을 166x48 로 잘라내고(crop 은 PIL left/top/right/bottom) 배경
+        # 그라데이션을 걷어낸다. 모델 입력 크기는 전처리 결과(166x48)로 자동 감지된다.
         preprocess="kshop",
+        crop=[10, 2, 176, 50],
         train_data_base_dir=train_data_base_dir,
         image_width=263,
         image_height=54,
     ))
 
-    # 유일하게 숫자가 아닌 캡차다. 라벨은 소문자 5글자이고 배경이 이미 흰색이라
-    # 전처리는 기본 경로를 그대로 쓴다 (물결선 노이즈 하나 외에 별다른 왜곡이 없다).
+    # 유일하게 숫자가 아닌 캡차다. 라벨은 소문자 5글자이고 배경이 이미 흰색이다.
+    # 글자가 좌측 정렬(x=27~194, y=10~69)이라 200x70 을 168x60 으로 크롭한다.
+    # 크롭 영역은 train 900장을 3x3 erosion 으로 1~2px 물결선을 걷어내고 실측한 값이라
+    # 전체에서 글자 손실이 없다 (물결선 꼬리만 잘림). 모델 입력 크기는 크롭 결과로 자동 감지된다.
     iptime = CaptchaType(captcha_id="iptime", name="ipTIME", desc="ipTIME 공유기 캡챠", train_data=TrainData(
         captcha_id="iptime",
+        preprocess="iptime",
+        crop=[27, 10, 195, 70],
         train_data_base_dir=train_data_base_dir,
         image_width=200,
         image_height=70,

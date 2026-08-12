@@ -16,6 +16,13 @@ pub struct ModelMeta {
 	pub threshold: u8,
 	#[serde(default = "default_preprocess")]
 	pub preprocess: String,
+	/// 전처리 크롭 박스 PIL (left, top, right, bottom). 없으면 크롭하지 않는다.
+	#[serde(default)]
+	pub crop: Option<[u32; 4]>,
+	/// 크롭 박스의 좌표계(크롭 **전** 크기, width/height). `image_width`/`image_height`
+	/// 는 크롭 **후** 크기라 이 값이 따로 필요하다. crop 이 있으면 함께 온다.
+	#[serde(default)]
+	pub crop_source: Option<[u32; 2]>,
 }
 
 fn default_threshold() -> u8 {

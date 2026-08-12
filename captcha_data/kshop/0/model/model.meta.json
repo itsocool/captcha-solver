@@ -8,5 +8,15 @@
   "characters": "0123456789",
   "threshold": 255,
   "preprocess": "kshop",
+  "crop": [
+    10,
+    2,
+    176,
+    50
+  ],
+  "crop_source": [
+    263,
+    54
+  ],
   "blank_index": 0
 }

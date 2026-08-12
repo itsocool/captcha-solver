@@ -2,11 +2,11 @@ import os
 from . import engine
 from .core import PyTorchModel
 
-captcha_id = 'supreme_court'
+captcha_id = 'iptime'
 loss_type = 'focal'
 use_amp = True
 model: PyTorchModel = engine.get_captcha_model(captcha_id=captcha_id)
-train_ratio = 0.6
+train_ratio = 0.8
 shuffle = False
 batch_size = 64
 # CTC 는 초반에 입력과 무관한 상수 문자열만 뱉는 정체 구간을 거친다. kshop rev0 은

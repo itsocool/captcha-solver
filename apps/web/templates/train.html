@@ -183,6 +183,19 @@
 	</section>
 </div>
 
+<div id="stop-confirm" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4">
+	<div class="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-xl">
+		<h3 class="text-lg font-semibold">학습을 중단할까요?</h3>
+		<p class="mt-3 text-sm text-muted-foreground">중단은 에폭 경계에서 걸립니다 — 진행 중인 에폭 하나는 마저 돕니다.</p>
+		<p id="stop-confirm-best" class="mt-2 text-sm text-muted-foreground"></p>
+		<div class="mt-6 flex flex-col gap-2">
+			<button id="stop-save" type="button" class="h-10 rounded-lg bg-brand px-4 text-sm font-medium text-white hover:bg-brand-hover">Best 모델 저장하고 중단</button>
+			<button id="stop-discard" type="button" class="h-10 rounded-lg border border-warning/40 px-4 text-sm font-medium text-warning hover:bg-warning/10">저장 없이 중단</button>
+			<button id="stop-cancel" type="button" class="h-10 rounded-lg border border-border px-4 text-sm font-medium text-muted-foreground hover:text-foreground">중단 취소 — 계속 학습</button>
+		</div>
+	</div>
+</div>
+
 <div id="confirm" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4">
 	<div class="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-xl">
 		<h3 class="text-lg font-semibold">기존 모델을 덮어씁니다</h3>

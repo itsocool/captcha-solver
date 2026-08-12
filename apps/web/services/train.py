@@ -22,6 +22,11 @@ from web.core.device import resolve as resolve_device
 # 일괄 추론과 별개의 락이라 둘이 동시에 돌 수는 있는데, 그건 사용자가 감수할 몫이다.
 _RUN_LOCK = threading.Lock()
 
+# 실행 중인 학습의 중단 채널. 학습이 한 번에 하나뿐이라 모듈 전역 하나면 된다.
+# cancel 이 서면 에폭 경계에서 멈추고, discard 까지 서면 best(.tmp)를 버리고 멈춘다.
+_ACTIVE: dict | None = None
+_ACTIVE_GUARD = threading.Lock()
+
 CAPTCHA_DATA_DIR = BASE_DIR / "captcha_data"
 
 LOSS_TYPES = ("focal", "ctc")
@@ -48,6 +53,10 @@ PARAM_SPEC = {
 	"warmup_epochs": (0, 100, 0),
 	"train_ratio": (0.1, 0.95, 0.6),
 }
+
+# 대상(캡차, 리비전)별로 기억해 두는 파라미터. shuffle 은 디스크 이미지를 되돌릴 수 없게
+# 옮기는 1회성 동작이라 뺀다 — 저장했다가 다음 실행에 자동 적용되면 매번 재분배되는 사고가 난다.
+PERSIST_PARAMS = (*PARAM_SPEC.keys(), "loss_type", "use_amp")
 
 
 class TrainBusy(Exception):
@@ -151,8 +160,51 @@ def _as_bool(value, default: bool) -> bool:
 	return str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
+def default_params() -> dict:
+	"""저장된 값이 없을 때 쓰는 기본 파라미터 (PERSIST_PARAMS 만)."""
+	params = {name: spec[2] for name, spec in PARAM_SPEC.items()}
+	params["loss_type"] = LOSS_TYPES[0]
+	params["use_amp"] = True
+	return params
+
+
+def load_params(captcha_id: str, rev: int) -> dict:
+	"""대상의 저장된 학습 파라미터. 없으면 기본값. 저장 스키마가 바뀌어도 아는 키만 받는다."""
+	from web.core.db import get_train_params
+
+	params = default_params()
+	stored = get_train_params(captcha_id, rev) or {}
+	for key in PERSIST_PARAMS:
+		if key in stored:
+			params[key] = stored[key]
+	return params
+
+
+def _persist_params(captcha_id: str, rev: int, params: dict) -> None:
+	"""확정된 파라미터에서 기억할 것만 골라 DB 에 저장한다."""
+	from web.core.db import save_train_params
+
+	save_train_params(captcha_id, rev, {k: params[k] for k in PERSIST_PARAMS if k in params})
+
+
 def is_running() -> bool:
 	return _RUN_LOCK.locked()
+
+
+def request_stop(save: bool = True) -> bool:
+	"""실행 중인 학습에 중단을 요청한다. save=False 면 best 저장 없이 버린다.
+
+	에폭 경계에서 걸리므로 진행 중인 에폭 하나는 마저 돈다. 돌고 있는 학습이
+	없으면 False. (중단 취소는 요청을 안 보내면 되므로 API 가 없다.)
+	"""
+	with _ACTIVE_GUARD:
+		active = _ACTIVE
+	if active is None:
+		return False
+	if not save:
+		active["discard"].set()
+	active["cancel"].set()
+	return True
 
 
 def run(captcha_id: str, rev: int, device: str | None = None, params: dict | None = None,
@@ -180,16 +232,27 @@ def run(captcha_id: str, rev: int, device: str | None = None, params: dict | Non
 	device_key = resolve_device(device)
 	params = clean_params(params or {})
 
+	# 이번에 쓴 값을 대상별로 기억한다. 다음에 같은 대상을 고르면 폼에 다시 채워진다.
+	_persist_params(captcha_id, rev, params)
+
 	if not _RUN_LOCK.acquire(blocking=False):
 		raise TrainBusy("이미 다른 학습이 실행 중입니다")
 
 	events: queue.Queue = queue.Queue()
 	cancelled = cancel if cancel is not None else threading.Event()
+	discard = threading.Event()
 	DONE = object()
 
-	def on_event(event: dict) -> bool:
+	global _ACTIVE
+	with _ACTIVE_GUARD:
+		_ACTIVE = {"cancel": cancelled, "discard": discard}
+
+	def on_event(event: dict):
 		events.put(event)
-		return not cancelled.is_set()
+		if not cancelled.is_set():
+			return True
+		# 'discard' 는 core 가 best(.tmp)를 버리고 멈추라는 신호로 읽는다.
+		return "discard" if discard.is_set() else False
 
 	def worker():
 		try:
@@ -228,6 +291,9 @@ def run(captcha_id: str, rev: int, device: str | None = None, params: dict | Non
 		except Exception as e:
 			events.put({"type": "error", "message": f"{type(e).__name__}: {e}"})
 		finally:
+			global _ACTIVE
+			with _ACTIVE_GUARD:
+				_ACTIVE = None
 			events.put(DONE)
 			_RUN_LOCK.release()
 
@@ -236,6 +302,8 @@ def run(captcha_id: str, rev: int, device: str | None = None, params: dict | Non
 		thread.start()
 	except BaseException:
 		# 워커가 뜨지 못하면 아무도 락을 풀어주지 않는다.
+		with _ACTIVE_GUARD:
+			_ACTIVE = None
 		_RUN_LOCK.release()
 		raise
 

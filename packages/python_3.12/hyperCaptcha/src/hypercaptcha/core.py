@@ -624,14 +624,16 @@ class PyTorchModel(BaseModel):
             loss_type: 손실 함수 유형 ('ctc', 'focal')
             dropout: 모델 Dropout 비율 (기본: 0.1)
             on_event: 진행 상황 콜백. dict 하나를 받는다 ('start' / 'epoch' / 'done').
-                      False 를 돌려주면 다음 에폭으로 넘어가지 않고 중단한다.
+                      False 를 돌려주면 다음 에폭으로 넘어가지 않고 중단한다 (best 는
+                      평소처럼 확정된다). 'discard' 를 돌려주면 중단하면서 .tmp 를 버려
+                      기존 아티팩트를 그대로 둔다 (웹 UI 의 "저장 없이 중단").
                       웹의 진행률 스트리밍용이며, 주지 않으면 기존 동작 그대로다.
         """
-        def _emit(event_type: str, **payload) -> bool:
-            """진행 이벤트 전달. 콜백이 명시적으로 False 를 주면 중단 신호로 읽는다."""
+        def _emit(event_type: str, **payload):
+            """진행 이벤트 전달. 콜백의 반환값(False/'discard')을 그대로 돌려준다."""
             if on_event is None:
                 return True
-            return on_event({'type': event_type, **payload}) is not False
+            return on_event({'type': event_type, **payload})
 
         if self.model is None:
             self.model = self.build_model(dropout=dropout)
@@ -844,19 +846,38 @@ class PyTorchModel(BaseModel):
                     self.save_model(model_path, temp=True)
 
             epochs_run = epoch + 1
-            # 진행 상황을 밖으로 흘린다. 콜백이 False 를 돌려주면 그만 두라는 뜻이다
-            # (웹 UI 의 중단 버튼). 어느 쪽으로 끝나든 아래 아티팩트 확정은 그대로 탄다.
-            if not _emit('epoch',
-                         epoch=epochs_run, epochs=epochs,
-                         train_loss=avg_train_loss, val_loss=val_loss, lr=current_lr,
-                         best_val_loss=None if best_val_loss == float('inf') else best_val_loss,
-                         best_epoch=best_epoch, improved=improved,
-                         patience_counter=patience_counter,
-                         elapsed_sec=time.time() - train_started_at):
+            # 진행 상황을 밖으로 흘린다. 콜백이 False 를 돌려주면 그만 두라는 뜻이고
+            # (웹 UI 의 중단 버튼, best 는 확정), 'discard' 면 best 저장 없이 그만 둔다.
+            signal = _emit('epoch',
+                           epoch=epochs_run, epochs=epochs,
+                           train_loss=avg_train_loss, val_loss=val_loss, lr=current_lr,
+                           best_val_loss=None if best_val_loss == float('inf') else best_val_loss,
+                           best_epoch=best_epoch, improved=improved,
+                           patience_counter=patience_counter,
+                           elapsed_sec=time.time() - train_started_at)
+            if signal is False:
                 stop_reason = 'cancelled'
+            elif signal == 'discard':
+                stop_reason = 'cancelled_discarded'
 
             if stop_reason:
                 break
+
+        # 저장 없이 중단: .tmp 를 버리고 기존 아티팩트를 그대로 둔다.
+        if stop_reason == 'cancelled_discarded':
+            if os.path.exists(model_path + '.tmp'):
+                os.remove(model_path + '.tmp')
+            if self.verbose > 0:
+                print("=" * 70)
+                print("저장 없이 중단 — 기존 아티팩트를 유지한다.")
+            _emit('done',
+                  epochs_run=epochs_run, epochs=epochs,
+                  stop_reason='cancelled_discarded',
+                  best_val_loss=None if best_val_loss == float('inf') else best_val_loss,
+                  best_epoch=best_epoch,
+                  elapsed_sec=time.time() - train_started_at,
+                  artifacts={})
+            return train_hist
 
         # 기존 모델이 더 낫다면 갈아치우지 않는다.
         #

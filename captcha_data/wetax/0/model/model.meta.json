@@ -8,5 +8,7 @@
   "characters": "0123456789",
   "threshold": 255,
   "preprocess": "default",
+  "crop": null,
+  "crop_source": null,
   "blank_index": 0
 }

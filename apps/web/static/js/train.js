@@ -15,6 +15,12 @@ const confirmBody = document.querySelector("#confirm-body");
 const confirmOk = document.querySelector("#confirm-ok");
 const confirmCancel = document.querySelector("#confirm-cancel");
 
+const stopModal = document.querySelector("#stop-confirm");
+const stopBest = document.querySelector("#stop-confirm-best");
+const stopSaveBtn = document.querySelector("#stop-save");
+const stopDiscardBtn = document.querySelector("#stop-discard");
+const stopCancelBtn = document.querySelector("#stop-cancel");
+
 const stat = {
 	epoch: document.querySelector("#stat-epoch"),
 	trainLoss: document.querySelector("#stat-train-loss"),
@@ -65,6 +71,44 @@ function collectParams() {
 	CHECKBOX_FIELDS.forEach((id) => (params[id] = document.querySelector(`#${id}`).checked ? "1" : "0"));
 	params.loss_type = document.querySelector("#loss_type").value;
 	return params;
+}
+
+// 서버가 돌려준 저장값(또는 기본값)을 폼에 채운다. 없는 키는 건드리지 않는다
+// (shuffle 은 저장하지 않으므로 항상 템플릿 기본값=꺼짐 그대로 둔다).
+function applyParams(params) {
+	NUMBER_FIELDS.forEach((id) => {
+		if (params[id] !== undefined && params[id] !== null) {
+			document.querySelector(`#${id}`).value = params[id];
+		}
+	});
+	CHECKBOX_FIELDS.forEach((id) => {
+		if (params[id] !== undefined) {
+			document.querySelector(`#${id}`).checked =
+				params[id] === true || params[id] === 1 || params[id] === "1";
+		}
+	});
+	if (params.loss_type) {
+		document.querySelector("#loss_type").value = params.loss_type;
+	}
+}
+
+async function loadParamsForTarget() {
+	if (!targetSelect.value) {
+		return;
+	}
+	const [captchaId, rev] = targetSelect.value.split(":");
+	try {
+		const res = await fetch(
+			`/api/v1/train/params?captcha_id=${encodeURIComponent(captchaId)}&rev=${encodeURIComponent(rev)}`,
+		);
+		if (!res.ok) {
+			return; // 실패하면 서버가 렌더한 기본값을 그대로 둔다
+		}
+		const data = await res.json();
+		applyParams(data.params || {});
+	} catch (_) {
+		/* 무시: 기본값 유지 */
+	}
 }
 
 function num(value, digits = 4) {
@@ -153,6 +197,7 @@ function finish(label) {
 		source.close();
 		source = null;
 	}
+	stopModal.classList.replace("flex", "hidden");
 	setRunning(false);
 	progressLabel.textContent = label;
 }
@@ -210,6 +255,9 @@ function start(captchaId, rev) {
 	source.addEventListener("epoch", (event) => {
 		const payload = JSON.parse(event.data);
 		epochs.push(payload);
+		if (payload.best_val_loss !== null && payload.best_val_loss !== undefined) {
+			context.best = {valLoss: payload.best_val_loss, epoch: payload.best_epoch};
+		}
 		stat.epoch.textContent = `${payload.epoch} / ${payload.epochs}`;
 		stat.trainLoss.textContent = num(payload.train_loss);
 		stat.valLoss.textContent = num(payload.val_loss);
@@ -236,13 +284,17 @@ function start(captchaId, rev) {
 		const payload = JSON.parse(event.data);
 		updateProgress(payload.epochs_run);
 		stat.elapsed.textContent = `${payload.elapsed_sec.toFixed(1)}s`;
-		artifacts.textContent = Object.values(payload.artifacts || {})
-			.map((path) => path.split("/").pop())
-			.join(" · ");
+		const names = Object.values(payload.artifacts || {}).map((path) => path.split("/").pop());
+		artifacts.textContent = names.length
+			? names.join(" · ")
+			: payload.stop_reason === "cancelled_discarded"
+				? "저장 안 함 (기존 아티팩트 유지)"
+				: "—";
 		const reason = {
 			completed: "완료",
 			early_stopping: "조기 종료",
-			cancelled: "중단됨",
+			cancelled: "중단됨 (best 저장)",
+			cancelled_discarded: "중단됨 (저장 안 함)",
 		}[payload.stop_reason] || payload.stop_reason;
 		finish(
 			`${reason} · ${payload.epochs_run}에폭 · best ${num(payload.best_val_loss)} ` +
@@ -273,11 +325,42 @@ runButton.addEventListener("click", async () => {
 	start(captchaId, rev);
 });
 
+// 중단 다이얼로그: best 저장하고 중단 / 저장 없이 중단 / 중단 취소.
+// 스트림은 닫지 않는다 — POST /train/stop 이 취소 플래그를 세우고, 학습이 에폭
+// 경계에서 멈춘 뒤 done/skipped 이벤트가 이 스트림으로 와서 finish() 를 태운다.
 stopButton.addEventListener("click", () => {
-	// EventSource 를 닫으면 서버 제너레이터가 정리되면서 취소 플래그가 선다.
-	// 학습은 에폭 경계에서만 멈추므로 진행 중인 에폭 하나는 마저 돈다.
-	progressLabel.textContent = "중단 요청됨 · 현재 에폭을 마치고 멈춥니다";
-	finish("중단됨");
+	stopBest.textContent = context.best
+		? `현재 best: val_loss ${num(context.best.valLoss)} (epoch ${context.best.epoch})`
+		: "아직 best 모델이 없습니다 (첫 검증 전이면 저장할 것도 없습니다).";
+	stopModal.classList.replace("hidden", "flex");
+
+	const close = () => {
+		stopModal.classList.replace("flex", "hidden");
+		stopSaveBtn.removeEventListener("click", save);
+		stopDiscardBtn.removeEventListener("click", discard);
+		stopCancelBtn.removeEventListener("click", cancel);
+	};
+	const request = async (withSave) => {
+		close();
+		stopButton.disabled = true;
+		progressLabel.textContent = withSave
+			? "중단 요청됨 · 현재 에폭을 마치고 best 모델을 저장합니다"
+			: "중단 요청됨 · 현재 에폭을 마치고 저장 없이 멈춥니다";
+		try {
+			await fetch(`/api/v1/train/stop?save=${withSave}`, {method: "POST"});
+			// 409(이미 끝남)여도 무시 - done 이벤트가 마무리한다.
+		} catch (_) {
+			/* 네트워크 오류: 스트림이 살아 있으면 학습은 계속된다. 버튼을 되살린다. */
+			stopButton.disabled = false;
+		}
+	};
+	const save = () => request(true);
+	const discard = () => request(false);
+	const cancel = () => close();
+
+	stopSaveBtn.addEventListener("click", save);
+	stopDiscardBtn.addEventListener("click", discard);
+	stopCancelBtn.addEventListener("click", cancel);
 });
 
 resetButton.addEventListener("click", () => {
@@ -291,3 +374,8 @@ resetButton.addEventListener("click", () => {
 	});
 	document.querySelector("#loss_type").value = document.querySelector("#loss_type").dataset.default;
 });
+
+// 대상을 바꾸면 그 대상의 저장된 학습 파라미터를 불러와 폼을 채운다.
+targetSelect.addEventListener("change", loadParamsForTarget);
+// 첫 진입에도 현재 선택된 대상의 저장값을 반영한다.
+loadParamsForTarget();

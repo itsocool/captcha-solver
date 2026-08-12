@@ -38,8 +38,9 @@ public final class Preprocessor {
 
 		int[] source = toRgbRaw(image);
 
-		if ("kshop".equals(meta.preprocess())) {
-			return kshopToGray(source, image.getWidth(), image.getHeight());
+		// 크롭 기반 전처리(kshop, iptime, …)는 meta 의 crop/cropSource 로 재현한다.
+		if (meta.crop() != null && meta.cropSource() != null) {
+			return cropToGray(source, image.getWidth(), image.getHeight(), meta);
 		}
 
 		int[] rgb;
@@ -70,43 +71,38 @@ public final class Preprocessor {
 	}
 
 	/**
-	 * kshop 원본 크기와 잘라낼 영역. {@code dataclass.py} 의 {@code KSHOP_SOURCE_SIZE} /
-	 * {@code KSHOP_CROP} 과 같은 영역이어야 한다. 파이썬은 PIL 규약의
-	 * (left, top, right, bottom) = (10, 2, 176, 50) 이고 여기서는 x/y/w/h 로 적으므로
-	 * (10, 2, 166, 48) 이 된다.
+	 * meta 로 구동되는 크롭 경로: 기준 크기({@code cropSource})로 맞춘 뒤 crop 박스로 자른다.
 	 *
-	 * <p>supreme_court ROI 가 meta 의 입력 크기에서 유도되는 것과 달리 263x54 는
-	 * 자르기 <b>전</b> 크기라 meta(166x48)로는 알 수 없어 상수로 둔다.
-	 *
-	 * <p>ponytail: 자르는 캡차가 세 번째로 생기면 이 상수들을 meta.json 으로 올릴 것.
+	 * <p>{@code dataclass.py} 의 {@code _kshop_preprocess} / {@code _iptime_preprocess} 포팅.
+	 * crop 박스는 PIL (left, top, right, bottom) 이고 여기서는 w=right-left, h=bottom-top
+	 * 으로 잘라낸다. 크롭 전 크기(263x54 등)는 meta 의 image_width/height(크롭 <b>후</b>
+	 * 크기)로는 알 수 없어 {@code crop_source} 로 함께 싣는다. 다른 경로와 달리 임계값·테두리
+	 * 제거·마지막 리사이즈를 타지 않는다 (파이썬과 동일). kshop 만 크롭 뒤 그라데이션을 걷어낸다.
 	 */
-	private static final int KSHOP_SRC_W = 263;
-	private static final int KSHOP_SRC_H = 54;
-	private static final int KSHOP_CROP_X = 10;
-	private static final int KSHOP_CROP_Y = 2;
-	private static final int KSHOP_CROP_W = 166;
-	private static final int KSHOP_CROP_H = 48;
-
-	/**
-	 * kshop 전용 경로: 기준 크기로 맞춘 뒤 166x48 로 자르고 그라데이션을 걷어낸다.
-	 *
-	 * <p>배경이 왼쪽 검정 → 오른쪽 흰색 그라데이션이라 왼쪽 몇 자리가 배경과 같은 색이 된다.
-	 * 다른 경로와 달리 임계값·테두리 제거·마지막 리사이즈를 타지 않는다 (파이썬과 동일).
-	 */
-	private static Gray kshopToGray(int[] rgb, int width, int height) {
+	private static Gray cropToGray(int[] rgb, int width, int height, ModelMeta meta) {
+		int srcW = meta.cropSource()[0];
+		int srcH = meta.cropSource()[1];
 		Gray gray = new Gray(width, height, toLuma601(rgb));
-		if (width != KSHOP_SRC_W || height != KSHOP_SRC_H) {
-			gray = resize(gray, KSHOP_SRC_W, KSHOP_SRC_H);
+		if (width != srcW || height != srcH) {
+			gray = resize(gray, srcW, srcH);
 		}
 
-		int[] cropped = new int[KSHOP_CROP_W * KSHOP_CROP_H];
-		for (int y = 0; y < KSHOP_CROP_H; y++) {
-			System.arraycopy(gray.px(), (y + KSHOP_CROP_Y) * gray.width() + KSHOP_CROP_X,
-					cropped, y * KSHOP_CROP_W, KSHOP_CROP_W);
+		int[] rect = meta.crop();
+		int left = rect[0];
+		int top = rect[1];
+		int cropW = rect[2] - left;
+		int cropH = rect[3] - top;
+
+		int[] cropped = new int[cropW * cropH];
+		for (int y = 0; y < cropH; y++) {
+			System.arraycopy(gray.px(), (y + top) * gray.width() + left,
+					cropped, y * cropW, cropW);
 		}
 
-		flattenColumnBackground(cropped, KSHOP_CROP_W, KSHOP_CROP_H);
-		return new Gray(KSHOP_CROP_W, KSHOP_CROP_H, cropped);
+		if ("kshop".equals(meta.preprocess())) {
+			flattenColumnBackground(cropped, cropW, cropH);
+		}
+		return new Gray(cropW, cropH, cropped);
 	}
 
 	/**

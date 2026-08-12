@@ -13,6 +13,8 @@ from web.services.train import (
 	find_target,
 	is_running,
 	list_targets,
+	load_params,
+	request_stop,
 	run,
 )
 
@@ -23,6 +25,24 @@ router = APIRouter(tags=["api-v1"])
 @router.get("/train/targets")
 async def train_targets():
 	return JSONResponse({"targets": list_targets(), "running": is_running()})
+
+
+@router.get("/train/params")
+async def train_params(captcha_id: str = Query(...), rev: int = Query(0)):
+	"""대상(캡차, 리비전)의 저장된 학습 파라미터. 없으면 기본값을 돌려준다."""
+	return JSONResponse({"params": load_params(captcha_id, rev)})
+
+
+@router.post("/train/stop")
+async def train_stop(save: bool = Query(True)):
+	"""실행 중인 학습 중단 요청. save=false 면 best 모델을 저장하지 않고 버린다.
+
+	에폭 경계에서 걸리므로 진행 중인 에폭 하나는 마저 돈다. 결과는 열려 있는
+	SSE 스트림의 done/skipped 이벤트로 온다.
+	"""
+	if not request_stop(save=save):
+		raise HTTPException(status_code=409, detail="실행 중인 학습이 없습니다")
+	return JSONResponse({"stopping": True, "save": save})
 
 
 def _sse(event: str, payload: dict) -> str:

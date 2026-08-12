@@ -18,17 +18,15 @@ ALPHA_NUMERIC: Final = string.digits + string.ascii_letters
 
 # kshop 원본은 263x54 다. 배경이 왼쪽 검정 → 오른쪽 흰색 가로 그라데이션이고 숫자는
 # 그 위에 검게 그려져서, 왼쪽 몇 자리는 배경과 거의 같은 색이 된다. 그래서 관심 영역만
-# 잘라내고 그라데이션을 걷어낸다.
+# 잘라내고 그라데이션을 걷어낸다. 크롭 박스는 TrainData.crop 필드로 옮겼다 (engine.py).
 #
-# 크롭 박스는 PIL 규약대로 (left, top, right, bottom) 이고 결과는 166x48 이다.
+# 크롭 박스는 PIL 규약대로 (left, top, right, bottom)=(10,2,176,50) 이고 결과는 166x48 이다.
 # 실측(train 500장) 기준 각 변에서 잘려나가는 양:
 #   좌  10  손실 없음 (숫자 획은 x>=16 부터)
 #   상   2  손실 없음 (y=0 은 테두리)
 #   우 176  손실 없음 (획 최우측이 정확히 176)
 #   하  50  숫자 획이 조금 잘리는 이미지 17/500 (3.4%) — 획 최하단은 52 까지 간다
 # y=0 과 y=53 의 테두리, x>=176 의 방해용 사선은 모두 빠진다.
-KSHOP_SOURCE_SIZE: Final = (263, 54)
-KSHOP_CROP: Final = (10, 2, 176, 50)
 
 
 class _TrainInfo(BaseModel):
@@ -66,6 +64,11 @@ class CaptchaType(BaseModel):
             "characters": td.detected_characters,
             "threshold": td.threshold,
             "preprocess": td.preprocess,
+            # 크롭 박스 PIL (left, top, right, bottom) 와 그 좌표계인 크롭 전 크기.
+            # meta 의 image_width/height 는 크롭 **후** 크기라 크롭 전 크기를 따로 실어야
+            # Rust/Java 가 하드코딩 없이 크롭을 재현한다. 크롭 없으면 둘 다 null.
+            "crop": td.crop,
+            "crop_source": [td.image_width, td.image_height] if td.crop else None,
             "blank_index": 0,
         }
 
@@ -83,6 +86,11 @@ class TrainData(BaseModel):
     label_length: int = 6
     characters: List[str] = Field(default_factory=list)
     threshold: int = 255
+    # 전처리 크롭 영역 PIL (left, top, right, bottom). None 이면 크롭 없음.
+    # meta.json 에 실려 Rust CLI / Spring Boot / ConsoleApp 이 하드코딩 대신 이 값을 읽는다.
+    # 크롭 전 기준 크기는 (image_width, image_height) 이고, 추론 입력이 그 크기가
+    # 아니면 먼저 리사이즈한 뒤 자른다.
+    crop: List[int] | None = None
     _train_info: _TrainInfo | None = PrivateAttr(default=None)
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -292,7 +300,22 @@ class TrainData(BaseModel):
             return self._supreme_court_preprocess(image)
         if self.preprocess == "kshop":
             return self._kshop_preprocess(image)
+        if self.preprocess == "iptime":
+            return self._iptime_preprocess(image)
         return self._default_preprocess(image)
+
+    def _iptime_preprocess(self, image: Image.Image) -> Image.Image:
+        """배경이 이미 흰색이라 크롭만 한다. 임계값·테두리 제거·리사이즈는 타지 않는다."""
+        if image.mode == "RGBA":
+            background = Image.new("RGBA", image.size, (255, 255, 255, 255))
+            image = Image.alpha_composite(background, image).convert("RGB")
+        image = image.convert("L")
+
+        # 추론 입력이 원본 크기가 아닐 수 있어 기준 크기로 맞춘 뒤 자른다.
+        source_size = (self.image_width, self.image_height)
+        if image.size != source_size:
+            image = image.resize(source_size)
+        return image.crop(tuple(self.crop)) if self.crop else image
 
     def _kshop_preprocess(self, image: Image.Image) -> Image.Image:
         if image.mode == "RGBA":
@@ -301,9 +324,11 @@ class TrainData(BaseModel):
         image = image.convert("L")
 
         # 추론 입력이 원본 크기가 아닐 수 있어 기준 크기로 맞춘 뒤 자른다.
-        if image.size != KSHOP_SOURCE_SIZE:
-            image = image.resize(KSHOP_SOURCE_SIZE)
-        image = image.crop(KSHOP_CROP)
+        source_size = (self.image_width, self.image_height)
+        if image.size != source_size:
+            image = image.resize(source_size)
+        if self.crop:
+            image = image.crop(tuple(self.crop))
 
         return self._flatten_column_background(image)
 

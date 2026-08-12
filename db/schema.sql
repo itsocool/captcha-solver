@@ -21,6 +21,12 @@ CREATE TABLE IF NOT EXISTS train_data_configs (
 	-- (TrainData.characters 와 같은 의미).
 	characters TEXT NOT NULL DEFAULT '',
 	threshold INTEGER NOT NULL DEFAULT 255 CHECK (threshold BETWEEN 0 AND 255),
+	-- 전처리 종류 (TrainData.preprocess). meta.json 에 그대로 실려 추론 클라이언트가
+	-- 같은 전처리를 재현한다. 'default' | 'supreme_court' | 'kshop' | 'iptime'.
+	preprocess TEXT NOT NULL DEFAULT 'default',
+	-- 전처리 크롭 박스 JSON [left, top, right, bottom] (PIL 규약). NULL 이면 크롭 없음.
+	-- 크롭 전 좌표계는 image_width/image_height 다.
+	crop TEXT,
 	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	FOREIGN KEY (captcha_id) REFERENCES captcha_types(captcha_id) ON DELETE CASCADE,
@@ -78,7 +84,8 @@ INSERT OR IGNORE INTO service_captchas(captcha_id, enabled, is_default, sort_ord
 	('supreme_court', 1, 1, 0),
 	('gov24', 1, 0, 1),
 	('wetax', 1, 0, 2),
-	('kshop', 1, 0, 3);
+	('kshop', 1, 0, 3),
+	('iptime', 1, 0, 4);
 
 INSERT OR IGNORE INTO schema_migrations(version, name)
 VALUES (2, 'service_captchas');
@@ -102,3 +109,22 @@ INSERT OR IGNORE INTO character_sets(name, characters) VALUES
 
 INSERT OR IGNORE INTO schema_migrations(version, name)
 VALUES (3, 'train_data_configs_characters'), (4, 'character_sets');
+
+INSERT OR IGNORE INTO schema_migrations(version, name)
+VALUES (6, 'train_data_configs_preprocess_crop');
+
+-- Training 페이지에서 (캡차, 리비전)별로 마지막에 쓴 학습 파라미터를 기억한다.
+-- 대상을 바꾸면 저장된 값을 불러와 폼을 채운다. 값은 services/train.PARAM_SPEC 키 +
+-- loss_type/use_amp 를 담은 JSON 이다 (shuffle 은 되돌릴 수 없는 1회성 동작이라 제외).
+-- 코어 설정(train_data_configs)이 아니라 UI 편의값이라 타입 컬럼 대신 JSON 으로 둔다.
+CREATE TABLE IF NOT EXISTS train_run_params (
+	captcha_id TEXT NOT NULL,
+	rev INTEGER NOT NULL DEFAULT 0,
+	params TEXT NOT NULL DEFAULT '{}',
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	PRIMARY KEY (captcha_id, rev),
+	FOREIGN KEY (captcha_id) REFERENCES captcha_types(captcha_id) ON DELETE CASCADE
+);
+
+INSERT OR IGNORE INTO schema_migrations(version, name)
+VALUES (7, 'train_run_params');
