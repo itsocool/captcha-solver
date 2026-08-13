@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from web.core.db import get_service_config
@@ -8,6 +8,7 @@ from web.core.version import get_app_version
 from web.services.batch_predict import list_targets
 from web.services.captcha import list_captcha_types, model_status
 from web.services.data_source import MAX_COUNT, list_targets as data_source_targets
+from web.services.downloads import list_downloads, resolve_download
 from web.services.train import LOSS_TYPES, PARAM_SPEC, list_targets as train_targets
 
 
@@ -88,5 +89,24 @@ def create_router(templates: Jinja2Templates) -> APIRouter:
 				"app_version": get_app_version(),
 			},
 		)
+
+	@router.get("/download", response_class=HTMLResponse)
+	async def download(request: Request):
+		return templates.TemplateResponse(
+			request=request,
+			name="download.html",
+			context={
+				"active_nav": "download",
+				"downloads": list_downloads(),
+				"app_version": get_app_version(),
+			},
+		)
+
+	@router.get("/download/{key}")
+	async def download_file(key: str):
+		path = resolve_download(key)
+		if path is None:
+			raise HTTPException(status_code=404, detail=f"'{key}' 다운로드 파일이 없습니다")
+		return FileResponse(path, filename=path.name)
 
 	return router

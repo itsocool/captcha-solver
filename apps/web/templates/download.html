@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}Download · Hyper Captcha Solver{% endblock %}
+{% block page_title %}Download{% endblock %}
+
+{% block content %}
+<div class="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+	{% for item in downloads %}
+	<div class="rounded-2xl border bg-card p-6 {{ 'border-border' if item.available else 'border-dashed border-border opacity-70' }}">
+		<div class="flex items-start justify-between gap-3">
+			<div class="flex items-center gap-3">
+				<span class="flex size-11 items-center justify-center rounded-xl {{ 'bg-brand-soft text-brand' if item.available else 'bg-background text-muted-foreground' }}">
+					<svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="M12 3v12"></path>
+						<path d="m7 10 5 5 5-5"></path>
+						<path d="M4 19.5h16"></path>
+					</svg>
+				</span>
+				<div>
+					<p class="font-semibold">{{ item.name }}</p>
+					<p class="text-xs text-muted-foreground">{{ item.subtitle }}</p>
+				</div>
+			</div>
+			{% if item.available %}
+			<span class="rounded-full bg-success-soft px-2.5 py-1 text-xs font-medium text-success">Available</span>
+			{% elif item.key != "web" %}
+			<span class="rounded-full bg-warning-soft px-2.5 py-1 text-xs font-medium text-warning">Not built</span>
+			{% endif %}
+		</div>
+
+		{% if item.available %}
+		<dl class="mt-5 space-y-2.5 text-sm">
+			<div class="flex justify-between gap-3">
+				<dt class="text-muted-foreground">파일</dt>
+				<dd class="font-mono font-medium break-all text-right">{{ item.filename }}</dd>
+			</div>
+			<div class="flex justify-between gap-3">
+				<dt class="text-muted-foreground">크기</dt>
+				<dd class="font-medium">{{ item.size_mb }} MB</dd>
+			</div>
+			<div class="flex justify-between gap-3">
+				<dt class="text-muted-foreground">빌드 시각</dt>
+				<dd class="font-medium">{{ item.mtime }}</dd>
+			</div>
+		</dl>
+		<a
+			href="/download/{{ item.key }}"
+			class="mt-5 flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-brand text-sm font-medium text-white transition-colors hover:bg-brand-hover"
+		>
+			<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+				<path d="M12 3v12"></path>
+				<path d="m7 10 5 5 5-5"></path>
+				<path d="M4 19.5h16"></path>
+			</svg>
+			다운로드
+		</a>
+		{% elif item.key == "web" %}
+		<p class="mt-5 rounded-lg bg-background p-3 text-xs text-muted-foreground">
+			다운로드 파일 없음. <code class="font-mono">docker compose up --build -d</code> 로 배포합니다.
+		</p>
+		{% else %}
+		<p class="mt-5 rounded-lg bg-background p-3 text-xs text-muted-foreground">
+			아직 빌드된 산출물이 없습니다.
+		</p>
+		{% endif %}
+	</div>
+	{% endfor %}
+</div>
+{% endblock %}
