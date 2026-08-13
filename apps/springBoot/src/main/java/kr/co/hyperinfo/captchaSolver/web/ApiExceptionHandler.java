@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import kr.co.hyperinfo.captchaSolver.service.CaptchaService;
 
 /** FastAPI 의 {@code HTTPException} 과 같은 {@code {"detail": ...}} 형태로 맞춘다. */
-@RestControllerAdvice(assignableTypes = { PredictController.class, SystemController.class })
+@RestControllerAdvice(assignableTypes = PredictController.class)
 public class ApiExceptionHandler {
 
 	@ExceptionHandler(CaptchaService.BadRequestException.class)

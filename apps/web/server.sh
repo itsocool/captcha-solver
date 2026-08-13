@@ -4,7 +4,7 @@
 #
 #   ./server.sh start|stop|restart|status|logs
 #
-# 형제 스크립트 apps/springBoot/devserver.sh 와 같은 구조다 (PID 파일 + 프로세스 그룹 +
+# 형제 스크립트 apps/springBoot/server.sh 와 같은 구조다 (PID 파일 + 프로세스 그룹 +
 # /health 기반 기동 확인 + 포트 안전망). 다른 점은 두 가지.
 #   - core/config.py 의 db_path 등이 저장소 루트 기준 상대경로라 루트에서 띄운다.
 #   - uvicorn --reload 는 워커를 자식으로 fork 하므로 그룹 단위 시그널이 특히 중요하다.

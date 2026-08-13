@@ -5,10 +5,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,17 +40,9 @@ import kr.co.hyperinfo.captchaSolver.ml.Preprocessor;
 public class CaptchaService {
 
 	private static final Logger log = LoggerFactory.getLogger(CaptchaService.class);
-	private static final DateTimeFormatter MTIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
-			.withZone(ZoneId.systemDefault());
 
 	/** 추론에 필요한 것 전부. {@code session} 이 null 이면 아직 로드되지 않은 상태. */
 	private record Loaded(ModelMeta meta, Path onnxPath, OrtSession session) {
-	}
-
-	/** {@code /status} 페이지 한 줄. */
-	public record ModelStatus(String captchaId, String name, boolean loaded, boolean serviced, String state,
-			String device, int rev, String imageSize, int labelLength, int charCount,
-			String modelPath, Double modelSizeMb, String modelMtime) {
 	}
 
 	public record Prediction(String prediction, double confidence) {
@@ -80,7 +69,6 @@ public class CaptchaService {
 	/** captcha_id -> 메타데이터. 모델 디렉터리 스캔 결과이며 순서를 유지한다. */
 	private final Map<String, ModelMeta> registry = new LinkedHashMap<>();
 	private final Map<String, Loaded> loaded = new ConcurrentHashMap<>();
-	private final Map<String, String> preloadStatus = new ConcurrentHashMap<>();
 
 	public CaptchaService(CaptchaProperties properties, ServiceConfigRepository serviceConfig, ObjectMapper objectMapper) {
 		this.properties = properties;
@@ -122,19 +110,17 @@ public class CaptchaService {
 
 		for (String captchaId : config.serviced()) {
 			if (!registry.containsKey(captchaId)) {
-				preloadStatus.put(captchaId, "skipped (모델 없음)");
-				log.info("[preload] {}: {}", captchaId, preloadStatus.get(captchaId));
+				log.info("[preload] {}: skipped (모델 없음)", captchaId);
 				continue;
 			}
 			try {
 				Loaded model = load(captchaId);
 				warmUp(model);
-				preloadStatus.put(captchaId, "loaded");
+				log.info("[preload] {}: loaded", captchaId);
 			} catch (Exception e) {
 				loaded.remove(captchaId);
-				preloadStatus.put(captchaId, "skipped (%s: %s)".formatted(e.getClass().getSimpleName(), e.getMessage()));
+				log.info("[preload] {}: skipped ({}: {})", captchaId, e.getClass().getSimpleName(), e.getMessage());
 			}
-			log.info("[preload] {}: {}", captchaId, preloadStatus.get(captchaId));
 		}
 	}
 
@@ -153,9 +139,9 @@ public class CaptchaService {
 		if (meta == null) {
 			throw new BadRequestException("등록되지 않은 captcha_id: " + captchaId);
 		}
-		Path onnx = properties.modelsDirPath().resolve(captchaId + ".onnx");
+		Path onnx = properties.modelsDirPath().resolve(captchaId + ".ort");
 		if (!Files.exists(onnx)) {
-			throw new IllegalStateException("ONNX 파일이 없습니다: " + onnx);
+			throw new IllegalStateException("ORT 파일이 없습니다: " + onnx);
 		}
 
 		OrtSession.SessionOptions options = new OrtSession.SessionOptions();
@@ -193,57 +179,8 @@ public class CaptchaService {
 		return out;
 	}
 
-	public List<String> loadedModelIds() {
-		List<String> ids = new ArrayList<>(loaded.keySet());
-		Collections.sort(ids);
-		return ids;
-	}
-
 	public boolean isServiced(String captchaId) {
 		return serviceConfig.get().serviced().contains(captchaId);
-	}
-
-	/** ONNX Runtime Java 는 CPU 실행 공급자만 쓴다. */
-	public String device() {
-		return "cpu";
-	}
-
-	public List<ModelStatus> modelStatus() {
-		List<String> serviced = serviceConfig.get().serviced();
-		List<ModelStatus> rows = new ArrayList<>();
-
-		registry.forEach((captchaId, meta) -> {
-			boolean isLoaded = loaded.containsKey(captchaId);
-			Path onnx = properties.modelsDirPath().resolve(captchaId + ".onnx");
-
-			Double sizeMb = null;
-			String mtime = null;
-			try {
-				if (Files.exists(onnx)) {
-					sizeMb = Math.round(Files.size(onnx) / 1024.0 / 1024.0 * 10) / 10.0;
-					mtime = MTIME.format(Files.getLastModifiedTime(onnx).toInstant());
-				}
-			} catch (IOException e) {
-				log.debug("모델 파일 정보 조회 실패 {}: {}", onnx, e.getMessage());
-			}
-
-			rows.add(new ModelStatus(
-					captchaId,
-					meta.name(),
-					isLoaded,
-					serviced.contains(captchaId),
-					preloadStatus.getOrDefault(captchaId, serviced.contains(captchaId) ? "not loaded" : "not serviced"),
-					isLoaded ? device() : "-",
-					meta.rev(),
-					meta.imageWidth() + "×" + meta.imageHeight(),
-					meta.labelLength(),
-					meta.characters().length(),
-					onnx.toString(),
-					sizeMb,
-					mtime));
-		});
-
-		return rows;
 	}
 
 	// --- 추론 -------------------------------------------------------------

@@ -37,5 +37,15 @@ boot_out.log
 boot_err.log
 boot.pid
 
-### devserver.sh 상태 파일 ###
+### server.sh 상태 파일 ###
 .dev/
+
+### 애플리케이션 로그 (logging.file.name) ###
+# 디렉터리 자체는 .gitkeep 으로 커밋해 둔다 — 없으면 docker compose 가 첫 기동 시
+# root 소유로 자동 생성해서, non-root(ubuntu) 컨테이너가 로그를 못 쓴다.
+logs/*
+!logs/.gitkeep
+
+### mvn 빌드가 생성하는 모델·DB 산출물 (tools/SyncResource.java, pom.xml 의 sync-resource 실행) ###
+models/
+db/

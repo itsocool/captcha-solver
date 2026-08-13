@@ -2,7 +2,7 @@
 #
 # captchaSolver Spring Boot 개발서버 관리
 #
-#   ./devserver.sh start|stop|restart|status
+#   ./server.sh start|stop|restart|status
 #
 # application.yml 의 모델·DB 경로가 상대경로(../../models 등)라서 이 스크립트는
 # 항상 자기 위치(apps/springBoot)로 이동한 뒤 maven 을 띄운다.
@@ -24,7 +24,7 @@ PORT="${PORT:-5000}"
 START_TIMEOUT="${START_TIMEOUT:-120}"
 STOP_TIMEOUT="${STOP_TIMEOUT:-20}"
 MVN="${MVN:-mvn}"
-HEALTH_URL="http://127.0.0.1:${PORT}/health"
+HEALTH_URL="http://127.0.0.1:${PORT}/"
 
 log()  { printf '%s\n' "$*"; }
 warn() { printf '%s\n' "$*" >&2; }
@@ -67,12 +67,8 @@ port_listener_list() {
     printf '%s' "${pids% }"
 }
 
-health_body() {
-    curl -fsS -m 3 "$HEALTH_URL" 2>/dev/null
-}
-
 health_ok() {
-    health_body >/dev/null
+    curl -fsS -m 3 -o /dev/null "$HEALTH_URL" 2>/dev/null
 }
 
 # 죽은 프로세스가 남긴 PID 파일 정리.
@@ -128,7 +124,7 @@ cmd_start() {
     [[ -n $pgid ]] || pgid="$leader"
     printf '%s\n' "$pgid" > "$PID_FILE"
 
-    # "떴다" 의 근거는 로그 문자열이 아니라 /health 실제 응답이다.
+    # "떴다" 의 근거는 로그 문자열이 아니라 루트(/) 실제 응답이다.
     local waited=0
     while (( waited < START_TIMEOUT )); do
         if health_ok; then
@@ -214,7 +210,7 @@ cmd_restart() {
 }
 
 cmd_status() {
-    local pgid listeners body
+    local pgid listeners
     pgid="$(read_pgid)"
     listeners="$(port_listener_list)"
 
@@ -232,8 +228,8 @@ cmd_status() {
         log "포트      ${PORT} 사용 안 함"
     fi
 
-    if body="$(health_body)"; then
-        log "health    정상 — ${body}"
+    if health_ok; then
+        log "health    정상 (${HEALTH_URL})"
     else
         log "health    응답 없음 (${HEALTH_URL})"
     fi
@@ -249,7 +245,7 @@ usage() {
     cat <<EOF
 사용법: $(basename "$0") {start|stop|restart|status}
 
-  start     개발서버를 백그라운드로 띄우고 /health 응답까지 기다린다
+  start     개발서버를 백그라운드로 띄우고 루트(/) 응답까지 기다린다
   stop      프로세스 그룹 전체를 종료하고 포트를 비운다
   restart   stop 후 start
   status    프로세스 / 포트 / health 를 각각 확인한다

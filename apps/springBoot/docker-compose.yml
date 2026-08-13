@@ -1,0 +1,19 @@
+services:
+  springboot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: hyper-captcha-resolver-springboot:latest
+    container_name: hyper-captcha-resolver-springboot
+    ports:
+      - "8080:8080"
+    volumes:
+      # 모델·DB 는 이제 이미지 빌드 시점에 apps/springBoot/{models,db}/ 를 구워 넣는다
+      # (Dockerfile 참고) — 볼륨 마운트 아님. 바꾸려면 `mvn generate-resources` 로 다시
+      # 채우고 재빌드해야 한다.
+      # 애플리케이션 로그(logging.file.name). 컨테이너를 지워도 로그가 남는다.
+      - ./logs:/app/logs
+    restart: unless-stopped
+networks:
+  default:
+    name: hyper-captcha-resolver-springboot-net

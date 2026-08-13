@@ -41,3 +41,7 @@ captcha:
 logging:
   level:
     kr.co.hyperinfo.captchaSolver: INFO
+  file:
+    # 상대경로라 실행 위치(로컬은 apps/springBoot, 컨테이너는 /app) 기준으로 logs/ 아래 쌓인다.
+    # 롤링(10MB · 7일치)은 Spring Boot 기본 logback-base.xml 이 알아서 한다.
+    name: logs/captchaSolver.log

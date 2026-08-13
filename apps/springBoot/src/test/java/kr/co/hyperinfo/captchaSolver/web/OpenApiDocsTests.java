@@ -34,7 +34,7 @@ class OpenApiDocsTests {
 		var json = openApi();
 		json.extractingPath("$.info.title").isEqualTo("Captcha Solver");
 		json.extractingPath("$.paths").asMap().containsKeys(
-				"/api/v1/predictImage", "/api/v1/predictJson", "/health", "/ping", "/version");
+				"/api/v1/predictImage", "/api/v1/predictJson");
 	}
 
 	/** 런타임은 Jackson 3, 문서는 swagger 의 Jackson 2 라 네이밍이 갈리기 쉽다. */

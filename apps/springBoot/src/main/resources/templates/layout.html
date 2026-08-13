@@ -85,11 +85,9 @@
 				</div>
 
 				<p class="mt-6 mb-3 text-xs font-medium tracking-wider text-muted-foreground uppercase">Menu</p>
-				<nav class="flex flex-col gap-1 text-sm font-medium"
-					th:with="navActive='flex items-center gap-3 rounded-lg bg-brand-soft px-3 py-2.5 text-brand',
-					         navIdle='flex items-center gap-3 rounded-lg px-3 py-2.5 text-muted-foreground hover:bg-background hover:text-foreground'">
-					<a href="/" th:class="${activeNav == 'predict'} ? ${navActive} : ${navIdle}"
-						th:attrappend="aria-current=${activeNav == 'predict'} ? 'page' : null">
+				<nav class="flex flex-col gap-1 text-sm font-medium">
+					<a href="/" aria-current="page"
+						class="flex items-center gap-3 rounded-lg bg-brand-soft px-3 py-2.5 text-brand">
 						<svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 							<rect x="3" y="3" width="18" height="18" rx="2"></rect>
 							<path d="m3 15 5-5 4 4 3-3 6 6"></path>
@@ -97,14 +95,7 @@
 						</svg>
 						Captcha Solver
 					</a>
-					<a href="/status" th:class="${activeNav == 'status'} ? ${navActive} : ${navIdle}"
-						th:attrappend="aria-current=${activeNav == 'status'} ? 'page' : null">
-						<svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-							<path d="M3 12h4l2 6 4-14 2 8h6"></path>
-						</svg>
-						Model Status
-					</a>
-					<a href="/docs" th:class="${navIdle}">
+					<a href="/docs" class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-muted-foreground hover:bg-background hover:text-foreground">
 						<svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 							<path d="M4 19.5V5a2 2 0 0 1 2-2h13v18H6.5A2.5 2.5 0 0 1 4 19.5Z"></path>
 							<path d="M8 7h7M8 11h7"></path>

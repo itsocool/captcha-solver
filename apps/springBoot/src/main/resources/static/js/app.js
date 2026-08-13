@@ -63,7 +63,12 @@ form.addEventListener("submit", async (event) => {
 	const started = performance.now();
 	try {
 		const response = await fetch(form.action, {method: "POST", body: new FormData(form)});
-		showResult(await response.json(), performance.now() - started);
+		const payload = await response.json();
+		if (!response.ok) {
+			result.textContent = payload.detail ?? JSON.stringify(payload, null, 2);
+			return;
+		}
+		showResult(payload, performance.now() - started);
 	} catch (error) {
 		result.textContent = String(error);
 	} finally {

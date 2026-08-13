@@ -88,6 +88,35 @@
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
 			</plugin>
+			<!-- captcha_data/<id>/<rev>/model/ 의 최신 리비전 model.ort · model.meta.json 을
+			     <id>.ort · <id>.meta.json 으로, 저장소 루트 db/ 를 그대로 models/·db/(둘 다
+			     pom.xml 과 같은 위치) 에 복사한다 (tools/SyncResource.java). target/ 이 아니라서
+			     mvn clean 으로도 안 지워진다 — 증분 복사(크기·수정시각 비교)가 매 clean 마다
+			     무의미해지지 않게 하려는 것. -->
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>exec-maven-plugin</artifactId>
+				<version>3.5.0</version>
+				<executions>
+					<execution>
+						<id>sync-resource</id>
+						<phase>generate-resources</phase>
+						<goals>
+							<goal>exec</goal>
+						</goals>
+						<configuration>
+							<executable>java</executable>
+							<arguments>
+								<argument>${project.basedir}/tools/SyncResource.java</argument>
+								<argument>${project.basedir}/../../captcha_data</argument>
+								<argument>${project.basedir}/models</argument>
+								<argument>${project.basedir}/../../db</argument>
+								<argument>${project.basedir}/db</argument>
+							</arguments>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
