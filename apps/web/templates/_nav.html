@@ -35,12 +35,6 @@
 	<svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 		<path d="M3 12h4l2 6 4-14 2 8h6"></path>
 	</svg>
-	{%- elif name == "download" -%}
-	<svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-		<path d="M12 3v12"></path>
-		<path d="m7 10 5 5 5-5"></path>
-		<path d="M4 19.5h16"></path>
-	</svg>
 	{%- endif -%}
 {% endmacro %}
 
@@ -50,8 +44,7 @@
 	{"href": "/train", "key": "train", "label": "Training", "icon": "train"},
 	{"href": "/data-source", "key": "data_source", "label": "Data Source", "icon": "source"},
 	{"href": "/docs", "key": "docs", "label": "API Docs", "icon": "docs", "external": true},
-	{"href": "/status", "key": "status", "label": "Model Status", "icon": "status"},
-	{"href": "/download", "key": "download", "label": "Download", "icon": "download"}
+	{"href": "/status", "key": "status", "label": "Model Status", "icon": "status"}
 ] %}
 
 {% set nav_active = "flex items-center gap-3 rounded-lg bg-brand-soft px-3 py-2.5 text-brand" %}
