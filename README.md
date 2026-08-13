@@ -185,6 +185,18 @@ Compose는 호스트 `5001`을 컨테이너 `8000`에 연결하고 `captcha_data
 
 컨테이너의 SQLite(`/app/db/captchaSolver.sqlite3`)는 기동할 때마다 `schema.sql`과 시드로 새로 만들어지는 휘발성 데이터입니다. 런타임에 바꾼 `service_captchas` 값을 유지하려면 `DB_PATH`를 이미지 밖 경로로 옮기고 그 경로에 볼륨을 붙이세요(`docker-compose.yml` 주석 참고).
 
+## 배포 산출물
+
+`packages/`에 앱별로 미리 빌드된 설치 파일이 있습니다. 저장소에 커밋돼 있어 별도 빌드 없이 바로 받아 쓸 수 있습니다.
+
+| 앱 | 경로 | 내용 |
+|---|---|---|
+| Rust CLI | `packages/cli/` | `captcha-cli-<version>-win64-setup.exe`, `config.json` |
+| Windows Console App | `packages/WinConsoleApp/` | `captcha-solver-<version>-win64.exe`, `config.json` |
+| Chrome Extension (ipTIME) | `packages/` | `iptime-captcha-<version>.zip` |
+
+새 버전으로 갱신하려면 각 앱의 빌드 스크립트(`apps/cli/pack.ps1`, `apps/WinConsoleApp/pack.ps1`)를 다시 실행하세요.
+
 ## 테스트와 검증
 
 ```bash
