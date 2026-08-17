@@ -19,7 +19,10 @@ ENV UV_COMPILE_BYTECODE=1 \
 COPY pyproject.toml uv.lock README.md ./
 COPY packages/python_3.12/hyperCaptcha/pyproject.toml packages/python_3.12/hyperCaptcha/README.md \
      ./packages/python_3.12/hyperCaptcha/
-RUN uv sync --frozen --no-dev --no-install-workspace
+# --mount=type=cache: uv 휠 캐시가 레이어에 구워지면 그만큼 이미지가 커진다.
+# 빌드 캐시로 빼면 재빌드는 빠르면서 이미지에는 남지 않는다.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-install-workspace
 
 # COPY . . 대신 실행에 필요한 것만 복사한다. .dockerignore 가 images/·*.sqlite3·.env 를
 # 이미 걸러내지만, 여기서 대상을 좁혀 불필요한 파일이 이미지에 들어가지 않게 한다.
@@ -31,7 +34,8 @@ COPY apps/web ./apps/web
 COPY packages/python_3.12/hyperCaptcha/src ./packages/python_3.12/hyperCaptcha/src
 COPY db ./db
 COPY captcha_data ./captcha_data
-RUN uv sync --frozen --no-dev
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev
 
 EXPOSE 8000
 

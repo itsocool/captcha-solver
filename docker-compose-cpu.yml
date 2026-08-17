@@ -1,17 +1,16 @@
+# CPU 서빙용. docker-compose.yml 과 다른 점은 build.dockerfile / image 태그 / 이름뿐이다.
+#   docker compose -f docker-compose-cpu.yml up -d --build
 services:
   web:
     build:
       context: .
-      dockerfile: Dockerfile
-    image: captcha-solver:latest
-    container_name: captcha-solver-web
-    # 호스트 30008 -> 컨테이너 8000 (fastapi dev). 개발 서버라 30008 로 노출한다.
+      dockerfile: Dockerfile.cpu
+    image: captcha-solver:cpu
+    container_name: captcha-solver-web-cpu
+    # Dockerfile.cpu 의 CMD 는 fastapi run(리로드 없음)이라 개발 서버가 아니다.
+    # GPU 쪽과 동시에 띄울 일이 있으면 여기 호스트 포트를 바꾼다.
     ports:
       - "30008:8000"
-    # 개발 서버 자동 리로드를 실제로 쓰려면 소스를 마운트한다(.venv 는 가리지 않게 소스만):
-    #   volumes:
-    #     - ./apps:/app/apps
-    #     - ./packages:/app/packages
     # 호스트 .env 를 런타임에 주입한다. 있으면 그 값이 쓰이고, 없으면 컨테이너는
     # apps/web/core/config.py 의 필드 기본값으로 뜬다 (.env 는 gitignore 대상이라
     # 없을 수 있으므로 required: false — Compose v2.24+ 필요).
@@ -36,4 +35,4 @@ services:
     restart: unless-stopped
 networks:
   default:
-    name: captcha-solver-net
+    name: captcha-solver-cpu-net

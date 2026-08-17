@@ -1,0 +1,62 @@
+# CPU 전용 서빙 이미지. Dockerfile(기본) 과 다른 점은 두 가지뿐이다.
+#   1. torch/torchvision 을 같은 버전의 +cpu 휠로 바꿔 끼워 nvidia-* CUDA 런타임을 뺀다
+#   2. CMD 가 fastapi dev(리로드) 대신 fastapi run(서빙)
+# 그 외 레이어 구성·복사 대상·설정 주입 규칙은 Dockerfile 과 동일하다.
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
+WORKDIR /app
+
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    PATH="/app/.venv/bin:$PATH"
+
+# 런타임 설정은 Settings(pydantic-settings) 가 읽는다. 이미지에 ENV 기본값을 박으면
+# 나중에 넣어준 .env 를 덮어써 버리므로 여기서는 아무 값도 고정하지 않는다.
+# (.env 는 .dockerignore 로 막아 굽지 않고, compose 의 env_file 로 런타임 주입한다.)
+
+# 의존성 먼저 설치해 레이어 캐시를 살린다 (uv.lock이 단일 소스)
+# 워크스페이스 멤버(hypercaptcha)의 매니페스트도 있어야 lock 검증이 통과한다.
+COPY pyproject.toml uv.lock README.md ./
+COPY packages/python_3.12/hyperCaptcha/pyproject.toml packages/python_3.12/hyperCaptcha/README.md \
+     ./packages/python_3.12/hyperCaptcha/
+# uv.lock 의 torch 는 PyPI 휠이라 nvidia-* CUDA 런타임(약 3GB)을 딸려 온다. lock 자체는
+# 건드리지 않고(나머지 패키지 버전은 GPU 이미지와 동일하게 고정) 설치 후 같은 버전의
+# +cpu 휠로 바꿔 끼운 뒤 고아가 된 nvidia-*/triton 을 지운다.
+# 세 단계를 한 RUN 으로 묶어야 CUDA 파일이 레이어에 남지 않는다.
+# torch/torchvision 핀은 uv.lock 의 버전과 일치해야 한다 (lock 을 갱신하면 여기도 같이).
+# --mount=type=cache: uv 휠 캐시(약 5.7GB)가 레이어에 구워지면 이미지가 그만큼 커진다.
+#                     빌드 캐시로 빼면 재빌드는 빠르면서 이미지에는 남지 않는다.
+# --no-config: pyproject.toml 의 [[tool.uv.index]] (cu130) 가 --index-url 보다 우선해서
+#              그냥 두면 +cu130 휠이 다시 깔린다. 설정 탐색을 끄고 CPU 인덱스만 쓴다.
+#              그래서 venv 도 자동 탐색에 기대지 않고 --python 으로 직접 지정한다.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-install-workspace \
+ && uv pip install --no-config --python /app/.venv/bin/python \
+      --index-url https://download.pytorch.org/whl/cpu \
+      --reinstall-package torch --reinstall-package torchvision \
+      torch==2.12.0 torchvision==0.27.0 \
+ && uv pip freeze --python /app/.venv/bin/python \
+      | grep -E '^(nvidia[-_]|triton==)' | cut -d= -f1 \
+      | xargs -r uv pip uninstall --python /app/.venv/bin/python
+
+# COPY . . 대신 실행에 필요한 것만 복사한다 (Dockerfile 과 동일한 목록).
+#   apps/web                     : FastAPI 앱(라우터·서비스·templates·static·favicon)
+#   packages/.../hyperCaptcha/src: 워크스페이스 패키지(추론·전처리) 소스
+#   db                           : schema.sql·seed (기동 시 init_db 가 읽는다)
+#   captcha_data                 : 모델(onnx/ort/pth/meta). compose 는 볼륨으로 덮어쓴다.
+COPY apps/web ./apps/web
+COPY packages/python_3.12/hyperCaptcha/src ./packages/python_3.12/hyperCaptcha/src
+COPY db ./db
+COPY captcha_data ./captcha_data
+# 여기서 uv sync 를 다시 돌리면 lock 대로 +cpu 휠을 PyPI(CUDA) 휠로 되돌린다.
+# 로컬 패키지 두 개만 의존성 해석 없이 설치해 위에서 맞춰둔 CPU 환경을 유지한다.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --no-deps . ./packages/python_3.12/hyperCaptcha
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+
+# 서빙용이라 리로드 없는 fastapi run 을 쓴다. 개발 서버가 필요하면 Dockerfile 을 쓴다.
+CMD ["fastapi", "run", "apps/web/app.py", "--host", "0.0.0.0", "--port", "8000"]
