@@ -1,0 +1,26 @@
+# LFS 객체가 서버에 실제로 올라갔는지 검사한다.
+#
+# 이 저장소는 한 번 사고가 났다: pre-push 훅이 없는 클론에서 푸시하면 포인터
+# 커밋만 올라가고 바이너리는 조용히 누락된다. 로컬에서는 파일이 멀쩡해 보여서
+# 다른 사람이 클론하기 전까지 아무도 모른다.
+#
+# checkout 에 lfs: true 를 주면 잡히긴 하지만 실행마다 실물을 전부 내려받아
+# LFS 대역폭 할당량(Free/Pro 월 10 GiB)을 갉아먹는다. 현재 객체가 339MB 라
+# 30회면 한 달치가 끝난다. 그래서 포인터만 받아두고 fetch --dry-run 으로
+# 서버에 존재 여부만 묻는다 — 전송량 0, 누락이 있으면 exit 2.
+name: lfs-integrity
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      # lfs 는 기본값(false). 포인터 파일만 받는다.
+      - uses: actions/checkout@v4
+
+      - name: LFS 객체가 서버에 있는지 확인
+        run: git lfs fetch --dry-run origin ${{ github.sha }}
