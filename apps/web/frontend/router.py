@@ -2,6 +2,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from web.core.config import get_settings
 from web.core.db import get_service_config
 from web.core.device import device_options
 from web.core.version import get_app_version
@@ -26,7 +27,7 @@ def create_router(templates: Jinja2Templates) -> APIRouter:
 				"captcha_types": list_captcha_types(),
 				"device_options": device_options(),
 				"app_version": get_app_version(),
-				"predict_image_url": "/api/v1/predictImage",
+				"predict_image_url": f"{get_settings().web_context_path}/api/v1/predictImage",
 			},
 		)
 

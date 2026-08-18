@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,6 +22,9 @@ class Settings(BaseSettings):
 	# 표시용 앱 버전. .env 의 APP_VERSION 으로 이미지 재빌드 없이 올린다(비면 pyproject 폴백).
 	app_version: str = ""
 	default_captcha_id: str = "supreme_court"
+	# 리버스 프록시 뒤에서 하위 경로(예: /captcha)에 물릴 때의 접두사. FastAPI root_path 와
+	# 템플릿/JS 의 링크·fetch 경로에 붙는다. 비면 루트(/)에 뜬 것으로 본다.
+	web_context_path: str = ""
 	web_host: str = "0.0.0.0"
 	web_port: int = 5000
 	web_debug: bool = False
@@ -29,6 +33,13 @@ class Settings(BaseSettings):
 	database_url: str = "sqlite:///./db/captchaSolver.sqlite3"
 	db_schema_path: str = "./db/schema.sql"
 	db_seed_path: str = "./db/seed_captcha_types.sql"
+
+	@field_validator("web_context_path")
+	@classmethod
+	def _normalize_context_path(cls, value: str) -> str:
+		# "captcha", "/captcha", "/captcha/" 어느 쪽으로 넣어도 "/captcha" 로 맞춘다.
+		value = value.strip().strip("/")
+		return f"/{value}" if value else ""
 
 	@property
 	def template_dir(self) -> Path:

@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.types import ASGIApp, Receive, Scope, Send
 from fastapi.templating import Jinja2Templates
 
 from web.api.system import router as system_router
@@ -23,15 +24,40 @@ async def lifespan(fastapi_app: FastAPI):
 	yield
 
 
+class PrependRootPath:
+	"""프록시가 접두사(root_path)를 떼고 넘기면 path 앞에 도로 붙인다.
+
+	ASGI 스펙은 path 가 root_path 를 포함한다고 본다. 라우트 매칭은 접두사가 없어도
+	알아서 넘어가지만 StaticFiles 같은 Mount 는 하위 root_path(/captcha/static)를 못
+	잘라내 404 가 난다. 이미 붙어 있으면(안 떼는 프록시) 손대지 않는다.
+	"""
+
+	def __init__(self, app: ASGIApp, root_path: str):
+		self.app = app
+		self.root_path = root_path
+
+	async def __call__(self, scope: Scope, receive: Receive, send: Send):
+		if self.root_path and scope["type"] in ("http", "websocket"):
+			path = scope["path"]
+			if path != self.root_path and not path.startswith(self.root_path + "/"):
+				scope = {**scope, "path": self.root_path + path,
+				         "raw_path": self.root_path.encode() + scope.get("raw_path", path.encode())}
+		await self.app(scope, receive, send)
+
+
 def create_app() -> FastAPI:
 	settings = get_settings()
-	fastapi_app = FastAPI(title=settings.app_title, lifespan=lifespan)
+	# root_path: 프록시가 접두사를 떼든 말든 라우팅되고, /docs 가 접두사 붙은 openapi.json 을 찾는다.
+	fastapi_app = FastAPI(title=settings.app_title, root_path=settings.web_context_path, lifespan=lifespan)
+	fastapi_app.add_middleware(PrependRootPath, root_path=settings.web_context_path)
 	fastapi_app.mount(
 		"/static",
 		StaticFiles(directory=str(settings.static_dir)),
 		name="static",
 	)
 	templates = Jinja2Templates(directory=str(settings.template_dir))
+	# 템플릿의 링크·정적 파일 경로는 절대 경로라 root_path 가 자동으로 안 붙는다. 전역으로 넘긴다.
+	templates.env.globals["context_path"] = settings.web_context_path
 	fastapi_app.include_router(create_frontend_router(templates))
 	fastapi_app.include_router(system_router)
 	fastapi_app.include_router(api_v1_router, prefix="/api/v1")

@@ -1,3 +1,6 @@
+// 프록시 하위 경로 접두사(.env WEB_CONTEXT_PATH). base.html 이 <html data-context-path> 로 내려준다.
+const CONTEXT_PATH = document.documentElement.dataset.contextPath || "";
+
 const targetSelect = document.querySelector("#target");
 const deviceSelect = document.querySelector("#device");
 const runButton = document.querySelector("#run");
@@ -95,7 +98,7 @@ function imageUrl(item) {
 		rev: String(context.rev),
 		name: item.image,
 	});
-	return `/api/v1/batch/image?${params}`;
+	return `${CONTEXT_PATH}/api/v1/batch/image?${params}`;
 }
 
 // 표 '파일' 링크를 클릭하면 원본 이미지를 팝업(라이트박스)으로 띄운다.
@@ -276,7 +279,7 @@ runButton.addEventListener("click", () => {
 		rev,
 		device: deviceSelect.value,
 	});
-	source = new EventSource(`/api/v1/batch/stream?${params}`);
+	source = new EventSource(`${CONTEXT_PATH}/api/v1/batch/stream?${params}`);
 
 	source.addEventListener("start", (event) => {
 		const payload = JSON.parse(event.data);

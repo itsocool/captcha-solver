@@ -1,3 +1,6 @@
+// 프록시 하위 경로 접두사(.env WEB_CONTEXT_PATH). base.html 이 <html data-context-path> 로 내려준다.
+const CONTEXT_PATH = document.documentElement.dataset.contextPath || "";
+
 const targetSelect = document.querySelector("#target");
 const deviceSelect = document.querySelector("#device");
 const runButton = document.querySelector("#run");
@@ -100,7 +103,7 @@ async function loadParamsForTarget() {
 	const [captchaId, rev] = requested.split(":");
 	try {
 		const res = await fetch(
-			`/api/v1/train/params?captcha_id=${encodeURIComponent(captchaId)}&rev=${encodeURIComponent(rev)}`,
+			`${CONTEXT_PATH}/api/v1/train/params?captcha_id=${encodeURIComponent(captchaId)}&rev=${encodeURIComponent(rev)}`,
 		);
 		if (!res.ok || targetSelect.value !== requested) {
 			return; // 실패했거나 그새 대상이 바뀌었으면 버린다 (기본값/새 대상 유지)
@@ -233,7 +236,7 @@ function attachStream() {
 	reset();
 	context = {totalEpochs: 0};
 	setRunning(true);
-	source = new EventSource(`/api/v1/train/stream`);
+	source = new EventSource(`${CONTEXT_PATH}/api/v1/train/stream`);
 
 	source.addEventListener("start", (event) => {
 		const payload = JSON.parse(event.data);
@@ -342,7 +345,7 @@ async function startTraining(captchaId, rev) {
 		...collectParams(),
 	});
 	try {
-		const res = await fetch(`/api/v1/train/start?${query}`, {method: "POST"});
+		const res = await fetch(`${CONTEXT_PATH}/api/v1/train/start?${query}`, {method: "POST"});
 		if (!res.ok) {
 			const detail = await res.json().catch(() => ({}));
 			setRunning(false);
@@ -392,7 +395,7 @@ stopButton.addEventListener("click", () => {
 			? "중단 요청됨 · 현재 에폭을 마치고 best 모델을 저장합니다"
 			: "중단 요청됨 · 현재 에폭을 마치고 저장 없이 멈춥니다";
 		try {
-			await fetch(`/api/v1/train/stop?save=${withSave}`, {method: "POST"});
+			await fetch(`${CONTEXT_PATH}/api/v1/train/stop?save=${withSave}`, {method: "POST"});
 			// 409(이미 끝남)여도 무시 - done 이벤트가 마무리한다.
 		} catch (_) {
 			/* 네트워크 오류: 스트림이 살아 있으면 학습은 계속된다. 버튼을 되살린다. */
@@ -431,7 +434,7 @@ async function saveCurrentParams() {
 	const [captchaId, rev] = targetSelect.value.split(":");
 	const query = new URLSearchParams({captcha_id: captchaId, rev, ...collectParams()});
 	try {
-		await fetch(`/api/v1/train/params?${query}`, {method: "POST"});
+		await fetch(`${CONTEXT_PATH}/api/v1/train/params?${query}`, {method: "POST"});
 	} catch (_) {
 		/* 무시: 저장 실패는 치명적이지 않다 */
 	}
@@ -448,7 +451,7 @@ targetSelect.addEventListener("change", loadParamsForTarget);
 // 덮어써 epochs 등이 어긋나므로, 하나만 한다.
 async function init() {
 	try {
-		const res = await fetch("/api/v1/train/targets");
+		const res = await fetch(`${CONTEXT_PATH}/api/v1/train/targets`);
 		if (res.ok && (await res.json()).running) {
 			attachStream();
 			return;

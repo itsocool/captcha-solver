@@ -1,3 +1,6 @@
+// 프록시 하위 경로 접두사(.env WEB_CONTEXT_PATH). base.html 이 <html data-context-path> 로 내려준다.
+const CONTEXT_PATH = document.documentElement.dataset.contextPath || "";
+
 const targetSelect = document.querySelector("#target");
 const urlInput = document.querySelector("#url");
 const selectorInput = document.querySelector("#selector");
@@ -61,7 +64,7 @@ function makeThumb(name) {
 	figure.className = "overflow-hidden rounded-xl border border-border bg-background";
 
 	const img = document.createElement("img");
-	img.src = `/api/v1/data-source/image?${params}`;
+	img.src = `${CONTEXT_PATH}/api/v1/data-source/image?${params}`;
 	img.alt = name;
 	img.loading = "lazy";
 	img.className = "h-16 w-full bg-surface object-contain p-1";
@@ -112,7 +115,7 @@ async function saveLabel(input) {
 	const params = new URLSearchParams({captcha_id: captchaId, rev, name: before, label});
 	input.disabled = true;
 	try {
-		const response = await fetch(`/api/v1/data-source/label?${params}`, {method: "POST"});
+		const response = await fetch(`${CONTEXT_PATH}/api/v1/data-source/label?${params}`, {method: "POST"});
 		const data = await response.json();
 		if (!response.ok) {
 			throw new Error(data.detail || `HTTP ${response.status}`);
@@ -122,7 +125,7 @@ async function saveLabel(input) {
 		input.value = stem(data.name);
 		// 썸네일 주소도 새 이름으로. 안 바꾸면 다음 새로 고침 전까지 404 를 가리킨다.
 		const img = input.parentElement.querySelector("img");
-		img.src = `/api/v1/data-source/image?${new URLSearchParams({captcha_id: captchaId, rev, name: data.name})}`;
+		img.src = `${CONTEXT_PATH}/api/v1/data-source/image?${new URLSearchParams({captcha_id: captchaId, rev, name: data.name})}`;
 		img.alt = data.name;
 		progressLabel.textContent = `${stem(before)} → ${stem(data.name)}`;
 	} catch (e) {
@@ -151,7 +154,7 @@ async function loadGallery() {
 
 	galleryRefresh.disabled = true;
 	try {
-		const response = await fetch(`/api/v1/data-source/drafts?${params}`);
+		const response = await fetch(`${CONTEXT_PATH}/api/v1/data-source/drafts?${params}`);
 		if (!response.ok) {
 			throw new Error(`목록을 못 받았습니다 (${response.status})`);
 		}
@@ -229,7 +232,7 @@ runButton.addEventListener("click", () => {
 		selector: selectorInput.value.trim(),
 		count: countInput.value,
 	});
-	source = new EventSource(`/api/v1/data-source/stream?${params}`);
+	source = new EventSource(`${CONTEXT_PATH}/api/v1/data-source/stream?${params}`);
 
 	source.addEventListener("start", (event) => {
 		const payload = JSON.parse(event.data);

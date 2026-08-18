@@ -54,7 +54,7 @@
 	{% for item in nav_items %}
 	{% set is_active = (active_nav == item.key) and not item.external %}
 	<a
-		href="{{ item.href }}"
+		href="{{ context_path }}{{ item.href }}"
 		class="{{ nav_active if is_active else nav_idle }}"
 		{%- if item.external %} target="_blank" rel="noopener"{% endif %}
 		{%- if is_active %} aria-current="page"{% endif %}

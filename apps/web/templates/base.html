@@ -1,12 +1,12 @@
 <!doctype html>
-<html lang="ko">
+<html lang="ko" data-context-path="{{ context_path }}">
 	<head>
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1">
 		<title>{% block title %}Hyper Captcha Solver{% endblock %}</title>
-		<link rel="icon" href="/static/favicon.ico">
+		<link rel="icon" href="{{ context_path }}/static/favicon.ico">
 		<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-		<script src="/static/vendor/tailwind.browser.js"></script>
+		<script src="{{ context_path }}/static/vendor/tailwind.browser.js"></script>
 		<style type="text/tailwindcss">
 			@custom-variant dark (&:where(.dark, .dark *));
 
@@ -74,7 +74,7 @@
 		<div class="flex min-h-screen">
 			<aside id="sidebar" class="fixed inset-y-0 left-0 z-50 w-[290px] -translate-x-full border-r border-border bg-surface px-5 transition-transform duration-200 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0">
 				{# 로고도 Home 과 같은 곳으로 간다. #}
-				<a href="/" class="flex h-16 items-center gap-3" aria-label="Hyper Captcha 홈">
+				<a href="{{ context_path }}/" class="flex h-16 items-center gap-3" aria-label="Hyper Captcha 홈">
 					<span class="flex size-10 items-center justify-center rounded-xl bg-brand text-white">
 						<svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 							<path d="M12 3 4 6v6c0 5 3.4 8.2 8 9 4.6-.8 8-4 8-9V6l-8-3Z"></path>
@@ -127,7 +127,7 @@
 					<div class="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 						<h2 class="text-xl font-semibold tracking-tight">{% block page_title %}{% endblock %}</h2>
 						<nav class="flex items-center gap-2 text-sm text-muted-foreground" aria-label="Breadcrumb">
-							<a href="/" class="hover:text-foreground">Home</a>
+							<a href="{{ context_path }}/" class="hover:text-foreground">Home</a>
 							<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 								<path d="m9 6 6 6-6 6"></path>
 							</svg>
@@ -140,7 +140,7 @@
 			</div>
 		</div>
 
-		<script src="/static/js/theme.js"></script>
+		<script src="{{ context_path }}/static/js/theme.js"></script>
 		{% block scripts %}{% endblock %}
 	</body>
 </html>
