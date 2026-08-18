@@ -96,6 +96,7 @@ captcha_data/<captcha_id>/<rev>/images/{train,pred}/
 | `WEB_HOST` | `0.0.0.0` | Bind host |
 | `WEB_PORT` | `5000` | Bind port |
 | `WEB_DEBUG` | `false` | Debug mode |
+| `WEB_CONTEXT_PATH` | (비어있음) | 리버스 프록시 하위 경로 접두사 (예: `/captcha`). FastAPI `root_path` + 템플릿/JS 링크에 붙는다 |
 | `DB_PATH` / `DB_SCHEMA_PATH` / `DB_SEED_PATH` | `./db/...` | SQLite 경로·스키마·시드 |
 
 기본 캡차는 환경 변수가 아니라 `db/schema.sql` 의 `service_captchas.is_default` 가 정한다.
