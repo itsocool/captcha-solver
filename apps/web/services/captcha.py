@@ -60,9 +60,14 @@ def loaded_devices(captcha_id: str) -> list[str]:
 
 
 def get_model(captcha_id: str, device: str | None = None):
-	"""캡차/디바이스 조합의 모델 인스턴스. device=None 이면 자동 선택.
+	"""캡차/디바이스 조합의 **가중치까지 올라간** 모델 인스턴스.
 
-	쓸 수 없는 디바이스를 요청하면 ValueError 가 올라온다.
+	device=None 이면 자동 선택. 쓸 수 없는 디바이스를 요청하면 ValueError 가 올라온다.
+
+	로드에 실패한 인스턴스는 캐시에 남기지 않는다. 예전에는 인스턴스를 먼저 캐시에
+	넣고 가중치는 첫 예측 때 지연 로드했는데, 로드가 실패해도 껍데기가 캐시에 남아
+	다음 요청이 그걸 재사용했다 (첫 요청만 500, 이후로는 무학습 모델이 그럴듯한 답을
+	돌려줌). "캐시에 있으면 곧 쓸 수 있는 모델"이라는 불변식을 여기서 지킨다.
 	"""
 	device_key = resolve_device(device)
 	cache_key = (captcha_id, device_key)
@@ -73,6 +78,7 @@ def get_model(captcha_id: str, device: str | None = None):
 	from hypercaptcha import engine
 
 	model = engine.get_captcha_model(captcha_id=captcha_id, verbose=0, device=device_key)
+	model.load_prediction_model()
 	_MODEL_CACHE[cache_key] = model
 	return model
 
@@ -89,12 +95,9 @@ def preload_models() -> dict[str, str]:
 
 	for captcha_id, _ in list_captcha_types(serviced_only=True):
 		try:
+			# get_model 이 로드까지 끝내고, 실패하면 아무것도 캐시하지 않는다.
 			model = get_model(captcha_id)
-			model.load_prediction_model()
 		except Exception as e:
-			# 실패한 캡차는 디바이스와 무관하게 캐시에서 전부 걷어낸다.
-			for cache_key in [key for key in _MODEL_CACHE if key[0] == captcha_id]:
-				_MODEL_CACHE.pop(cache_key, None)
 			status[captcha_id] = f"skipped ({type(e).__name__}: {e})"
 			continue
 
