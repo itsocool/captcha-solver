@@ -24,7 +24,8 @@ services:
     # 기본 캡차는 환경 변수로 못 정한다. db/schema.sql 의
     # service_captchas.is_default 를 옮겨야 바뀐다 (DB 값이 항상 우선).
     volumes:
-      - ./captcha_data:/app/captcha_data:ro
+      # 학습 UI(/train)가 여기 model/ 에 가중치를 쓰므로 :ro 로 두면 저장에서 죽는다.
+      - ./captcha_data:/app/captcha_data
     # SQLite(/app/db/captchaSolver.sqlite3)는 기동할 때마다 schema.sql + 시드로 새로
     # 만들어지는 휘발성 데이터다. 컨테이너 재생성 후에도 service_captchas 수정분을
     # 남기려면 DB 를 이미지 밖 경로로 빼고 그 경로에만 볼륨을 붙여야 한다:
