@@ -32,7 +32,7 @@ const BUCKETS = 20;
 
 let source = null;
 let items = [];
-let context = {captchaId: "", rev: 0, total: 0};
+let context = {captchaId: "", rev: 1, total: 0};
 let matched = 0;
 let page = 0;
 let startedAt = 0;

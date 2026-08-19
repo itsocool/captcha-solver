@@ -19,7 +19,6 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data") -> Dict[s
 
     gov24 = CaptchaType(captcha_id="gov24", name="정부 24", desc="대한민국 정부 24 캡챠", train_data=TrainData(
         captcha_id="gov24",
-        rev=1,
         train_data_base_dir=train_data_base_dir,
         threshold=60,
     ))
@@ -28,17 +27,6 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data") -> Dict[s
         captcha_id="wetax",
         train_data_base_dir=train_data_base_dir,
         image_height=60,
-    ))
-
-    kshop = CaptchaType(captcha_id="kshop", name="kshop", desc="KT Shopping 캡챠", train_data=TrainData(
-        captcha_id="kshop",
-        # 263x54 원본을 166x48 로 잘라내고(crop 은 PIL left/top/right/bottom) 배경
-        # 그라데이션을 걷어낸다. 모델 입력 크기는 전처리 결과(166x48)로 자동 감지된다.
-        preprocess="kshop",
-        crop=[10, 2, 176, 50],
-        train_data_base_dir=train_data_base_dir,
-        image_width=263,
-        image_height=54,
     ))
 
     # 유일하게 숫자가 아닌 캡차다. 라벨은 소문자 5글자이고 배경이 이미 흰색이다.
@@ -60,7 +48,6 @@ def get_captcha_type_list(train_data_base_dir: str = "./captcha_data") -> Dict[s
         "supreme_court": supreme_court,
         "gov24": gov24,
         "wetax": wetax,
-        "kshop": kshop,
         "iptime": iptime,
     }
 

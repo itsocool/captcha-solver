@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/docs-reminder.py\" 2>/dev/null || true",
+            "timeout": 10,
+            "statusMessage": "docs-sync: 대응 문서 확인 중"
+          }
+        ]
+      }
+    ]
+  }
+}

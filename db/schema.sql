@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS train_data_configs (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	captcha_id TEXT NOT NULL,
 	backend TEXT NOT NULL DEFAULT 'pytorch',
-	rev INTEGER NOT NULL DEFAULT 0,
+	rev INTEGER NOT NULL DEFAULT 1,
 	train_data_base_dir TEXT NOT NULL DEFAULT './captcha_data',
 	image_width INTEGER NOT NULL DEFAULT 200 CHECK (image_width > 0),
 	image_height INTEGER NOT NULL DEFAULT 50 CHECK (image_height > 0),
@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS train_data_configs (
 	characters TEXT NOT NULL DEFAULT '',
 	threshold INTEGER NOT NULL DEFAULT 255 CHECK (threshold BETWEEN 0 AND 255),
 	-- 전처리 종류 (TrainData.preprocess). meta.json 에 그대로 실려 추론 클라이언트가
-	-- 같은 전처리를 재현한다. 'default' | 'supreme_court' | 'kshop' | 'iptime'.
+	-- 같은 전처리를 재현한다. 'default' | 'supreme_court' | 'iptime'.
 	preprocess TEXT NOT NULL DEFAULT 'default',
 	-- 전처리 크롭 박스 JSON [left, top, right, bottom] (PIL 규약). NULL 이면 크롭 없음.
 	-- 크롭 전 좌표계는 image_width/image_height 다.
@@ -84,8 +84,7 @@ INSERT OR IGNORE INTO service_captchas(captcha_id, enabled, is_default, sort_ord
 	('supreme_court', 1, 1, 0),
 	('gov24', 1, 0, 1),
 	('wetax', 1, 0, 2),
-	('kshop', 1, 0, 3),
-	('iptime', 1, 0, 4);
+	('iptime', 1, 0, 3);
 
 INSERT OR IGNORE INTO schema_migrations(version, name)
 VALUES (2, 'service_captchas');
@@ -119,7 +118,7 @@ VALUES (6, 'train_data_configs_preprocess_crop');
 -- 코어 설정(train_data_configs)이 아니라 UI 편의값이라 타입 컬럼 대신 JSON 으로 둔다.
 CREATE TABLE IF NOT EXISTS train_run_params (
 	captcha_id TEXT NOT NULL,
-	rev INTEGER NOT NULL DEFAULT 0,
+	rev INTEGER NOT NULL DEFAULT 1,
 	params TEXT NOT NULL DEFAULT '{}',
 	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	PRIMARY KEY (captcha_id, rev),

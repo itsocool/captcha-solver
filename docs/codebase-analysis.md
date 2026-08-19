@@ -38,7 +38,7 @@ graph TD
 
 ### 2.2 핵심 설계 특성
 
-- 캡차 레지스트리는 `engine.get_captcha_type_list()`에 하드코딩되어 있다. 현재 `supreme_court`, `gov24`, `wetax`, `kshop` 네 종류다.
+- 캡차 레지스트리는 `engine.get_captcha_type_list()`에 하드코딩되어 있다. 현재 `supreme_court`, `gov24`, `wetax`, `iptime` 네 종류다.
 - 라벨은 별도 어노테이션 파일 없이 PNG 파일명에서 얻는다. `091082.png`의 정답은 `091082`다.
 - 모델 구현은 `PyTorchModel` 하나뿐이다.
 - 웹 서비스 대상은 모델 레지스트리와 별도로 SQLite `service_captchas`가 결정한다. 등록됐지만 서비스 대상이 아닐 수 있다.
@@ -191,7 +191,7 @@ Spring Boot 4.1.0, Java 25, ONNX Runtime 1.23.0을 사용한다. 기본 서버 �
 
 ### 7.1 최적 PyTorch 가중치와 ONNX가 달라질 수 있음 (해소됨)
 
-`.tmp` 파일에 저장된 state dict는 학습 종료 후 `model.pt`로 이름만 바뀐다. 그러나 export 전에 이 파일을 메모리 모델로 다시 로드하지 않으므로 `.pt`와 ONNX가 서로 다른 에폭이 될 수 있다. 실측 결과 4종 중 3종에서 실제로 갈렸고, `kshop`은 `.pt` 64/101 대 `.onnx` 87/101로 승격된 쪽이 오히려 열세였다(`apps/cli/README.md`). 아티팩트는 ONNX 기준으로 정렬했고, 코드도 고쳤다.
+`.tmp` 파일에 저장된 state dict는 학습 종료 후 `model.pt`로 이름만 바뀐다. 그러나 export 전에 이 파일을 메모리 모델로 다시 로드하지 않으므로 `.pt`와 ONNX가 서로 다른 에폭이 될 수 있다. 실측 결과 4종 중 3종에서 실제로 갈렸고, 그중 한 캡차(현재는 제거됨)는 `.pt` 64/101 대 `.onnx` 87/101로 승격된 쪽이 오히려 열세였다(`apps/cli/README.md`). 아티팩트는 ONNX 기준으로 정렬했고, 코드도 고쳤다.
 
 검증이 없는 학습 경로에서는 문제가 더 크다. `.tmp`가 10 에폭마다 무조건 덮이므로 승격되는 것은 '최적'이 아니라 '마지막 10의 배수 에폭' 스냅샷이다.
 

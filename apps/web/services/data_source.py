@@ -92,8 +92,8 @@ def clean_request(captcha_id: str, rev: int, url: str, selector: str, count: int
 	if captcha_id not in engine.get_captcha_type_list():
 		raise ValueError(f"등록되지 않은 캡차입니다: {captcha_id!r}")
 
-	if rev < 0:
-		raise ValueError(f"rev 는 0 이상이어야 합니다 (받은 값 {rev})")
+	if rev < 1:
+		raise ValueError(f"rev 는 1 이상이어야 합니다 (받은 값 {rev})")
 
 	parsed = urlparse((url or "").strip())
 	if parsed.scheme not in ("http", "https") or not parsed.netloc:

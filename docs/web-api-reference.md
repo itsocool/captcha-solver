@@ -22,8 +22,8 @@
   "status": "ok",
   "version": "0.8",
   "default_captcha_id": "supreme_court",
-  "serviced_captcha_ids": ["supreme_court", "gov24", "wetax", "kshop", "iptime"],
-  "loaded_captcha_ids": ["gov24", "iptime", "kshop", "supreme_court", "wetax"],
+  "serviced_captcha_ids": ["supreme_court", "gov24", "wetax", "iptime"],
+  "loaded_captcha_ids": ["gov24", "iptime", "supreme_court", "wetax"],
   "config_source": "db"
 }
 ```
@@ -98,7 +98,7 @@ curl -X POST http://localhost:5000/api/v1/predictImage \
 
 `{"targets": [...], "running": false}`. 각 target: `{captcha_id, name, rev, pred_count, has_model, selectable, reason}`. `selectable=false`면 `reason`에 이유(모델 없음/pred 이미지 없음).
 
-### `GET /api/v1/batch/stream?captcha_id=...&rev=0&device=auto`
+### `GET /api/v1/batch/stream?captcha_id=...&rev=1&device=auto`
 
 SSE. 시작 전 검증 실패는 `400`(선택 불가 대상) 또는 `409`(이미 다른 배치가 실행 중)로 응답한다. 정상 시작 후 이벤트:
 
@@ -109,7 +109,7 @@ SSE. 시작 전 검증 실패는 `400`(선택 불가 대상) 또는 `409`(이미
 | `summary` | 1회, 종료 시 | `accuracy`, `mismatch`, `elapsed_sec` |
 | `error` | 실행 중 예외 | `message` |
 
-### `GET /api/v1/batch/image?captcha_id=...&rev=0&name=xxx.png`
+### `GET /api/v1/batch/image?captcha_id=...&rev=1&name=xxx.png`
 
 `images/pred` 안의 썸네일 이미지를 반환 (`image/png`). `name`은 basename만 허용하고 `pred` 디렉터리 밖으로 벗어나는 경로는 `400`으로 거부한다.
 
@@ -119,15 +119,15 @@ SSE. 시작 전 검증 실패는 `400`(선택 불가 대상) 또는 `409`(이미
 
 `{"targets": [...], "running": bool, "active": {"captcha_id", "rev"} | null}`. target: `{captcha_id, name, rev, train_count, pred_count, has_model, selectable, reason}` — `train_count > 0`이면 선택 가능.
 
-### `GET /api/v1/train/params?captcha_id=...&rev=0`
+### `GET /api/v1/train/params?captcha_id=...&rev=1`
 
 대상에 마지막으로 저장된 학습 파라미터(없으면 기본값)를 돌려준다: `{"params": {...}}`.
 
-### `POST /api/v1/train/params?captcha_id=...&rev=0&<param>=<value>...`
+### `POST /api/v1/train/params?captcha_id=...&rev=1&<param>=<value>...`
 
 쿼리스트링으로 폼 파라미터를 저장한다 (학습을 시작하지 않아도 유지됨). 유효성 실패 시 `400`.
 
-### `POST /api/v1/train/start?captcha_id=...&rev=0&device=auto&<params>`
+### `POST /api/v1/train/start?captcha_id=...&rev=1&device=auto&<params>`
 
 백그라운드 학습을 시작하고 즉시 반환한다. 진행 상황은 `GET /train/stream`으로 별도 확인한다.
 
@@ -176,12 +176,13 @@ SSE. 시작 전 검증 실패는 `400`(선택 불가 대상) 또는 `409`(이미
 
 ### `GET /api/v1/data-source/targets`
 
-`{"targets": [...], "running": bool}`. target: `{captcha_id, name, rev, draft_count}`. 학습과 달리 이미지가 아직 없는 캡차도 `rev 0`으로 포함된다 (모으는 게 목적이므로).
+`{"targets": [...], "running": bool}`. target: `{captcha_id, name, rev, draft_count}`. 학습과 달리 이미지가 아직 없는 캡차도 레지스트리의 rev(1부터 시작, 기본 1)로 포함된다 (모으는 게 목적이므로).
 
-### `GET /api/v1/data-source/stream?captcha_id=...&rev=0&url=...&selector=&count=N`
+### `GET /api/v1/data-source/stream?captcha_id=...&rev=1&url=...&selector=&count=N`
 
 | 파라미터 | 설명 |
 |---|---|
+| `rev` | 1 이상 (리비전은 1부터 시작) |
 | `url` | `http://`/`https://`로 시작해야 함 |
 | `selector` | CSS 셀렉터. 응답이 이미지가 아니라 HTML이면 이 셀렉터로 이미지 요소를 찾는다 (`src`/`data-src`/`href`/`background:url()` 순으로 탐색). 빈 값이면 `img` |
 | `count` | 1–5000 (`MAX_COUNT`) |
@@ -195,15 +196,15 @@ SSE. 시작 전 검증 실패는 `400`(선택 불가 대상) 또는 `409`(이미
 | `summary` | 1회. `requested`, `saved`, `failed`, `draft_total`, `elapsed_sec` |
 | `error` | 검증 통과 후 실행 중 예외 |
 
-### `GET /api/v1/data-source/drafts?captcha_id=...&rev=0&limit=N`
+### `GET /api/v1/data-source/drafts?captcha_id=...&rev=1&limit=N`
 
 draft 이미지 목록 (수집 순 = mtime 오름차순). `limit` 생략 시 전체.
 
 ```json
-{"names": ["000001.png", "..."], "total": 42, "draft_dir": "/app/captcha_data/gov24/0/images/draft"}
+{"names": ["000001.png", "..."], "total": 42, "draft_dir": "/app/captcha_data/gov24/1/images/draft"}
 ```
 
-### `POST /api/v1/data-source/label?captcha_id=...&rev=0&name=000001.png&label=3fk2p`
+### `POST /api/v1/data-source/label?captcha_id=...&rev=1&name=000001.png&label=3fk2p`
 
 draft 이미지 파일명을 라벨로 바꾼다(=라벨링). 저장소 관례가 "파일명 = 정답"이라 이름 변경이 곧 라벨 지정이다. 이미 같은 이름이 있으면 `400`.
 
@@ -211,7 +212,7 @@ draft 이미지 파일명을 라벨로 바꾼다(=라벨링). 저장소 관례�
 {"name": "3fk2p.png", "renamed": true}
 ```
 
-### `GET /api/v1/data-source/image?captcha_id=...&rev=0&name=xxx.png`
+### `GET /api/v1/data-source/image?captcha_id=...&rev=1&name=xxx.png`
 
 draft 이미지 썸네일 (`image/png`). 경로 검증은 `/batch/image`와 동일한 규칙.
 

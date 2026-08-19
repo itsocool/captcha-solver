@@ -9,7 +9,7 @@ model: PyTorchModel = engine.get_captcha_model(captcha_id=captcha_id)
 train_ratio = 0.8
 shuffle = False
 batch_size = 64
-# CTC 는 초반에 입력과 무관한 상수 문자열만 뱉는 정체 구간을 거친다. kshop rev0 은
+# CTC 는 초반에 입력과 무관한 상수 문자열만 뱉는 정체 구간을 거친다. 실측한 한 캡차는
 # 그 구간이 epoch 2~28 로 길고, 안에서 무개선이 7에폭 연속까지 난다. 예전 값(40/6)은
 # 거기 걸려 epoch 20 에서 죽었다. 근거는 services/train.py 의 PARAM_SPEC 주석 참고.
 epochs = 80

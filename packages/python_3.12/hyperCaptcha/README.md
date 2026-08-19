@@ -48,7 +48,7 @@ text, confidence = engine.predict(model=model, image_path="sample.png")
 | `PyTorchModel` | `from hypercaptcha.core import PyTorchModel` |
 | `CaptchaType`, `TrainData` | `from hypercaptcha.dataclass import CaptchaType, TrainData` |
 
-등록된 캡차 ID는 `supreme_court`, `gov24`, `wetax`, `kshop` 네 가지입니다
+등록된 캡차 ID는 `supreme_court`, `gov24`, `wetax`, `iptime` 네 가지입니다
 (`engine.get_captcha_type_list()`).
 
 ## CLI

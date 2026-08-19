@@ -37,7 +37,7 @@ def main() -> int:
 		print(f"CLI 바이너리가 없습니다: {CLI_BIN}\n먼저 `cargo build --release`를 실행하세요.")
 		return 2
 
-	targets = args.captcha_ids or ["supreme_court", "gov24", "wetax", "kshop"]
+	targets = args.captcha_ids or ["supreme_court", "gov24", "wetax", "iptime"]
 	failures = 0
 
 	for captcha_id in targets:

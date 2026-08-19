@@ -69,33 +69,12 @@ fn make_background_white(gray: &mut GrayImage) {
 	}
 }
 
-/// 세로로 균일한 배경 그라데이션을 걷어내 배경을 희게 만든다.
-///
-/// 배경이 x에만 의존하므로 열마다 가장 밝은 값을 그 열의 배경으로 보고 255가 되도록
-/// 스케일한다. `dataclass.py: TrainData._flatten_column_background`와 같은 계산이며,
-/// 파이썬이 float32로 계산한 뒤 `astype(np.uint8)`로 **버림**하므로 `as u8`로 맞춘다.
-fn flatten_column_background(gray: &mut GrayImage) {
-	let (w, h) = gray.dimensions();
-	for x in 0..w {
-		let mut bg: u8 = 1;
-		for y in 0..h {
-			bg = bg.max(gray.get_pixel(x, y)[0]);
-		}
-		let bg = bg as f32;
-		for y in 0..h {
-			let v = gray.get_pixel(x, y)[0] as f32 / bg * 255.0;
-			gray.put_pixel(x, y, Luma([v.clamp(0.0, 255.0) as u8]));
-		}
-	}
-}
-
 /// meta 로 구동되는 크롭 경로: 기준 크기(`crop_source`)로 맞춘 뒤 crop 박스로 자른다.
 ///
-/// `dataclass.py`의 `_kshop_preprocess` / `_iptime_preprocess` 포팅. crop 박스는 PIL
+/// `dataclass.py`의 `_iptime_preprocess` 포팅. crop 박스는 PIL
 /// (left, top, right, bottom)이고 `image::crop_imm`은 (x, y, w, h)라 w=r-l, h=b-t 로 바꾼다.
 /// 다른 경로와 달리 임계값·테두리 제거·마지막 리사이즈를 타지 않는다 (파이썬과 동일).
-/// kshop 만 크롭 뒤 배경 그라데이션을 걷어낸다.
-fn crop_to_gray(img: &DynamicImage, meta: &ModelMeta, rect: [u32; 4], source: [u32; 2]) -> GrayImage {
+fn crop_to_gray(img: &DynamicImage, rect: [u32; 4], source: [u32; 2]) -> GrayImage {
 	let rgb = if has_alpha(img) {
 		composite_on_white(img)
 	} else {
@@ -108,11 +87,7 @@ fn crop_to_gray(img: &DynamicImage, meta: &ModelMeta, rect: [u32; 4], source: [u
 	}
 
 	let [left, top, right, bottom] = rect;
-	let mut gray = image::imageops::crop_imm(&gray, left, top, right - left, bottom - top).to_image();
-	if meta.preprocess == "kshop" {
-		flatten_column_background(&mut gray);
-	}
-	gray
+	image::imageops::crop_imm(&gray, left, top, right - left, bottom - top).to_image()
 }
 
 /// supreme_court 전용 경로: 고정 ROI를 캔버스에 붙인다.
@@ -139,9 +114,9 @@ pub fn preprocess(img: &DynamicImage, meta: &ModelMeta) -> Vec<f32> {
 }
 
 pub fn preprocess_to_gray(img: &DynamicImage, meta: &ModelMeta) -> GrayImage {
-	// 크롭 기반 전처리(kshop, iptime, …)는 meta 의 crop/crop_source 로 재현한다.
+	// 크롭 기반 전처리(iptime 등)는 meta 의 crop/crop_source 로 재현한다.
 	if let (Some(rect), Some(source)) = (meta.crop, meta.crop_source) {
-		return crop_to_gray(img, meta, rect, source);
+		return crop_to_gray(img, rect, source);
 	}
 
 	let rgb = if meta.preprocess == "supreme_court" {

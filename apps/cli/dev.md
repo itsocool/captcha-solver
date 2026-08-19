@@ -46,7 +46,7 @@ $ captcha-cli -m supreme_court.onnx -i captcha.png --json
 
 ONNX 파일만 있으면 되는 게 아닙니다. 파이썬 쪽 전처리와 디코딩을 **바이트 단위로 동일하게** 재현해야 같은 결과가 나옵니다.
 
-### 3.1 모델 시그니처 (실측: `captcha_data/supreme_court/0/model/model.onnx`)
+### 3.1 모델 시그니처 (실측: `captcha_data/supreme_court/1/model/model.onnx`)
 
 | 항목 | 값 |
 |------|-----|
@@ -57,7 +57,7 @@ ONNX 파일만 있으면 되는 게 아닙니다. 파이썬 쪽 전처리와 디
 | 배치 | 1로 고정 (`fixed_batch=True`로 export됨) |
 | 파일 크기 | 캡차당 8.8~9.3MB |
 
-입력 H/W와 출력 T/C는 캡차마다 다릅니다(예: kshop 263×54). 세션 로드 후 **입력/출력 shape를 읽어서** 쓰는 편이 안전합니다.
+입력 H/W와 출력 T/C는 캡차마다 다릅니다(예: iptime 168×60 크롭 입력). 세션 로드 후 **입력/출력 shape를 읽어서** 쓰는 편이 안전합니다.
 
 ### 3.2 전처리 (`dataclass.py: image_pre_process`)
 
@@ -92,7 +92,7 @@ ONNX 파일만 있으면 되는 게 아닙니다. 파이썬 쪽 전처리와 디
 ```json
 {
   "captcha_id": "supreme_court",
-  "rev": 0,
+  "rev": 1,
   "image_width": 120,
   "image_height": 40,
   "label_length": 6,
@@ -158,7 +158,7 @@ serde_json = "1"             # 사이드카 메타 + --json 출력
 
 1. **메타데이터 사이드카 export 추가** (`export_onnx` 시 JSON 동시 생성 또는 `metadata_props` 삽입)
 2. **파이썬 ONNX 전용 CLI** 작성 — PyTorch 없이 `onnxruntime`만으로 동일 결과가 나오는지 확인
-3. **골든 데이터 생성** — `captcha_data/*/0/images/pred`의 200~500장에 대해 `{파일명, 예측, 신뢰도}` JSON 덤프
+3. **골든 데이터 생성** — `captcha_data/*/1/images/pred`의 200~500장에 대해 `{파일명, 예측, 신뢰도}` JSON 덤프
 4. **네이티브 CLI 구현** (Rust 권장)
 5. **동등성 검증** — 골든 데이터와 대조. 문자열 100% 일치, 신뢰도 오차 1e-3 이하를 합격선으로
 6. **CI 릴리스 매트릭스** — linux-x64 / linux-arm64 / windows-x64 / macos-arm64

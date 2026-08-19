@@ -673,7 +673,7 @@ class PyTorchModel:
         # Loss 함수 선택
         loss_type = loss_type or self.loss_type or 'focal'
         self.loss_type = loss_type
-        # Plain CTC 는 제거했다 — blank 지배·초기 정체에 focal 이 낫고 실측(iptime/kshop 99%)도 그 편이다.
+        # Plain CTC 는 제거했다 — blank 지배·초기 정체에 focal 이 낫고 실측(iptime 등 99%)도 그 편이다.
         if loss_type != 'focal':
             raise ValueError("Unsupported loss_type: {0}. Only 'focal' is supported.".format(loss_type))
         criterion = FocalCTCLoss(gamma=2.0)
@@ -894,7 +894,7 @@ class PyTorchModel:
 
         # 기존 모델이 더 낫다면 갈아치우지 않는다.
         #
-        # 학습은 결과가 좋든 나쁘든 아티팩트를 덮어쓴다. 실제로 kshop 이 정체 구간에서
+        # 학습은 결과가 좋든 나쁘든 아티팩트를 덮어쓴다. 실제로 예전 캡차 하나가 정체 구간에서
         # 조기 종료된 채로 서빙 중이던 86% 모델을 0% 모델로 교체한 적이 있다.
         # 같은 val_loader 로 기존 체크포인트를 재보면 비교가 공정하다.
         incumbent_val_loss = None
@@ -946,7 +946,7 @@ class PyTorchModel:
 
         덮어쓰기 가드 전용이다. 비교할 수 없으면(구조가 바뀌어 로드 실패, 파일 손상 등)
         None 을 돌려주고, 호출부는 비교를 포기하고 그냥 덮어쓴다. 입력 크기가 바뀐
-        재학습(예: kshop 263x54 -> 166x48)이 여기 걸려 막히면 안 되기 때문이다.
+        재학습(예: 263x54 -> 166x48 로 크롭을 도입한 경우)이 여기 걸려 막히면 안 되기 때문이다.
         """
         import copy
 
@@ -1004,7 +1004,7 @@ class PyTorchModel:
 
         메모리에 남은 모델이 아니라 **디스크의 체크포인트를 다시 읽어서** export 한다.
         학습 종료 시 `.tmp` 가 `.pth` 로 승격되는데, 예전에는 메모리 모델에서 export 해
-        체크포인트와 ONNX 가 서로 다른 에폭이 되는 일이 있었다(kshop 사례).
+        체크포인트와 ONNX 가 서로 다른 에폭이 되는 일이 있었다.
 
         산출물의 역할:
             model.pth       - state_dict 체크포인트. 파이썬 추론과 재학습의 기준.

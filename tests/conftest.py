@@ -41,7 +41,7 @@ def captcha_data_dir(tmp_path):
 	반환값은 train_data_base_dir 로 그대로 넘길 수 있는 경로.
 	"""
 
-	def build(captcha_id: str, rev: int = 0, labels=("012345", "678901", "234567"),
+	def build(captcha_id: str, rev: int = 1, labels=("012345", "678901", "234567"),
 	          size=(120, 40), checkpoint: bytes = LFS_POINTER) -> str:
 		base = tmp_path / "captcha_data"
 		train_dir = base / captcha_id / str(rev) / "images" / "train"

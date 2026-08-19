@@ -156,9 +156,6 @@ cpack --config build\CPackConfig.cmake -C Release -B build
 | gov24 | 100/100 |
 | wetax | 100/100 |
 | default | 100/100 |
-| kshop | 86/100 |
-
-kshop 86%는 `apps/cli/README.md` 에 기록된 ONNX 기준 정확도와 같은 수치입니다(모델 문제이며 포팅 문제가 아닙니다).
 
 ---
 
@@ -187,7 +184,7 @@ kshop 86%는 `apps/cli/README.md` 에 기록된 ONNX 기준 정확도와 같은 
 캡차를 추가하면 다음 빌드에 자동으로 딸려옵니다(`file(GLOB CONFIGURE_DEPENDS)`).
 
 ```
--- 복사할 모델: gov24(rev=1);kshop(rev=0);supreme_court(rev=0);wetax(rev=0)
+-- 복사할 모델: gov24(rev=1);iptime(rev=1);supreme_court(rev=1);wetax(rev=1)
 ```
 
 `captcha_data` 는 저장소에 없으므로, 학습 데이터가 없는 환경에서는 모델이 하나도 복사되지 않습니다

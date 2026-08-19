@@ -29,7 +29,7 @@ cp .env.example .env       # 선택: 설정을 덮어쓸 때
 
 ```bash
 # Python CLI (샘플 경로는 보유한 이미지로 바꾸세요)
-uv run python main.py -c supreme_court -i captcha_data/supreme_court/0/images/pred/091082.png
+uv run python main.py -c supreme_court -i captcha_data/supreme_court/1/images/pred/091082.png
 
 # FastAPI 개발 서버: http://localhost:8000
 uv run fastapi dev apps/web/app.py --host 0.0.0.0 --port 8000
@@ -70,7 +70,7 @@ models/
 └── <captcha_id>.meta.json  # image_width, image_height, label_length, characters, threshold, preprocess
 ```
 
-등록된 CAPTCHA ID는 `supreme_court`, `gov24`, `wetax`, `kshop` 네 가지이며, DB의 기본 서비스 대상도 동일합니다. 학습 데이터가 있으면 정렬된 `images/train/*.png` 목록의 마지막 PNG를 열어 이미지 크기를 감지하고, 파일명에서 레이블 길이와 문자 집합을 감지합니다.
+등록된 CAPTCHA ID는 `supreme_court`, `gov24`, `wetax`, `iptime` 네 가지이며, DB의 기본 서비스 대상도 동일합니다. 데이터/모델 리비전은 1부터 시작합니다(`captcha_data/<id>/1/`). 학습 데이터가 있으면 정렬된 `images/train/*.png` 목록의 마지막 PNG를 열어 이미지 크기를 감지하고, 파일명에서 레이블 길이와 문자 집합을 감지합니다.
 
 CRNN은 입력에서 특징 맵 높이 `H/8`, 시간축 너비 `W/4`를 출력합니다. 고정 길이 CTC 디코딩은 `W/4 >= label_length`를 요구하므로 모델 입력 폭을 레이블 길이보다 충분히 크게 유지하세요.
 
@@ -90,7 +90,7 @@ from hypercaptcha import engine
 model = engine.get_captcha_model(captcha_id="supreme_court")
 engine.train_model(model=model)
 engine.batch_predict_model(model=model)
-engine.redistribute_train_pred("captcha_data/supreme_court/0/images", train_ratio=0.9)
+engine.redistribute_train_pred("captcha_data/supreme_court/1/images", train_ratio=0.9)
 ```
 
 재분배는 파일을 이동해 `train`/`pred`를 다시 나누는 파괴적 작업이므로 백업 후 실행하세요.
@@ -140,7 +140,7 @@ FastAPI와 Spring Boot 모두 다음 경로를 제공합니다. 아래 예제의
 ```bash
 curl -X POST http://localhost:8000/api/v1/predictImage \
   -F "captcha_id=supreme_court" \
-  -F "image=@captcha_data/supreme_court/0/images/pred/091082.png"
+  -F "image=@captcha_data/supreme_court/1/images/pred/091082.png"
 
 curl -X POST http://localhost:8000/api/v1/predictJson \
   -H 'Content-Type: application/json' \

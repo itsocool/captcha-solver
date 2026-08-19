@@ -8,7 +8,7 @@
 
 ### 한눈에 보는 아키텍처
 - 주요 모듈: `engine.py` (학습/추론 엔트리), `dataclass.py` (데이터/경로 규약), `core.py` (`PyTorchModel`)
-- 데이터 레이아웃: `captcha_data/<captcha_id>/<rev>/images/{train,pred}` — 이미지 파일명(확장자 제외)이 레이블입니다. 예: `captcha_data/kshop/0/images/train/abc12.png` → 레이블 `abc12`.
+- 데이터 레이아웃: `captcha_data/<captcha_id>/<rev>/images/{train,pred}` — 이미지 파일명(확장자 제외)이 레이블입니다. 리비전은 1부터 시작합니다. 예: `captcha_data/gov24/1/images/train/abc12.png` → 레이블 `abc12`.
 - 모델 파일: 같은 `captcha_data/<id>/<rev>/model/` 디렉터리에 다섯 가지가 놓입니다 — `model.pth` (state dict 체크포인트), `model.pt2` (`torch.export` 아카이브), `model.onnx` (ONNX), `model.ort` (ORT 포맷), `model.meta.json` (사이드카 메타데이터). TorchScript(`model_jit.pt`)와 Keras(`weights.keras`)는 더 이상 사용하지 않습니다.
 
 ### 핵심 디자인 결정(발견한 규칙)

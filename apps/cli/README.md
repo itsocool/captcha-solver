@@ -12,8 +12,8 @@ PyTorch·파이썬 런타임 없이 **실행 파일 하나 + 모델 파일**로 
 captcha-cli -c supreme_court -i captcha.png
 # 091082
 
-captcha-cli -c kshop -i captcha.png --json
-# {"captcha_id":"kshop","confidence":0.9944,"elapsed_ms":26,"prediction":"050862"}
+captcha-cli -c wetax -i captcha.png --json
+# {"captcha_id":"wetax","confidence":0.9944,"elapsed_ms":26,"prediction":"050862"}
 
 cat captcha.png | captcha-cli -c gov24 -i -      # stdin 입력
 captcha-cli --list                                # 사용 가능한 모델 목록
@@ -44,7 +44,7 @@ CLI는 ONNX만으로는 **문자셋·레이블 길이·전처리 종류**를 알
 
 ```bash
 uv run python apps/cli/tools/sync_models.py            # 전체
-uv run python apps/cli/tools/sync_models.py kshop      # 특정 캡차만
+uv run python apps/cli/tools/sync_models.py iptime     # 특정 캡차만
 ```
 
 ```
@@ -173,11 +173,9 @@ uv run python apps/cli/tools/verify_pth_onnx.py                   # model.pth �
 | supreme_court | 100/100 | 0.0011 |
 | gov24 | 100/100 | 0.0066 |
 | wetax | 100/100 | 0.0019 |
-| kshop | 70/100 † | 0.7757 † |
 
-> † kshop 수치는 `model.pt` 와 `model.onnx` 의 가중치가 갈려 있던 시점의 측정입니다(아래 절 참고).
-> 그 원인은 해소됐고 현재 파이썬과 ONNX 는 101/101 일치하지만, 이 표는 Rust 바이너리가 필요해
-> 아직 재측정하지 못했습니다. `cargo build --release` 후 `compare_with_python.py` 를 다시 돌리세요.
+> iptime 은 이 표를 만든 뒤 추가된 캡차라 아직 측정값이 없습니다. `cargo build --release` 후
+> `compare_with_python.py` 를 돌리면 채울 수 있습니다.
 
 ### 모델 입력 크기와 메타데이터가 어긋나면 추론이 거부됩니다
 
@@ -190,14 +188,15 @@ Error: 모델 입력 크기(200×50)와 메타데이터 크기(250×50)가 다�
 메타데이터를 고치거나 해당 크기로 ONNX를 다시 export하세요.
 ```
 
-서비스 대상 4종(supreme_court, gov24, wetax, kshop)은 영향이 없습니다.
+서비스 대상 4종(supreme_court, gov24, wetax, iptime)은 영향이 없습니다.
 
 전처리 텐서 자체의 차이는 픽셀당 최대 0.10, 평균 0.0004~0.0015 수준입니다(리사이즈 필터 구현 차이).
 
-### kshop 불일치 — 해소됨 (포팅 문제가 아니었습니다)
+### `.pt` / `.onnx` 가중치 불일치 — 해소됨 (포팅 문제가 아니었습니다)
 
-`model_full.pt`와 `model_full.pt.onnx`의 **가중치가 서로 달랐던** 것이 원인이었습니다. 동일한 입력
-텐서를 두 아티팩트에 넣으면 결과가 갈렸습니다.
+예전에 한 캡차(현재는 제거됨)에서 Rust CLI 와 파이썬 예측이 크게 갈렸는데, `model_full.pt`와
+`model_full.pt.onnx`의 **가중치가 서로 달랐던** 것이 원인이었습니다. 동일한 입력 텐서를 두
+아티팩트에 넣으면 결과가 갈렸습니다.
 
 ```
 정답(파일명): 050862
@@ -207,7 +206,7 @@ Rust CLI(onnx)          → 050862 (0.99)
 
 `core.py: train_model`이 학습 종료 시 `.tmp` 체크포인트를 `.pt`로 승격한 뒤, JIT/ONNX 는
 **메모리에 남아 있는 마지막 에폭 가중치**로 export 했기 때문입니다. 승격된 `.tmp` 쪽이 오히려
-열세였습니다 — kshop pred 101장 기준 `.pt` 64/101, `.onnx` 87/101.
+열세였습니다 — 해당 캡차 pred 101장 기준 `.pt` 64/101, `.onnx` 87/101.
 
 측정으로 확인한 사실은 다음과 같습니다.
 
@@ -216,7 +215,7 @@ Rust CLI(onnx)          → 050862 (0.99)
 | supreme_court | 달랐음 (로짓 0.11) | 200/200 | 200/200 |
 | gov24 | 달랐음 (로짓 2.99) | 200/200 | 200/200 |
 | wetax | 같았음 | 100/100 | 100/100 |
-| kshop | 달랐음 (로짓 7.82) | 64/101 | 87/101 |
+| (제거된 캡차) | 달랐음 (로짓 7.82) | 64/101 | 87/101 |
 
 `model_jit.pt` 는 4종 모두 `.onnx` 와 가중치가 **완전히 동일**했습니다(둘 다 메모리 모델에서
 나왔으므로). 이를 이용해 `model.pt` 를 `model_jit.pt` 의 state dict 로 복구했고, 현재 `model.pt`

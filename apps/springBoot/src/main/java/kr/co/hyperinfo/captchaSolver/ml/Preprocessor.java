@@ -38,7 +38,7 @@ public final class Preprocessor {
 
 		int[] source = toRgbRaw(image);
 
-		// 크롭 기반 전처리(kshop, iptime, …)는 meta 의 crop/cropSource 로 재현한다.
+		// 크롭 기반 전처리(iptime 등)는 meta 의 crop/cropSource 로 재현한다.
 		if (meta.crop() != null && meta.cropSource() != null) {
 			return cropToGray(source, image.getWidth(), image.getHeight(), meta);
 		}
@@ -73,11 +73,11 @@ public final class Preprocessor {
 	/**
 	 * meta 로 구동되는 크롭 경로: 기준 크기({@code cropSource})로 맞춘 뒤 crop 박스로 자른다.
 	 *
-	 * <p>{@code dataclass.py} 의 {@code _kshop_preprocess} / {@code _iptime_preprocess} 포팅.
+	 * <p>{@code dataclass.py} 의 {@code _iptime_preprocess} 포팅.
 	 * crop 박스는 PIL (left, top, right, bottom) 이고 여기서는 w=right-left, h=bottom-top
-	 * 으로 잘라낸다. 크롭 전 크기(263x54 등)는 meta 의 image_width/height(크롭 <b>후</b>
+	 * 으로 잘라낸다. 크롭 전 크기(200x70 등)는 meta 의 image_width/height(크롭 <b>후</b>
 	 * 크기)로는 알 수 없어 {@code crop_source} 로 함께 싣는다. 다른 경로와 달리 임계값·테두리
-	 * 제거·마지막 리사이즈를 타지 않는다 (파이썬과 동일). kshop 만 크롭 뒤 그라데이션을 걷어낸다.
+	 * 제거·마지막 리사이즈를 타지 않는다 (파이썬과 동일).
 	 */
 	private static Gray cropToGray(int[] rgb, int width, int height, ModelMeta meta) {
 		int srcW = meta.cropSource()[0];
@@ -99,31 +99,7 @@ public final class Preprocessor {
 					cropped, y * cropW, cropW);
 		}
 
-		if ("kshop".equals(meta.preprocess())) {
-			flattenColumnBackground(cropped, cropW, cropH);
-		}
 		return new Gray(cropW, cropH, cropped);
-	}
-
-	/**
-	 * 세로로 균일한 배경 그라데이션을 걷어내 배경을 희게 만든다.
-	 *
-	 * <p>배경이 x 에만 의존하므로 열마다 가장 밝은 값을 그 열의 배경으로 보고 255 가 되도록
-	 * 스케일한다. 파이썬이 float32 로 계산한 뒤 {@code astype(np.uint8)} 로 <b>버림</b>하므로
-	 * {@code (int)} 캐스팅으로 맞춘다.
-	 */
-	private static void flattenColumnBackground(int[] gray, int width, int height) {
-		for (int x = 0; x < width; x++) {
-			int bg = 1;
-			for (int y = 0; y < height; y++) {
-				bg = Math.max(bg, gray[y * width + x]);
-			}
-			for (int y = 0; y < height; y++) {
-				int i = y * width + x;
-				float v = gray[i] / (float) bg * 255.0f;
-				gray[i] = (int) Math.min(Math.max(v, 0.0f), 255.0f);
-			}
-		}
 	}
 
 	// --- 픽셀 변환 ---------------------------------------------------------

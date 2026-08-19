@@ -25,54 +25,64 @@ Single-repo PyTorch captcha solver. 라이브러리 코드는 `packages/python_3
 
 | File | Description |
 |------|-------------|
-| `hypercaptcha/engine.py` | Entrypoints: `get_captcha_model()`, `train_model()`, `predict()`, `batch_predict_model()`, `redistribute_train_pred()` |
-| `hypercaptcha/core.py` | `PyTorchModel` (CRNN build/train/eval), `FocalCTCLoss`, transforms, dataset |
-| `hypercaptcha/dataclass.py` | `TrainData`, `CaptchaType` (Pydantic models); paths, char sets, image preprocessing |
+| `hypercaptcha/engine.py` | Entrypoints: `get_captcha_type_list()`, `with_rev()`, `get_captcha_model()`, `train_model()`, `predict()`, `iter_batch_predict()`, `batch_predict_model()`, `redistribute_train_pred()` |
+| `hypercaptcha/core.py` | `PyTorchModel` (CRNN build/train/eval/export), `CRNN`, `SpecAugment`, `FocalCTCLoss`, transforms, dataset, beam decoding |
+| `hypercaptcha/dataclass.py` | `TrainData`, `CaptchaType` (Pydantic models); paths, char sets, image preprocessing (`default`/`supreme_court`/`iptime`) |
 | `hypercaptcha/cli.py` | CLI predictor. `hypercaptcha` 콘솔 스크립트 / `python -m hypercaptcha` |
-| `apps/web/app.py` | FastAPI + Uvicorn (`/health`, `/predict` endpoints), model cached in memory |
+| `apps/web/app.py` | FastAPI 앱 조립: 프런트 라우터(Jinja2) + `/health`,`/version` + `/api/v1/*` (predict/batch/train/data-source). 모델은 `services/captcha.py` 의 `_MODEL_CACHE` 에 캐시 |
 | `hypercaptcha/train.py` / `hypercaptcha/pred.py` | Thin wrappers around `engine` (edit hardcoded vars at top). `python -m hypercaptcha.train` / `.pred` |
+
+상세는 `docs/` 참고 — 문서 맵과 갱신 규칙은 `CLAUDE.md` 에 있다.
 
 ### Supported Captcha Types
 
-Hardcoded in `engine.get_captcha_type_list()`:
+Hardcoded in `engine.get_captcha_type_list()` (4종):
 
-- `supreme_court` — custom crop preprocess, 120×40
-- `gov24` — threshold=60, rev=1
+- `supreme_court` — `preprocess="supreme_court"` (고정 ROI crop → 캔버스 paste), 120×40
+- `gov24` — threshold=60
 - `wetax` — height=60
-- `kshop` — 263×54
+- `iptime` — `preprocess="iptime"`, 원본 200×70 을 `crop=[27,10,195,70]` 으로 168×60 으로 자르기만 함. 유일하게 숫자가 아닌 캡차(소문자 5글자, `label_length=5`, `characters=LOWER_CASE`)
+
+`iptime` 의 모델 입력 크기는 crop 결과에서 자동 감지된다 (`image_width`/`image_height` 는 crop 좌표계의 기준인 원본 크기).
 
 ### Data Layout
 
 ```
-captcha_data/<captcha_id>/<rev>/images/{train,pred}/
+captcha_data/<captcha_id>/<rev>/images/{train,pred,draft}/
 ```
 
-- Image **filename** (no extension) = label (e.g., `abc12.png` → label `abc12`)
+- Image **filename** (no extension) = label (e.g., `abc12.png` → label `abc12`). `draft/` 는 데이터 수집이 쌓은 라벨 미부착 원본(파일명 = 순번)
+- 리비전은 **1부터 시작**한다 (`TrainData.rev` 기본값 1, DB `rev` DEFAULT 1, `captcha_data/<id>/1/` 이 첫 세대). 시드의 마이그레이션 8 이 옛 rev 0 DB 행을 1 로 옮긴다.
 - Models: `captcha_data/<id>/<rev>/model/model.pth` (state dict checkpoint), `model.pt2` (`torch.export` archive), `model.onnx` (ONNX), `model.ort` (ORT format, baked from the ONNX at `ORT_ENABLE_EXTENDED` so it stays CPU-portable), `model.meta.json` (charset/size/preprocess sidecar, built by `CaptchaType.build_meta()`). `finalize_artifacts()` writes all of them from the finalized `.pth` on disk (never the in-memory model) and fails training if the checkpoint and the exported models disagree.
 
 ## Image Preprocessing
 
-### Pipeline
+### Pipeline (`preprocess="default"`)
 
 1. **RGBA handling** — composite onto white background
 2. **Grayscale** — `convert("L")`
-3. **Threshold** — binary if `0 < threshold < 255`
+3. **Threshold** — `p > threshold` 인 픽셀만 255 로 (`0 < threshold < 255` 일 때만; 완전 이진화는 아님)
 4. **Border removal** — crop outer 2px margin
 5. **Background white** — pixels > 128 become 255
-6. **Resize** — to captcha-type-specific dimensions
+6. **Resize** — to `detected_image_width × detected_image_height`
 
-### Training transforms
+### Training transforms (`core.get_train_transform`)
 
 | Transform | Parameters |
 |-----------|-----------|
-| `RandomAffine` | rotation ±3°, translate 3%, scale 97–103%, shear 2° |
-| `RandomGaussianBlur` | 30% probability |
-| `ColorJitter` | brightness/contrast ±0.2, 20% probability |
-| `RandomErasing` | 10% probability, scale 1–5% |
+| `RandomAffine` | rotation ±5°, translate 5%, scale 95–105%, shear 0–3°, fill=255 |
+| `RandomPerspective` | distortion 0.1, p=0.3 |
+| `RandomGrayscale` | p=0.1 inside `RandomApply(p=0.2)` |
+| `GaussianBlur` | kernel 3, sigma 0.1–0.5, p=0.3 |
+| `ColorJitter` | brightness/contrast 0.4, saturation 0.2, p=0.3 |
+| `RandomErasing` | p=0.15, scale 1–5%, value=1.0 (흰색) |
+
+추가로 CNN 출력 시퀀스에 `SpecAugment`(time/freq 마스킹)가 학습 시에만 적용된다.
 
 ### Captcha-specific preprocess
 
 - `supreme_court`: fixed ROI crop → paste into fixed canvas → grayscale → border remove → background white → resize
+- `iptime`: RGBA→흰 배경 → grayscale → 원본 크기로 맞춤 → `crop` 만. 배경이 이미 흰색
 
 ## Key Conventions
 
@@ -80,14 +90,14 @@ captcha_data/<captcha_id>/<rev>/images/{train,pred}/
 - `hypercaptcha.train` / `hypercaptcha.pred` are **not argument-driven** — edit hardcoded vars at top of the module.
 - PyTorch cuDNN benchmarking is enabled globally in `core.py`. Never import `core.py` just to check imports — it triggers GPU setup.
 - Model architecture is CRNN only.
-- Training loss types: `'ctc'`, `'focal'`.
-- Loss type defaults to `'focal'` in `hypercaptcha/train.py` / `hypercaptcha/pred.py`.
+- Training loss: **`'focal'` 만 지원** (`FocalCTCLoss`). `train_model()` 은 그 외 `loss_type` 에 `ValueError` 를 던진다 (`core.py`). 표준 `'ctc'` 는 제거됐다.
+- LR 스케줄: Linear Warmup → Cosine Annealing (`LambdaLR`). `ReduceLROnPlateau` 는 쓰지 않는다.
 
 ## Image Size & CTC Constraints
 
-- CRNN CNN outputs `W/16` time steps due to max-pooling (2×2, 2×2, 2×1 = 8×2 = 16 ratio).
-- Constraint: `image_width / 16 >= label_length`.
-- Example: 6-char captcha → minimum 96px width required.
+- CRNN CNN 은 MaxPool 2×2, 2×2, (2,1) 을 거쳐 `H/8 × W/4` 로 줄인다. **Time steps T = W/4** (전처리·crop 후 폭 기준).
+- Constraint: `detected_image_width / 4 >= label_length`. 위반 시 `CRNN.__init__` 이 `ValueError`.
+- Example: 6-char captcha → 최소 24px 폭. 실제 캡차(120~168px)에서는 여유가 크다.
 
 ## Web API
 
@@ -101,7 +111,14 @@ captcha_data/<captcha_id>/<rev>/images/{train,pred}/
 
 기본 캡차는 환경 변수가 아니라 `db/schema.sql` 의 `service_captchas.is_default` 가 정한다.
 
-Endpoints: `GET /health`, `POST /predict`
+Endpoints (전체 목록·스키마는 `docs/web-api-reference.md`):
+
+- 시스템: `GET /health`, `GET /version`
+- 추론: `POST /api/v1/predictImage` (multipart), `POST /api/v1/predictJson` (base64)
+- 일괄추론: `GET /api/v1/batch/{targets,stream,image}`
+- 학습: `GET /api/v1/train/{targets,params,stream}`, `POST /api/v1/train/{params,start,stop}`
+- 데이터 수집: `GET /api/v1/data-source/{targets,stream,drafts,image}`, `POST /api/v1/data-source/label`
+- 프런트(HTML): `/`, `/predict`, `/train`, `/data-source`, `/status`
 
 ### 연산 디바이스 선택
 
@@ -116,8 +133,9 @@ CUDA 가용 시 CUDA, 아니면 CPU 다 (`PyTorchModel` 의 원래 동작). 응�
 
 ## Gotchas
 
-- **No test suite** — verify by running `python -m hypercaptcha.train` or `.pred` with small dataset,
-  또는 `apps/cli/tools/compare_with_python.py` 로 Rust CLI 와 대조.
+- **테스트**: `tests/` 에 pytest 스위트가 있다 (`uv run pytest tests/`, 웹 서비스 캐시·컨텍스트 경로·모델 로드 위주).
+  모델 품질은 테스트로 안 잡히니 `python -m hypercaptcha.train` / `.pred` 를 작은 데이터셋으로 돌리거나
+  `apps/cli/tools/compare_with_python.py` 로 Rust CLI 와 대조해 확인한다.
 - No lint/typecheck config (ruff, mypy, flake8 모두 없음). 패키징 설정은 `pyproject.toml` 한 곳에 있음.
 - `apps/web/services/captcha.py`는 `from hypercaptcha import engine`을 **함수 안에서** 지연 import 한다.
   최상위에서 import 하면 서버 기동 시점에 torch/CUDA 초기화가 딸려온다.
