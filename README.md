@@ -183,7 +183,7 @@ Compose는 호스트 `5001`을 컨테이너 `8000`에 연결하고 `captcha_data
 
 설정 우선순위는 **실제 환경 변수(compose의 `environment` / `env_file`) > 컨테이너 안의 `/app/.env` > `apps/web/core/config.py`의 필드 기본값**입니다. `Dockerfile`은 런타임 값을 하나도 고정하지 않습니다 — `ENV`로 박으면 나중에 넣어준 `.env`를 덮어써 버리기 때문입니다. 따라서 **`.env`를 주면 그 값이 쓰이고, 없으면 코드 기본값으로 뜹니다**. `.env`는 `.dockerignore`로 막혀 이미지에 포함되지 않고 런타임에만 주입되므로, 값을 바꾸면 재빌드 없이 `docker compose up -d`만 다시 하면 됩니다(`env_file`의 `required: false`는 Compose v2.24+ 필요).
 
-컨테이너의 SQLite(`/app/db/captchaSolver.sqlite3`)는 기동할 때마다 `schema.sql`과 시드로 새로 만들어지는 휘발성 데이터입니다. 런타임에 바꾼 `service_captchas` 값을 유지하려면 `DB_PATH`를 이미지 밖 경로로 옮기고 그 경로에 볼륨을 붙이세요(`docker-compose.yml` 주석 참고).
+컨테이너의 SQLite(`/app/db/captchaSolver.sqlite3`)는 기동할 때마다 `schema.sql`과 시드로 새로 만들어지는 휘발성 데이터입니다. 런타임에 바꾼 `service_captchas` 값을 유지하려면 `DB_PATH`를 이미지 밖 경로로 옮기고 그 경로에 볼륨을 붙이세요(`compose.yml` 주석 참고).
 
 ## 배포 산출물
 

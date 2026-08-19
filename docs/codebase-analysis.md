@@ -61,7 +61,7 @@ graph TD
 | Rust CLI | `apps/cli/src/*.rs` | 이미지/표준입력 → 전처리 → ONNX → CTC 디코딩 → 텍스트/JSON |
 | 모델 동기화 | `apps/cli/tools/sync_models.py` | Python ONNX를 portable models로 복사하고 메타데이터 생성 |
 | Spring Boot 서비스 | `apps/springBoot` | ONNX 기반으로 FastAPI와 같은 UI/API/DB/상태 계약 제공 |
-| 배포 | `Dockerfile`, `docker-compose.yml` | Python FastAPI 컨테이너 빌드, 모델 디렉터리 읽기 전용 마운트 |
+| 배포 | `Dockerfile`, `compose.yml` | Python FastAPI 컨테이너 빌드, 모델 디렉터리 읽기 전용 마운트 |
 
 ## 4. 데이터와 제어 흐름
 

@@ -4,7 +4,7 @@
 
 ## 공통 사항
 
-- Base URL: 개발서버 기본값 `http://localhost:5000` (`server.sh`), Docker 기본값은 호스트 `30008` → 컨테이너 `8000` (`docker-compose.yml`).
+- Base URL: 개발서버 기본값 `http://localhost:5000` (`server.sh`), Docker 기본값은 호스트 `30008` → 컨테이너 `8000` (`compose.yml`).
 - 시스템 엔드포인트(`/health`, `/ping`, `/version`)는 루트에 있고, 그 외 API는 전부 `/api/v1` prefix를 쓴다.
 - `WEB_CONTEXT_PATH`(예: `/captcha`)가 설정된 배포에서는 이 문서의 모든 경로 앞에 그 접두사가 추가로 붙는다 (예: `GET /captcha/health`, `POST /captcha/api/v1/predictImage`). 프록시가 접두사를 미리 떼고 넘기든 그대로 넘기든 양쪽 다 같은 라우트로 연결된다 — 자세한 동작은 [web-architecture.md §8](./web-architecture.md#8-리버스-프록시-하위-경로-web_context_path) 참고.
 - 오류 응답은 FastAPI 기본 형식 `{"detail": "..."}`이다.

@@ -1,17 +1,16 @@
+# CPU 서빙용. compose.yml 과 다른 점은 build.dockerfile / image 태그 / 이름뿐이다.
+#   docker compose -f compose-cpu.yml up -d --build
 services:
   web:
     build:
       context: .
-      dockerfile: Dockerfile
-    image: captcha-solver:latest
-    container_name: captcha-solver-web
-    # 호스트 30008 -> 컨테이너 8000 (fastapi dev). 개발 서버라 30008 로 노출한다.
+      dockerfile: Dockerfile.cpu
+    image: captcha-solver:cpu
+    container_name: captcha-solver-web-cpu
+    # Dockerfile.cpu 의 CMD 는 fastapi run(리로드 없음)이라 개발 서버가 아니다.
+    # GPU 쪽과 동시에 띄울 일이 있으면 여기 호스트 포트를 바꾼다.
     ports:
       - "30008:8000"
-    # 개발 서버 자동 리로드를 실제로 쓰려면 소스를 마운트한다(.venv 는 가리지 않게 소스만):
-    #   volumes:
-    #     - ./apps:/app/apps
-    #     - ./packages:/app/packages
     # 호스트 .env 를 런타임에 주입한다. 있으면 그 값이 쓰이고, 없으면 컨테이너는
     # apps/web/core/config.py 의 필드 기본값으로 뜬다 (.env 는 gitignore 대상이라
     # 없을 수 있으므로 required: false — Compose v2.24+ 필요).
@@ -27,19 +26,6 @@ services:
     volumes:
       # 학습 UI(/train)가 여기 model/ 에 가중치를 쓰므로 :ro 로 두면 저장에서 죽는다.
       - ./captcha_data:/app/captcha_data
-    # 이 이미지의 torch 는 CUDA(cu130) 빌드라서 GPU 를 붙여주지 않으면
-    # torch.cuda.is_available() 이 False 가 되고 추론이 조용히 CPU 로 떨어진다
-    # (/predict 의 CUDA 선택지도 "사용 가능한 GPU 가 없습니다" 로 잠긴다).
-    # 호스트에 NVIDIA Container Toolkit(nvidia-container-runtime)이 필요하다.
-    # GPU 가 없는 호스트에서는 이 블록이 있으면 기동이 실패하므로
-    # docker-compose-cpu.yml 을 쓴다.
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
     # SQLite(/app/db/captchaSolver.sqlite3)는 기동할 때마다 schema.sql + 시드로 새로
     # 만들어지는 휘발성 데이터다. 컨테이너 재생성 후에도 service_captchas 수정분을
     # 남기려면 DB 를 이미지 밖 경로로 빼고 그 경로에만 볼륨을 붙여야 한다:
@@ -50,4 +36,4 @@ services:
     restart: unless-stopped
 networks:
   default:
-    name: captcha-solver-net
+    name: captcha-solver-cpu-net

@@ -68,7 +68,7 @@ docker compose up --build -d
 
 컨테이너는 root 가 아니라 베이스 이미지에 있는 `ubuntu`(uid/gid 1000)로 뜹니다. 리눅스
 개발 호스트의 일반 사용자 UID 도 보통 1000이라 `logs` 볼륨 권한 문제가 잘 안 생깁니다.
-호스트 UID 가 다르면 `docker-compose.yml` 에 `user: "<uid>:<gid>"` 를 추가하세요.
+호스트 UID 가 다르면 `compose.yml` 에 `user: "<uid>:<gid>"` 를 추가하세요.
 
 ---
 

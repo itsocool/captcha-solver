@@ -54,7 +54,7 @@ uv run uvicorn web.app:app --host 0.0.0.0 --port 5000 --reload --reload-dir apps
 - `init_db()`가 기동할 때마다 `db/schema.sql` + 시드를 재적용한다. 스키마는 `CREATE TABLE IF NOT EXISTS`/`INSERT OR IGNORE`로 작성돼 반복 실행이 안전하다.
 - 컬럼을 추가하는 마이그레이션은 `schema.sql` 자체가 아니라 `core/db.py`의 `_add_missing_columns()`에 추가한다 — SQLite에 `ADD COLUMN IF NOT EXISTS`가 없기 때문이다. 새 컬럼이 필요하면 `(table, column, decl)` 튜플을 이 리스트에 추가한다.
 - 테이블 구조는 `db/schema.sql` 참고: `captcha_types`, `train_data_configs`, `train_data_characters`, `train_info_cache`, `service_captchas`(서비스 대상/기본 캡차), `character_sets`(이름 붙은 문자 집합 상수), `train_run_params`(UI 폼 값 영속화).
-- DB를 초기 상태로 리셋하려면 `db/captchaSolver.sqlite3` 파일을 삭제하고 서버를 재기동한다 (스키마+시드가 자동 재적용됨). **Docker Compose 기본 설정에서는 이 파일이 이미지 안에 있어 컨테이너를 재생성하면 휘발된다** — `service_captchas` 수정을 영속화하려면 `DB_PATH`를 볼륨 마운트 경로로 옮겨야 한다 (`docker-compose.yml` 주석 참고).
+- DB를 초기 상태로 리셋하려면 `db/captchaSolver.sqlite3` 파일을 삭제하고 서버를 재기동한다 (스키마+시드가 자동 재적용됨). **Docker Compose 기본 설정에서는 이 파일이 이미지 안에 있어 컨테이너를 재생성하면 휘발된다** — `service_captchas` 수정을 영속화하려면 `DB_PATH`를 볼륨 마운트 경로로 옮겨야 한다 (`compose.yml` 주석 참고).
 
 ## 4. 테스트
 
@@ -95,14 +95,14 @@ uv run pytest tests/
 ## 7. Docker
 
 - `Dockerfile`(GPU, CUDA 빌드) / `Dockerfile.cpu`(CPU 전용) 두 가지가 있다.
-- `docker-compose.yml`은 호스트 `30008` → 컨테이너 `8000`으로 노출하고, `deploy.resources.reservations.devices`로 NVIDIA GPU를 예약한다(호스트에 NVIDIA Container Toolkit 필요). GPU가 없는 호스트에서는 `docker-compose-cpu.yml`을 쓴다.
+- `compose.yml`은 호스트 `30008` → 컨테이너 `8000`으로 노출하고, `deploy.resources.reservations.devices`로 NVIDIA GPU를 예약한다(호스트에 NVIDIA Container Toolkit 필요). GPU가 없는 호스트에서는 `compose-cpu.yml`을 쓴다.
 - `captcha_data/`는 읽기-쓰기 볼륨으로 마운트한다 — `/train` UI가 여기 `model/`에 가중치를 쓰므로 `:ro`로 두면 저장이 실패한다.
 - `.env`는 `env_file`로 런타임에 주입되며(이미지에는 굽지 않음), 값을 바꾸면 재빌드 없이 재기동만으로 반영된다.
 - SQLite DB는 컨테이너 안 경로에 있어 기본 설정으로는 컨테이너 재생성 시 초기화된다 (§3 참고).
 
 ```bash
 docker compose up --build        # GPU 호스트
-docker compose -f docker-compose-cpu.yml up --build  # CPU 전용
+docker compose -f compose-cpu.yml up --build  # CPU 전용
 ```
 
 ## 8. 리버스 프록시 하위 경로 배포 (`WEB_CONTEXT_PATH`)
