@@ -1,7 +1,10 @@
 // 프록시 하위 경로 접두사(.env WEB_CONTEXT_PATH). base.html 이 <html data-context-path> 로 내려준다.
 const CONTEXT_PATH = document.documentElement.dataset.contextPath || "";
 
-const targetSelect = document.querySelector("#target");
+const captchaSelect = document.querySelector("#captcha");
+const revSelect = document.querySelector("#rev");
+// 서버가 내려준 (캡차, 리비전) 목록. 리비전 셀렉트는 이걸로 캡차별로 채운다.
+const TARGETS = JSON.parse(document.querySelector("#train-targets").textContent);
 const deviceSelect = document.querySelector("#device");
 const runButton = document.querySelector("#run");
 const stopButton = document.querySelector("#stop");
@@ -57,10 +60,41 @@ function reset() {
 	progressCount.textContent = "—";
 }
 
+/** 선택한 캡차의 리비전들로 셀렉트를 다시 채운다. 선택 가능한 가장 높은 리비전이 기본. */
+function fillRevs(preferredRev = null) {
+	const revs = TARGETS.filter((t) => t.captcha_id === captchaSelect.value)
+		.sort((a, b) => b.rev - a.rev);
+	revSelect.replaceChildren(...revs.map((t) => {
+		const option = document.createElement("option");
+		option.value = String(t.rev);
+		option.className = "bg-card";
+		option.disabled = !t.selectable;
+		option.dataset.hasModel = t.has_model ? "1" : "0";
+		option.dataset.label = `${t.name} · ${t.captcha_id} rev${t.rev}`;
+		option.textContent = `rev ${t.rev} · ${t.train_count}장`
+			+ (t.has_model ? " · 모델 있음" : "")
+			+ (t.selectable ? "" : ` · ${t.reason}`);
+		return option;
+	}));
+	const wanted = preferredRev !== null ? String(preferredRev) : null;
+	const pick = [...revSelect.options].find((o) => o.value === wanted)
+		|| [...revSelect.options].find((o) => !o.disabled)
+		|| revSelect.options[0];
+	if (pick) {
+		revSelect.value = pick.value;
+	}
+}
+
+/** 현재 선택된 (캡차, 리비전). API 파라미터로 그대로 쓴다. */
+function currentTarget() {
+	return {captchaId: captchaSelect.value, rev: revSelect.value};
+}
+
 function setRunning(running) {
 	runButton.disabled = running;
 	stopButton.disabled = !running;
-	targetSelect.disabled = running;
+	captchaSelect.disabled = running;
+	revSelect.disabled = running;
 	deviceSelect.disabled = running;
 	resetButton.disabled = running;
 	[...NUMBER_FIELDS, ...CHECKBOX_FIELDS, "loss_type"].forEach((id) => {
@@ -96,16 +130,17 @@ function applyParams(params) {
 }
 
 async function loadParamsForTarget() {
-	if (!targetSelect.value) {
+	const {captchaId, rev} = currentTarget();
+	if (!captchaId || !rev) {
 		return;
 	}
-	const requested = targetSelect.value; // 응답이 늦게 와도 그 사이 바뀐 대상을 덮지 않게 고정
-	const [captchaId, rev] = requested.split(":");
+	const requested = `${captchaId}:${rev}`; // 응답이 늦게 와도 그 사이 바뀐 대상을 덮지 않게 고정
 	try {
 		const res = await fetch(
 			`${CONTEXT_PATH}/api/v1/train/params?captcha_id=${encodeURIComponent(captchaId)}&rev=${encodeURIComponent(rev)}`,
 		);
-		if (!res.ok || targetSelect.value !== requested) {
+		const now = currentTarget();
+		if (!res.ok || `${now.captchaId}:${now.rev}` !== requested) {
 			return; // 실패했거나 그새 대상이 바뀌었으면 버린다 (기본값/새 대상 유지)
 		}
 		const data = await res.json();
@@ -245,7 +280,8 @@ function attachStream() {
 		// '지금 돌고 있는 값'이라야 맞다 (다시 열었을 때 epochs 등이 어긋나던 버그).
 		// (프로그램적 .value 설정은 change 이벤트를 띄우지 않아 재귀 로드/저장이 없다.)
 		if (payload.captcha_id !== undefined && payload.rev !== undefined) {
-			targetSelect.value = `${payload.captcha_id}:${payload.rev}`;
+			captchaSelect.value = payload.captcha_id;
+			fillRevs(payload.rev);
 		}
 		if (payload.device) {
 			deviceSelect.value = payload.device;
@@ -361,11 +397,11 @@ async function startTraining(captchaId, rev) {
 }
 
 runButton.addEventListener("click", async () => {
-	const option = targetSelect.selectedOptions[0];
-	if (!option || !targetSelect.value) {
+	const option = revSelect.selectedOptions[0];
+	const {captchaId, rev} = currentTarget();
+	if (!option || option.disabled || !captchaId || !rev) {
 		return;
 	}
-	const [captchaId, rev] = targetSelect.value.split(":");
 
 	if (option.dataset.hasModel === "1" && !(await askOverwrite(option.dataset.label))) {
 		return;
@@ -428,10 +464,10 @@ resetButton.addEventListener("click", () => {
 // 떠나도 값이 유지된다. applyParams 의 프로그램적 설정은 change 를 안 띄우므로
 // 대상 전환/이어보기로 폼을 채울 때 저장이 되돌아 실행되지 않는다.
 async function saveCurrentParams() {
-	if (!targetSelect.value) {
+	const {captchaId, rev} = currentTarget();
+	if (!captchaId || !rev) {
 		return;
 	}
-	const [captchaId, rev] = targetSelect.value.split(":");
 	const query = new URLSearchParams({captcha_id: captchaId, rev, ...collectParams()});
 	try {
 		await fetch(`${CONTEXT_PATH}/api/v1/train/params?${query}`, {method: "POST"});
@@ -444,7 +480,12 @@ async function saveCurrentParams() {
 });
 
 // 대상을 바꾸면 그 대상의 저장된 학습 파라미터를 불러와 폼을 채운다.
-targetSelect.addEventListener("change", loadParamsForTarget);
+captchaSelect.addEventListener("change", () => {
+	fillRevs();
+	loadParamsForTarget();
+});
+revSelect.addEventListener("change", loadParamsForTarget);
+fillRevs();
 
 // 초기화: 학습이 돌고 있으면 스트림에 붙어 '실행 중 파라미터'로 폼을 채우고, 아니면
 // 선택된 대상의 저장 파라미터를 불러온다. 둘을 동시에 하면 저장값이 실행 중 값을

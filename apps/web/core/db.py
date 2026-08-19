@@ -28,6 +28,7 @@ def _add_missing_columns(conn: sqlite3.Connection) -> None:
 	SQLite 에는 ADD COLUMN IF NOT EXISTS 가 없어서 schema.sql 안에 둘 수 없다.
 	"""
 	added = [
+		("captcha_types", "seq", "INTEGER NOT NULL DEFAULT 0"),
 		("train_data_configs", "characters", "TEXT NOT NULL DEFAULT ''"),
 		("train_data_configs", "preprocess", "TEXT NOT NULL DEFAULT 'default'"),
 		("train_data_configs", "crop", "TEXT"),
@@ -201,3 +202,17 @@ def save_data_source_params(captcha_id: str, rev: int, params: dict) -> None:
 			)
 	except sqlite3.Error as e:
 		print(f"[db] data_source_params 저장 실패: {e}")
+
+
+def get_captcha_seq() -> dict[str, int]:
+	"""captcha_types.seq — 화면에 보이는 캡차 순서 (captcha_id → seq). 실패하면 빈 dict.
+
+	호출부(services/captcha.ordered_captcha_ids)가 빈 dict 면 레지스트리 순서로 폴백한다.
+	"""
+	try:
+		with connect() as conn:
+			rows = conn.execute("SELECT captcha_id, seq FROM captcha_types").fetchall()
+	except sqlite3.Error as e:
+		print(f"[db] captcha_types.seq 조회 실패: {e}")
+		return {}
+	return {row["captcha_id"]: int(row["seq"]) for row in rows}

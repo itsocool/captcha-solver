@@ -79,11 +79,12 @@ def list_targets() -> list[dict]:
 	기존 모델이 있으면 has_model 로 알려준다 — 덮어쓰기 확인 모달의 근거다.
 	"""
 	from hypercaptcha import engine
+	from web.services.captcha import ordered_captcha_ids
 
 	registered = engine.get_captcha_type_list()
 	targets: list[dict] = []
 
-	for captcha_id in sorted(registered):
+	for captcha_id in ordered_captcha_ids(registered):
 		captcha_dir = CAPTCHA_DATA_DIR / captcha_id
 		if not captcha_dir.is_dir():
 			continue

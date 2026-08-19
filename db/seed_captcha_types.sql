@@ -37,13 +37,22 @@ VALUES (8, 'rev_starts_at_1_drop_kshop');
 -- ---------------------------------------------------------------------------
 -- captcha_types: 표시용 이름/설명
 -- ---------------------------------------------------------------------------
-INSERT OR IGNORE INTO captcha_types(captcha_id, name, description) VALUES
-	('supreme_court', '대법원',  '대법원 캡챠'),
+INSERT OR IGNORE INTO captcha_types(captcha_id, name, description, seq) VALUES
+	('supreme_court', '대법원',  '대법원 캡챠',        1),
 	-- 옛 data.json 은 '정부24' / '정부24 캡챠', engine.py 는 '정부 24' / '대한민국 정부 24 캡챠'.
 	-- 여기서는 data.json 값을 따랐다.
-	('gov24',         '정부24',  '정부24 캡챠'),
-	('wetax',         'WETAX',   'WETAX 캡챠'),
-	('iptime',        'ipTIME',  'ipTIME 공유기 캡챠');
+	('gov24',         '정부24',  '정부24 캡챠',        2),
+	('wetax',         'WETAX',   'WETAX 캡챠',         3),
+	('iptime',        'ipTIME',  'ipTIME 공유기 캡챠', 4);
+
+-- 마이그레이션 10: 표시 순서(seq). 이미 시드된 행은 INSERT OR IGNORE 가 안 건드리므로
+-- UPDATE 로 채운다. 멱등이라 반복 실행해도 안전하다.
+UPDATE captcha_types SET seq = 1 WHERE captcha_id = 'supreme_court' AND seq <> 1;
+UPDATE captcha_types SET seq = 2 WHERE captcha_id = 'gov24'         AND seq <> 2;
+UPDATE captcha_types SET seq = 3 WHERE captcha_id = 'wetax'         AND seq <> 3;
+UPDATE captcha_types SET seq = 4 WHERE captcha_id = 'iptime'        AND seq <> 4;
+INSERT OR IGNORE INTO schema_migrations(version, name)
+VALUES (10, 'captcha_types_seq');
 
 -- ---------------------------------------------------------------------------
 -- train_data_configs: 캡차별 학습/전처리 설정

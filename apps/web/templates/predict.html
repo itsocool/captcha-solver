@@ -10,23 +10,34 @@
 			<span class="text-sm text-muted-foreground">images/pred 전체</span>
 		</div>
 
-		<div class="grid gap-5 p-6 sm:grid-cols-2 xl:grid-cols-4">
+		{# (캡차, 리비전) 목록. 리비전 셀렉트는 JS 가 선택한 캡차 기준으로 채운다 (선택 가능한 가장 높은 리비전이 기본). #}
+		<script id="predict-targets" type="application/json">{{ targets | tojson }}</script>
+
+		<div class="grid gap-5 p-6 sm:grid-cols-2 xl:grid-cols-5">
 			<div>
-				<label class="mb-2 block text-sm font-medium" for="target">대상</label>
+				<label class="mb-2 block text-sm font-medium" for="captcha">캡차 ID</label>
 				<div class="relative">
-					<select id="target" class="h-11 w-full appearance-none rounded-lg border border-border bg-transparent pr-10 pl-4 text-sm outline-none focus:border-brand focus:ring-3 focus:ring-brand/10">
-						{% for target in targets %}
-						<option
-							value="{{ target.captcha_id }}:{{ target.rev }}"
-							class="bg-card"
-							{% if not target.selectable %} disabled{% endif %}
-						>{{ target.name }} · {{ target.captcha_id }} rev{{ target.rev }} · {{ target.pred_count }}장{% if not target.selectable %} · {{ target.reason }}{% endif %}</option>
+					<select id="captcha" class="h-11 w-full appearance-none rounded-lg border border-border bg-transparent pr-10 pl-4 text-sm outline-none focus:border-brand focus:ring-3 focus:ring-brand/10">
+						{# targets 는 서비스가 표시 순서(captcha_types.seq)로 정렬해 준다. unique 는 순서를 보존한다 (groupby 는 정렬해 버림). #}
+						{% for target in targets | unique(attribute="captcha_id") %}
+						<option value="{{ target.captcha_id }}" class="bg-card">{{ target.name }} · {{ target.captcha_id }}</option>
 						{% endfor %}
 					</select>
 					<svg class="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 						<path d="m6 9 6 6 6-6"></path>
 					</svg>
 				</div>
+			</div>
+
+			<div>
+				<label class="mb-2 block text-sm font-medium" for="rev">리비전</label>
+				<div class="relative">
+					<select id="rev" class="h-11 w-full appearance-none rounded-lg border border-border bg-transparent pr-10 pl-4 text-sm outline-none focus:border-brand focus:ring-3 focus:ring-brand/10"></select>
+					<svg class="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="m6 9 6 6 6-6"></path>
+					</svg>
+				</div>
+				<p class="mt-1.5 text-xs text-muted-foreground">선택 가능한 가장 높은 리비전이 기본</p>
 			</div>
 
 			<div>
@@ -145,5 +156,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ context_path }}/static/js/predict.js"></script>
+<script src="{{ static_url('js/predict.js') }}"></script>
 {% endblock %}

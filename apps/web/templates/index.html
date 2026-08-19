@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block page_title %}Captcha Solver{% endblock %}
+{% block page_title %}Home{% endblock %}
 
 {% block content %}
 <div class="grid gap-6 xl:grid-cols-2">
@@ -120,5 +120,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ context_path }}/static/js/app.js"></script>
+<script src="{{ static_url('js/app.js') }}"></script>
 {% endblock %}

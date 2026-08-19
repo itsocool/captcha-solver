@@ -58,6 +58,19 @@ def create_app() -> FastAPI:
 	templates = Jinja2Templates(directory=str(settings.template_dir))
 	# 템플릿의 링크·정적 파일 경로는 절대 경로라 root_path 가 자동으로 안 붙는다. 전역으로 넘긴다.
 	templates.env.globals["context_path"] = settings.web_context_path
+
+	def static_url(path: str) -> str:
+		"""정적 파일 URL. 파일 mtime 을 ?v= 로 붙여 배포·수정 뒤 브라우저가 옛 JS 를 캐시에서
+		꺼내 쓰지 못하게 한다 (템플릿은 바뀌었는데 JS 만 낡으면 DOM 참조가 어긋나 조용히 깨진다).
+		StaticFiles 는 Cache-Control 을 안 보내 브라우저가 휴리스틱으로 재검증 없이 캐시할 수 있다."""
+		target = settings.static_dir / path
+		try:
+			version = int(target.stat().st_mtime)
+		except OSError:
+			version = 0
+		return f"{settings.web_context_path}/static/{path}?v={version}"
+
+	templates.env.globals["static_url"] = static_url
 	fastapi_app.include_router(create_frontend_router(templates))
 	fastapi_app.include_router(system_router)
 	fastapi_app.include_router(api_v1_router, prefix="/api/v1")

@@ -18,6 +18,19 @@ class CaptchaPredictionError(Exception):
 	pass
 
 
+def ordered_captcha_ids(captcha_ids) -> list[str]:
+	"""캡차 ID 들을 화면 표시 순서(captcha_types.seq)로 정렬한다.
+
+	모든 셀렉트/목록(Home, Predict, Training, Data Source, Status)이 이 한 곳을 거쳐
+	같은 순서를 보인다. DB 에 없는 ID 는 뒤로 가되 원래 순서(레지스트리 순)를 유지한다.
+	"""
+	from web.core.db import get_captcha_seq
+
+	seq = get_captcha_seq()
+	ids = list(captcha_ids)
+	return sorted(ids, key=lambda cid: (seq.get(cid, 1 << 30), ids.index(cid)))
+
+
 def list_captcha_types(serviced_only: bool = True) -> list[tuple[str, str]]:
 	"""(captcha_id, 표시명) 목록.
 
@@ -31,7 +44,7 @@ def list_captcha_types(serviced_only: bool = True) -> list[tuple[str, str]]:
 	else:
 		ids = list(registered)
 
-	return [(cid, registered[cid].name) for cid in ids]
+	return [(cid, registered[cid].name) for cid in ordered_captcha_ids(ids)]
 
 
 def is_serviced(captcha_id: str) -> bool:
@@ -124,7 +137,9 @@ def model_status() -> list[dict]:
 
 	serviced = get_service_config()["serviced"]
 	rows = []
-	for captcha_id, captcha_type in engine.get_captcha_type_list().items():
+	registered = engine.get_captcha_type_list()
+	for captcha_id in ordered_captcha_ids(registered):
+		captcha_type = registered[captcha_id]
 		train_data = captcha_type.train_data
 		# 같은 캡차가 cpu/cuda 양쪽에 올라가 있을 수 있어 디바이스를 모아서 표시한다.
 		devices = loaded_devices(captcha_id)

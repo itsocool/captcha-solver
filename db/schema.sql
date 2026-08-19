@@ -4,6 +4,9 @@ CREATE TABLE IF NOT EXISTS captcha_types (
 	captcha_id TEXT PRIMARY KEY,
 	name TEXT NOT NULL DEFAULT '',
 	description TEXT NOT NULL DEFAULT '',
+	-- 화면(셀렉트·상태 목록)에 보이는 순서. 작은 값이 먼저. 기존 DB 는 db.py 의
+	-- _add_missing_columns 가 ALTER TABLE 로 붙이고, 값은 seed 의 UPDATE 가 채운다.
+	seq INTEGER NOT NULL DEFAULT 0,
 	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

@@ -1,7 +1,10 @@
 // 프록시 하위 경로 접두사(.env WEB_CONTEXT_PATH). base.html 이 <html data-context-path> 로 내려준다.
 const CONTEXT_PATH = document.documentElement.dataset.contextPath || "";
 
-const targetSelect = document.querySelector("#target");
+const captchaSelect = document.querySelector("#captcha");
+const revSelect = document.querySelector("#rev");
+// 서버가 내려준 (캡차, 리비전) 목록. 리비전 셀렉트는 이걸로 캡차별로 채운다.
+const TARGETS = JSON.parse(document.querySelector("#predict-targets").textContent);
 const deviceSelect = document.querySelector("#device");
 const runButton = document.querySelector("#run");
 const stopButton = document.querySelector("#stop");
@@ -50,10 +53,34 @@ function reset() {
 	progressCount.textContent = "—";
 }
 
+/** 선택한 캡차의 리비전들로 셀렉트를 다시 채운다. 선택 가능한 가장 높은 리비전이 기본. */
+function fillRevs() {
+	const revs = TARGETS.filter((t) => t.captcha_id === captchaSelect.value)
+		.sort((a, b) => b.rev - a.rev);
+	revSelect.replaceChildren(...revs.map((t) => {
+		const option = document.createElement("option");
+		option.value = String(t.rev);
+		option.className = "bg-card";
+		option.disabled = !t.selectable;
+		option.textContent = `rev ${t.rev} · ${t.pred_count}장` + (t.selectable ? "" : ` · ${t.reason}`);
+		return option;
+	}));
+	const pick = [...revSelect.options].find((o) => !o.disabled) || revSelect.options[0];
+	if (pick) {
+		revSelect.value = pick.value;
+	}
+}
+
+/** 현재 선택된 (캡차, 리비전). API 파라미터로 그대로 쓴다. */
+function currentTarget() {
+	return {captchaId: captchaSelect.value, rev: revSelect.value};
+}
+
 function setRunning(running) {
 	runButton.disabled = running;
 	stopButton.disabled = !running;
-	targetSelect.disabled = running;
+	captchaSelect.disabled = running;
+	revSelect.disabled = running;
 	deviceSelect.disabled = running;
 }
 
@@ -262,11 +289,11 @@ function finish(label) {
 }
 
 runButton.addEventListener("click", () => {
-	const selected = targetSelect.value;
-	if (!selected) {
+	const option = revSelect.selectedOptions[0];
+	const {captchaId, rev} = currentTarget();
+	if (!option || option.disabled || !captchaId || !rev) {
 		return;
 	}
-	const [captchaId, rev] = selected.split(":");
 
 	reset();
 	context = {captchaId, rev: Number(rev), total: 0};
@@ -338,3 +365,6 @@ pageNext.addEventListener("click", () => {
 	page += 1;
 	renderTable();
 });
+
+captchaSelect.addEventListener("change", fillRevs);
+fillRevs();

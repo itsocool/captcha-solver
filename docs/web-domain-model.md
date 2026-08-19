@@ -27,7 +27,10 @@ DB 파일 경로는 `Settings.db_path` (기본 `./db/captchaSolver.sqlite3`, 저
 | `captcha_id` | TEXT | PK | 캡차 종류 식별자 (예: `supreme_court`, `gov24`) |
 | `name` | TEXT | NOT NULL, DEFAULT '' | 표시용 이름 |
 | `description` | TEXT | NOT NULL, DEFAULT '' | 설명 |
+| `seq` | INTEGER | NOT NULL, DEFAULT 0 | 화면 표시 순서(작을수록 먼저). 시드: supreme_court 1, gov24 2, wetax 3, iptime 4 (마이그레이션 10; 기존 DB 는 `_add_missing_columns()`가 컬럼을 붙이고 시드 UPDATE 가 값을 채움) |
 | `created_at` / `updated_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | |
+
+모든 캡차 목록(Home·Predict·Training·Data Source 셀렉트, Status 페이지, 세 서비스의 `list_targets()`)은 `services/captcha.ordered_captcha_ids()` 한 곳을 거쳐 `seq` 순으로 정렬된다. DB 에 없는 ID 는 뒤로 가되 레지스트리 순서를 유지한다. `service_captchas.sort_order`는 서비스 대상 목록의 순서이고, 화면 순서의 진실 소스는 `captcha_types.seq`다.
 
 ### 2.2 `train_data_configs`
 

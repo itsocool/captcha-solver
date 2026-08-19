@@ -111,7 +111,7 @@ docker compose -f docker-compose-cpu.yml up --build  # CPU 전용
 
 - `core/db.py`가 아니라 `app.py`의 `create_app()`이 `FastAPI(root_path=settings.web_context_path)`로 앱을 만든다 — Swagger(`/docs`)가 접두사 붙은 `openapi.json`을 올바르게 찾고, `openapi.json`의 `servers`에 `{"url": "/captcha"}`가 실린다.
 - `PrependRootPath` ASGI 미들웨어(`app.py`)가 함께 동작한다. FastAPI 라우트 매칭 자체는 `root_path`만으로 접두사 없는 요청(`/health`)도 통과시키지만, `StaticFiles` 같은 `Mount`는 하위 `root_path`(`/captcha/static/...`)를 스스로 못 잘라내 404가 난다. 이 미들웨어가 프록시가 접두사를 이미 떼고 넘겼는지 판단해 없으면 앞에 붙여준다 — 그 결과 프록시가 접두사를 떼든 안 떼든(`/health` 요청이든 `/captcha/health` 요청이든) 같은 라우트로 들어온다.
-- 템플릿의 링크·정적 파일 경로(`href`, `src`, 폼 `action`)는 절대 경로(`/static/...`)라서 `root_path`가 자동으로 붙지 않는다. `app.py`가 `templates.env.globals["context_path"]`로 전역 변수를 넘기고, 모든 템플릿이 `{{ context_path }}/static/...` 식으로 직접 접두사를 붙인다.
+- 템플릿의 링크·정적 파일 경로(`href`, `src`, 폼 `action`)는 절대 경로(`/static/...`)라서 `root_path`가 자동으로 붙지 않는다. `app.py`가 `templates.env.globals["context_path"]`로 전역 변수를 넘기고, 템플릿이 링크에 `{{ context_path }}/...` 식으로 직접 접두사를 붙인다. 정적 자산은 `static_url('js/xxx.js')` 전역 함수가 접두사와 함께 파일 mtime 기반 `?v=` 캐시 무효화 파라미터를 붙여 준다.
 - 정적 JS(`train.js`, `predict.js`, `data_source.js`)는 서버 렌더링 문맥이 없으므로 `base.html`이 `<html data-context-path="{{ context_path }}">`로 내려준 값을 `document.documentElement.dataset.contextPath`로 읽어 `fetch`/`EventSource` URL 앞에 붙인다 (`CONTEXT_PATH` 상수, 자세한 패턴은 [web-frontend-guide.md](./web-frontend-guide.md#9-리버스-프록시-하위-경로-context_path) 참고). `app.js`(index.html의 단일 예측 폼)는 예외 — 폼 `action`을 서버가 `frontend/router.py`에서 이미 접두사 붙여 렌더링하므로 JS가 따로 처리할 게 없다.
 
 기본값(빈 문자열)은 루트(`/`)에 뜬 것으로 보고 아무것도 변하지 않는다. 동작을 확인하려면 `tests/test_context_path.py`를 참고 — 정규화 케이스와, 프록시가 접두사를 떼거나 안 떼는 두 시나리오 모두 같은 라우트/정적 파일/Swagger로 연결되는지를 검증한다.

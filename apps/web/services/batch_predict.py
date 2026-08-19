@@ -40,11 +40,12 @@ def list_targets() -> list[dict]:
 	모델이 없는 리비전도 이유를 보여주려고 목록에는 포함하되 selectable=False 로 둔다.
 	"""
 	from hypercaptcha import engine
+	from web.services.captcha import ordered_captcha_ids
 
 	registered = engine.get_captcha_type_list()
 	targets: list[dict] = []
 
-	for captcha_id in sorted(registered):
+	for captcha_id in ordered_captcha_ids(registered):
 		captcha_dir = CAPTCHA_DATA_DIR / captcha_id
 		if not captcha_dir.is_dir():
 			continue

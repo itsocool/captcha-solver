@@ -15,7 +15,7 @@
 ```
 templates/
 ├── base.html        # 레이아웃 뼈대: 사이드바, 헤더(버전 배지, 테마 스위치), breadcrumb, {% block content %}
-├── _nav.html         # 사이드바 메뉴 (6개 항목: Home/Predict/Training/Data Source/API Docs/Model Status)
+├── _nav.html         # 사이드바 메뉴 (Home/Predict/Training/Data Source/Model Status + 맨 아래 별도 영역의 API Docs(새 창))
 ├── index.html         # "/"  — 단일 이미지 업로드 예측 폼
 ├── predict.html        # "/predict" — 일괄 추론 (images/pred 대상 검증)
 ├── train.html           # "/train" — 학습 실행/모니터링
@@ -50,9 +50,11 @@ templates/
 |---|---|---|
 | `theme.js` | 전역 (`base.html`) | 다크모드, 사이드바 토글 |
 | `app.js` | `index.html` (`/`) | 드래그앤드롭 업로드 → `POST /api/v1/predictImage` → 결과 표시 |
-| `predict.js` | `predict.html` (`/predict`) | 일괄 추론 SSE 소비, 신뢰도 히스토그램, 오답 갤러리, 페이지네이션, 라이트박스 |
-| `train.js` | `train.html` (`/train`) | 학습 시작/중단, 파라미터 폼 자동 저장, SSE 세션 재생, 손실 곡선(SVG) |
+| `predict.js` | `predict.html` (`/predict`) | 캡차/리비전 분리 셀렉트(`#predict-targets` JSON, 선택 가능한 최고 리비전 기본), 일괄 추론 SSE 소비, 신뢰도 히스토그램, 오답 갤러리, 페이지네이션, 라이트박스 |
+| `train.js` | `train.html` (`/train`) | 캡차/리비전 분리 셀렉트(`#train-targets` JSON, 선택 가능한 최고 리비전 기본; 이어보기 시 `start` 이벤트의 대상으로 두 셀렉트를 맞춤), 학습 시작/중단, 파라미터 폼 자동 저장, SSE 세션 재생, 손실 곡선(SVG) |
 | `data_source.js` | `data_source.html` (`/data-source`) | 캡차/리비전 분리 셀렉트(리비전은 템플릿이 심은 `#data-source-targets` JSON으로 캡차별로 채우고 가장 높은 리비전을 기본 선택), 수집 SSE(`delay_ms` 포함), draft 갤러리, 인라인 라벨링 입력 |
+
+캡차 셀렉트의 항목 순서는 서비스가 `captcha_types.seq`로 정렬해 내려준 `targets` 순서를 그대로 따른다 — 템플릿은 순서를 보존하는 `targets | unique(attribute="captcha_id")`로 중복만 걷어낸다(`groupby`는 알파벳순으로 정렬해 버리므로 쓰지 않는다).
 
 각 파일은 IIFE나 모듈 래핑 없이 스크립트 최상위에서 `document.querySelector`로 DOM을 바로 참조한다 — 해당 템플릿에만 로드되므로 전역 스코프 충돌을 걱정할 필요가 없다(다른 페이지 JS와 함께 로드되지 않음).
 
@@ -93,7 +95,7 @@ Training 페이지는 세 가지 폼 동기화 규칙을 쓴다. Data Source 페
 
 1. `templates/<name>.html` 생성, `{% extends "base.html" %}`로 `page_title`/`content`/`scripts` 블록 채움.
 2. `frontend/router.py`에 라우트 추가 — 필요한 `services/*` 조회를 모아 템플릿 컨텍스트로 넘긴다 (`active_nav` 값 포함).
-3. `templates/_nav.html`에 메뉴 항목 추가, `active_nav` 값과 매칭.
+3. `templates/_nav.html`의 `nav_items`에 항목 추가, `active_nav` 값과 매칭. 외부로 새 창에서 여는 링크는 `external: true`(새 창 아이콘 자동), 사이드바 맨 아래 별도 영역에 둘 항목은 `bottom: true`.
 4. 동적 동작이 필요하면 `static/js/<name>.js`를 만들고 템플릿 하단 `{% block scripts %}`에서 로드.
 5. 서버와 통신이 필요하면 `/api/v1` 아래 엔드포인트를 먼저 만든다 ([web-dev-guide.md](./web-dev-guide.md) §4 참고). 진행률이 있는 장시간 작업이면 §5의 SSE 패턴을 그대로 재사용한다.
 6. 새 JS 파일에서 `fetch`/`EventSource` URL을 만들 때는 절대 경로 앞에 `CONTEXT_PATH`를 붙인다 (§9) — 안 붙이면 `WEB_CONTEXT_PATH` 설정 하위 경로 배포에서 요청이 프록시 밖 경로로 나가 깨진다.
@@ -109,7 +111,7 @@ Training 페이지는 세 가지 폼 동기화 규칙을 쓴다. Data Source 페
 
 `WEB_CONTEXT_PATH`(예: `/captcha`)로 프록시 하위 경로에 배포하는 경우, 템플릿과 JS 양쪽에서 절대 경로 앞에 접두사를 직접 붙여야 한다. FastAPI의 `root_path`가 라우팅은 알아서 처리해도, HTML/JS에 박힌 `/static/...` 같은 절대 경로 문자열까지 자동으로 고쳐주지는 않기 때문이다 (백엔드 쪽 동작은 [web-architecture.md §8](./web-architecture.md#8-리버스-프록시-하위-경로-web_context_path) 참고).
 
-- **템플릿**: `app.py`가 `templates.env.globals["context_path"]`로 값을 전역 주입한다. 모든 링크/자산 경로를 `{{ context_path }}/static/...`, `{{ context_path }}/` 형태로 쓴다 — `base.html`, `_nav.html`, 각 페이지 템플릿의 `<script src>` 태그가 이 패턴이다. `frontend/router.py`가 서버에서 렌더링하는 URL(예: `index.html`에 넘기는 `predict_image_url`)도 `f"{get_settings().web_context_path}/api/v1/predictImage"`처럼 직접 접두사를 붙인다.
+- **템플릿**: `app.py`가 `templates.env.globals["context_path"]`로 값을 전역 주입한다. 링크는 `{{ context_path }}/...` 형태로 쓴다(`base.html`, `_nav.html`). **정적 JS/CSS는 `{{ static_url('js/xxx.js') }}`** 를 쓴다 — 접두사에 더해 파일 mtime 을 `?v=` 로 붙여, 배포·수정 뒤 브라우저가 옛 JS 를 캐시에서 꺼내 쓰다가 새 템플릿과 어긋나는 일(리비전 셀렉트가 비는 식의 조용한 고장)을 막는다. `StaticFiles` 는 `Cache-Control` 을 안 보내 브라우저가 휴리스틱으로 재검증 없이 캐시할 수 있기 때문이다. `frontend/router.py`가 서버에서 렌더링하는 URL(예: `index.html`에 넘기는 `predict_image_url`)도 `f"{get_settings().web_context_path}/api/v1/predictImage"`처럼 직접 접두사를 붙인다.
 - **정적 JS**: 템플릿 렌더링 문맥이 없으므로, `base.html`이 내려주는 `<html data-context-path="{{ context_path }}">` 속성을 읽는다. `train.js`/`predict.js`/`data_source.js` 맨 위에 있는 관례:
 
   ```js
@@ -119,4 +121,4 @@ Training 페이지는 세 가지 폼 동기화 규칙을 쓴다. Data Source 페
 
   이후 모든 `fetch`/`EventSource`/이미지 `src` URL 앞에 `` `${CONTEXT_PATH}/api/v1/...` ``처럼 붙인다.
 - **예외**: `app.js`(index.html의 단일 예측 폼)는 별도 처리가 없다 — 폼의 `action` 속성 자체가 서버 렌더링 시점에 이미 접두사 붙은 값(`predict_image_url`)으로 채워지므로, JS는 `form.action`을 그대로 쓰기만 하면 된다.
-- 새 페이지/JS를 추가할 때는 이 두 패턴(템플릿은 `context_path` 전역, JS는 `CONTEXT_PATH` 상수) 중 하나를 반드시 따른다. 하드코딩된 `/static/...`이나 `/api/v1/...` 절대 경로를 그대로 쓰면 하위 경로 배포에서 깨진다.
+- 새 페이지/JS를 추가할 때는 이 패턴(템플릿 링크는 `context_path` 전역, 정적 자산은 `static_url()`, JS는 `CONTEXT_PATH` 상수)을 반드시 따른다. 하드코딩된 `/static/...`이나 `/api/v1/...` 절대 경로를 그대로 쓰면 하위 경로 배포에서 깨진다.

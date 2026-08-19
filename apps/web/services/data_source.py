@@ -68,11 +68,12 @@ def list_targets() -> list[dict]:
 	레지스트리에 있는 캡차는 디렉터리가 아직 없어도 레지스트리 rev(1부터 시작)로 넣는다.
 	"""
 	from hypercaptcha import engine
+	from web.services.captcha import ordered_captcha_ids
 
 	registered = engine.get_captcha_type_list()
 	targets: list[dict] = []
 
-	for captcha_id in sorted(registered):
+	for captcha_id in ordered_captcha_ids(registered):
 		captcha_dir = CAPTCHA_DATA_DIR / captcha_id
 		revs = sorted(
 			int(d.name) for d in captcha_dir.iterdir()
