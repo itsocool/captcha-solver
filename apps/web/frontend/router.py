@@ -8,7 +8,7 @@ from web.core.device import device_options
 from web.core.version import get_app_version
 from web.services.batch_predict import list_targets
 from web.services.captcha import list_captcha_types, model_status
-from web.services.data_source import MAX_COUNT, list_targets as data_source_targets
+from web.services.data_source import MAX_COUNT, MAX_DELAY_MS, list_targets as data_source_targets
 from web.services.train import LOSS_TYPES, PARAM_SPEC, list_targets as train_targets
 
 
@@ -68,6 +68,7 @@ def create_router(templates: Jinja2Templates) -> APIRouter:
 				"active_nav": "data_source",
 				"targets": data_source_targets(),
 				"max_count": MAX_COUNT,
+				"max_delay_ms": MAX_DELAY_MS,
 				"app_version": get_app_version(),
 			},
 		)

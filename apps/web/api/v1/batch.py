@@ -48,7 +48,7 @@ def _stream(captcha_id: str, rev: int, device: str | None):
 @router.get("/batch/stream")
 async def batch_stream(
 	captcha_id: str = Query(...),
-	rev: int = Query(0),
+	rev: int = Query(1),
 	device: str | None = Query(None),
 ):
 	"""일괄 추론 진행 상황 SSE. EventSource 가 GET 만 지원해서 GET 이다."""
@@ -81,7 +81,7 @@ async def batch_stream(
 @router.get("/batch/image")
 async def batch_image(
 	captcha_id: str = Query(...),
-	rev: int = Query(0),
+	rev: int = Query(1),
 	name: str = Query(...),
 ):
 	"""오답 갤러리용 pred 이미지 썸네일."""

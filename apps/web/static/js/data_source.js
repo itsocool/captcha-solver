@@ -1,10 +1,14 @@
 // 프록시 하위 경로 접두사(.env WEB_CONTEXT_PATH). base.html 이 <html data-context-path> 로 내려준다.
 const CONTEXT_PATH = document.documentElement.dataset.contextPath || "";
 
-const targetSelect = document.querySelector("#target");
+const captchaSelect = document.querySelector("#captcha");
+const revSelect = document.querySelector("#rev");
+// 서버가 내려준 (캡차, 리비전, draft 수) 목록. 리비전 셀렉트는 이걸로 캡차별로 채운다.
+const TARGETS = JSON.parse(document.querySelector("#data-source-targets").textContent);
 const urlInput = document.querySelector("#url");
 const selectorInput = document.querySelector("#selector");
 const countInput = document.querySelector("#count");
+const delayInput = document.querySelector("#delay");
 const runButton = document.querySelector("#run");
 const stopButton = document.querySelector("#stop");
 const progressLabel = document.querySelector("#progress-label");
@@ -41,10 +45,79 @@ function reset() {
 	progressCount.textContent = "—";
 }
 
+/** 선택한 캡차의 리비전들로 셀렉트를 다시 채운다. 가장 높은 리비전이 기본 선택. */
+function fillRevs() {
+	const revs = TARGETS.filter((t) => t.captcha_id === captchaSelect.value)
+		.sort((a, b) => b.rev - a.rev);
+	revSelect.replaceChildren(...revs.map((t) => {
+		const option = document.createElement("option");
+		option.value = String(t.rev);
+		option.className = "bg-card";
+		option.textContent = `rev ${t.rev} · draft ${t.draft_count}장`;
+		return option;
+	}));
+}
+
+/** 현재 선택된 (캡차, 리비전). API 파라미터로 그대로 쓴다. */
+function currentTarget() {
+	return {captchaId: captchaSelect.value, rev: revSelect.value};
+}
+
+const PARAM_FIELDS = {url: urlInput, selector: selectorInput, count: countInput, delay_ms: delayInput};
+
+/** 저장된 입력값으로 폼을 채운다. .value 대입은 change 를 안 띄우므로 저장이 되돌아 실행되지 않는다. */
+function applyParams(params) {
+	Object.entries(PARAM_FIELDS).forEach(([key, el]) => {
+		if (params[key] !== undefined && params[key] !== null) {
+			el.value = params[key];
+		}
+	});
+}
+
+function collectParams() {
+	return Object.fromEntries(Object.entries(PARAM_FIELDS).map(([key, el]) => [key, el.value.trim()]));
+}
+
+/** 대상의 저장된 입력값(url/selector/count/delay_ms)을 불러와 폼을 채운다. */
+async function loadParamsForTarget() {
+	const {captchaId, rev} = currentTarget();
+	if (!captchaId || !rev) {
+		return;
+	}
+	const requested = `${captchaId}:${rev}`; // 응답이 늦게 와도 그 사이 바뀐 대상을 덮지 않게 고정
+	try {
+		const res = await fetch(
+			`${CONTEXT_PATH}/api/v1/data-source/params?${new URLSearchParams({captcha_id: captchaId, rev})}`,
+		);
+		const {captchaId: nowId, rev: nowRev} = currentTarget();
+		if (!res.ok || `${nowId}:${nowRev}` !== requested) {
+			return; // 실패했거나 그새 대상이 바뀌었으면 버린다
+		}
+		const data = await res.json();
+		applyParams(data.params || {});
+	} catch (_) {
+		/* 무시: 기본값 유지 */
+	}
+}
+
+/** 입력을 편집하면 그 즉시 대상별로 저장한다 — 수집을 시작하지 않고 떠나도 값이 남는다. */
+async function saveCurrentParams() {
+	const {captchaId, rev} = currentTarget();
+	if (!captchaId || !rev) {
+		return;
+	}
+	const query = new URLSearchParams({captcha_id: captchaId, rev, ...collectParams()});
+	try {
+		await fetch(`${CONTEXT_PATH}/api/v1/data-source/params?${query}`, {method: "POST"});
+	} catch (_) {
+		/* 무시: 저장 실패는 치명적이지 않다 */
+	}
+}
+
 function setRunning(running) {
 	runButton.disabled = running;
 	stopButton.disabled = !running;
-	[targetSelect, urlInput, selectorInput, countInput].forEach((el) => (el.disabled = running));
+	[captchaSelect, revSelect, urlInput, selectorInput, countInput, delayInput].forEach((el) => (el.disabled = running));
 }
 
 function updateStats() {
@@ -57,7 +130,7 @@ function updateStats() {
 }
 
 function makeThumb(name) {
-	const [captchaId, rev] = targetSelect.value.split(":");
+	const {captchaId, rev} = currentTarget();
 	const params = new URLSearchParams({captcha_id: captchaId, rev, name});
 
 	const figure = document.createElement("figure");
@@ -103,7 +176,7 @@ const stem = (name) => name.replace(/\.png$/i, "");
 
 /** 입력한 라벨을 파일 이름으로 굳힌다. 실패하면 원래 이름으로 되돌린다. */
 async function saveLabel(input) {
-	const [captchaId, rev] = targetSelect.value.split(":");
+	const {captchaId, rev} = currentTarget();
 	const before = input.dataset.name;
 	const label = input.value.trim();
 
@@ -149,7 +222,7 @@ function appendThumb(name) {
 
 /** draft 폴더를 읽어 갤러리를 다시 그린다. 새로 고침 버튼과 수집 완료 시 호출. */
 async function loadGallery() {
-	const [captchaId, rev] = targetSelect.value.split(":");
+	const {captchaId, rev} = currentTarget();
 	const params = new URLSearchParams({captcha_id: captchaId, rev});
 
 	galleryRefresh.disabled = true;
@@ -163,6 +236,13 @@ async function loadGallery() {
 		gallery.replaceChildren(...data.names.map(makeThumb));
 		draftDir.textContent = data.draft_dir;
 		galleryCount.textContent = `${data.total}장`;
+		// 서버 렌더 시점의 draft 수는 수집 뒤에 낡으므로 셀렉트 라벨도 같이 맞춘다.
+		const target = TARGETS.find((t) => t.captcha_id === captchaId && String(t.rev) === String(rev));
+		if (target) {
+			target.draft_count = data.total;
+			const option = revSelect.querySelector(`option[value="${rev}"]`);
+			if (option) option.textContent = `rev ${rev} · draft ${data.total}장`;
+		}
 		if (!data.names.length) {
 			const empty = document.createElement("p");
 			empty.className = "text-sm text-muted-foreground";
@@ -217,7 +297,7 @@ runButton.addEventListener("click", () => {
 		urlInput.focus();
 		return;
 	}
-	const [captchaId, rev] = targetSelect.value.split(":");
+	const {captchaId, rev} = currentTarget();
 
 	reset();
 	counts.total = Number(countInput.value);
@@ -231,6 +311,7 @@ runButton.addEventListener("click", () => {
 		url,
 		selector: selectorInput.value.trim(),
 		count: countInput.value,
+		delay_ms: delayInput.value || "0",
 	});
 	source = new EventSource(`${CONTEXT_PATH}/api/v1/data-source/stream?${params}`);
 
@@ -282,5 +363,17 @@ stopButton.addEventListener("click", () => {
 });
 
 galleryRefresh.addEventListener("click", loadGallery);
-targetSelect.addEventListener("change", loadGallery);
+Object.values(PARAM_FIELDS).forEach((el) => el.addEventListener("change", saveCurrentParams));
+
+captchaSelect.addEventListener("change", () => {
+	fillRevs();
+	loadParamsForTarget();
+	loadGallery();
+});
+revSelect.addEventListener("change", () => {
+	loadParamsForTarget();
+	loadGallery();
+});
+fillRevs();
+loadParamsForTarget();
 loadGallery();

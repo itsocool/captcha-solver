@@ -163,3 +163,41 @@ def save_train_params(captcha_id: str, rev: int, params: dict) -> None:
 			)
 	except sqlite3.Error as e:
 		print(f"[db] train_run_params 저장 실패: {e}")
+
+
+def get_data_source_params(captcha_id: str, rev: int) -> dict | None:
+	"""Data Source 페이지에서 (캡차, 리비전)별로 마지막에 쓴 수집 입력값. 없으면 None.
+
+	train_run_params 와 같은 계약: 조회 실패나 깨진 JSON 은 None 이고 호출부가 기본값을 쓴다.
+	"""
+	try:
+		with connect() as conn:
+			row = conn.execute(
+				"SELECT params FROM data_source_params WHERE captcha_id = ? AND rev = ?",
+				(captcha_id, rev),
+			).fetchone()
+	except sqlite3.Error as e:
+		print(f"[db] data_source_params 조회 실패: {e}")
+		return None
+
+	if not row:
+		return None
+	try:
+		return json.loads(row["params"])
+	except (ValueError, TypeError):
+		return None
+
+
+def save_data_source_params(captcha_id: str, rev: int, params: dict) -> None:
+	"""수집 입력값을 (캡차, 리비전) 키로 upsert 한다. 실패해도 수집은 계속되게 삼킨다."""
+	try:
+		with connect() as conn:
+			conn.execute(
+				"INSERT INTO data_source_params(captcha_id, rev, params, updated_at)"
+				" VALUES (?, ?, ?, CURRENT_TIMESTAMP)"
+				" ON CONFLICT(captcha_id, rev) DO UPDATE SET"
+				" params = excluded.params, updated_at = CURRENT_TIMESTAMP",
+				(captcha_id, rev, json.dumps(params, ensure_ascii=False)),
+			)
+	except sqlite3.Error as e:
+		print(f"[db] data_source_params 저장 실패: {e}")

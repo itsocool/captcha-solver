@@ -32,13 +32,13 @@ async def train_targets():
 
 
 @router.get("/train/params")
-async def train_params(captcha_id: str = Query(...), rev: int = Query(0)):
+async def train_params(captcha_id: str = Query(...), rev: int = Query(1)):
 	"""대상(캡차, 리비전)의 저장된 학습 파라미터. 없으면 기본값을 돌려준다."""
 	return JSONResponse({"params": load_params(captcha_id, rev)})
 
 
 @router.post("/train/params")
-async def train_params_save(request: Request, captcha_id: str = Query(...), rev: int = Query(0)):
+async def train_params_save(request: Request, captcha_id: str = Query(...), rev: int = Query(1)):
 	"""폼 파라미터를 저장한다. 학습을 시작하지 않아도 대상별로 유지된다.
 
 	페이지를 떠났다 돌아와도 값이 남도록, 편집 시점에 프런트가 이걸 호출한다.
@@ -57,7 +57,7 @@ async def train_params_save(request: Request, captcha_id: str = Query(...), rev:
 async def train_start(
 	request: Request,
 	captcha_id: str = Query(...),
-	rev: int = Query(0),
+	rev: int = Query(1),
 	device: str | None = Query(None),
 ):
 	"""백그라운드 학습을 시작한다. 진행 상황은 GET /train/stream 으로 본다.

@@ -79,7 +79,20 @@ Training 페이지에서 (캡차, 리비전)별로 마지막에 쓴 학습 파�
 | `params` | TEXT | NOT NULL, DEFAULT `'{}'` | JSON. §4.4 `TrainParams`의 키 부분집합(`shuffle` 제외) |
 | `updated_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | |
 
-### 2.5 스키마에는 있지만 코드가 읽지 않는 테이블
+### 2.5 `data_source_params`
+
+Data Source 페이지에서 (캡차, 리비전)별로 마지막에 쓴 수집 입력값. `train_run_params`와 같은 이유로 JSON 한 컬럼이며 구조도 같다. 마이그레이션 9.
+
+| 컬럼 | 타입 | 제약 | 설명 |
+|---|---|---|---|
+| `captcha_id` | TEXT | PK(복합), FK → `captcha_types.captcha_id` ON DELETE CASCADE | |
+| `rev` | INTEGER | PK(복합), NOT NULL, DEFAULT 1 | |
+| `params` | TEXT | NOT NULL, DEFAULT `'{}'` | JSON `{url, selector, count, delay_ms}` (§4.6 `PERSIST_PARAMS`) |
+| `updated_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | |
+
+폼 편집 시 `POST /data-source/params`가, 수집 실행 시 `run()`이 각각 upsert한다.
+
+### 2.6 스키마에는 있지만 코드가 읽지 않는 테이블
 
 아래 세 테이블은 `db/schema.sql`에 정의·시드되어 있으나, `apps/web`과 `hypercaptcha` 어디에도 이 테이블을 `SELECT`하는 코드가 없다(예약된 구조 또는 향후 확장용으로 보인다). 문서 정확성을 위해 명시해 둔다.
 
@@ -87,11 +100,11 @@ Training 페이지에서 (캡차, 리비전)별로 마지막에 쓴 학습 파�
 - **`train_info_cache`** — 캡차별 자동 감지 결과(이미지 크기/라벨 길이/문자셋)를 캐시하기 위한 테이블. 실제 감지 캐시는 DB가 아니라 `hypercaptcha.dataclass.TrainData._train_info` (런타임 메모리)가 담당한다.
 - **`character_sets`** — 이름 붙은 문자 집합 상수(`DIGITS`, `ALPHA_NUMERIC` 등)의 참고용 사전 데이터.
 
-### 2.6 `schema_migrations`
+### 2.7 `schema_migrations`
 
 `version`(PK) / `name` / `applied_at`. 실제 마이그레이션 러너는 없고, 각 `ALTER`/`CREATE` 블록이 자신을 기록하는 이력용 로그다. 시드 파일의 마이그레이션 8(`rev_starts_at_1_drop_kshop`)은 기존 DB 의 rev 0 행을 `UPDATE OR IGNORE` 로 rev 1 로 옮기고 제거된 캡차 행을 지우는 멱등 블록이다 — 리비전이 0 부터 시작하던 시절의 DB 를 자동 보정한다.
 
-### 2.7 파일시스템 엔티티 (`captcha_data/<captcha_id>/<rev>/`)
+### 2.8 파일시스템 엔티티 (`captcha_data/<captcha_id>/<rev>/`)
 
 DB 테이블은 아니지만 영속 데이터라는 점에서 엔티티에 준한다. 실제 학습 이미지·모델 파일의 진실 소스는 파일시스템이며, `services/train.py`·`services/batch_predict.py`의 주석이 명시적으로 "DB(`train_data_configs`)는 캡차당 리비전 하나만 들고 있어 목록 근거로 못 쓴다"고 밝힌다.
 
@@ -103,7 +116,7 @@ captcha_data/<captcha_id>/<rev>/
 │   └── draft/      # 데이터 수집이 쌓은 라벨 미부착 원본, 파일명 = 순번 (000001.png…)
 └── model/
     ├── model.pth       # 학습된 가중치
-    └── model.meta.json # 사이드카 메타 (아래 §5.1 CaptchaType.build_meta() 참고)
+    └── model.meta.json # 사이드카 메타 (아래 §4.1 CaptchaType.build_meta() 참고)
 ```
 
 "파일 이름 = 정답 라벨"이 저장소 전체의 관례다. `data_source.py`의 `rename_draft()`가 draft 이미지에 라벨을 붙이는 방법도 파일 rename이다.
@@ -133,7 +146,7 @@ captcha_data/<captcha_id>/<rev>/
 
 | 함수 | 반환 dict 키 | 비고 |
 |---|---|---|
-| `data_source.clean_request()` | `captcha_id, rev, url, selector, count` | §4에서 도메인 객체로도 재사용 |
+| `data_source.clean_request()` | `captcha_id, rev, url, selector, count, delay_ms` | §4에서 도메인 객체로도 재사용 |
 | `train.clean_params()` | `epochs, batch_size, early_stopping_patience, learning_rate, warmup_epochs, train_ratio, loss_type, use_amp, shuffle` | §4.4 `TrainParams` |
 
 **응답 측** (JSON으로 나가는 대표 dict 형태):
@@ -143,6 +156,8 @@ captcha_data/<captcha_id>/<rev>/
 | `GET /batch/targets`, `/train/targets`, `/data-source/targets` | `{"targets": [...], "running": bool}` (targets 원소는 §4.1~4.3) |
 | `GET /train/params` | `{"params": TrainParams}` |
 | `POST /train/params` | `{"saved": true, "params": TrainParams}` |
+| `GET /data-source/params` | `{"params": {url, selector, count, delay_ms}}` |
+| `POST /data-source/params` | `{"saved": true, "params": {...}}` |
 | `POST /train/start` | `{"started": true, "captcha_id": str, "rev": int}` |
 | `POST /train/stop` | `{"stopping": true, "save": bool}` |
 | `GET /data-source/drafts` | `{"names": [str], "total": int, "draft_dir": str}` |
@@ -198,7 +213,7 @@ graph LR
 
 생성 시 `images/train/*.png` 파일명(=라벨)을 스캔해 `_train_info`(이미지 크기, 라벨 길이, 문자셋)를 **자동 감지**하고 내부에 캐시한다. `detected_image_width`/`detected_image_height`/`detected_label_length`/`detected_characters` 프로퍼티가 "감지값 우선, 없으면 생성자 기본값"으로 실제 사용값을 돌려준다 — `train_data_configs` 테이블의 동명 컬럼은 이 감지 결과의 **스냅샷**(학습 시작 시점에 `save_train_config()`가 반영)일 뿐, 실시간 진실 소스는 이 객체다.
 
-`CaptchaType`은 `captcha_id`/`name`/`desc`/`train_data: TrainData`를 갖고, `build_meta()`가 `model.meta.json`(§2.7)에 쓰이는 dict를 만든다.
+`CaptchaType`은 `captcha_id`/`name`/`desc`/`train_data: TrainData`를 갖고, `build_meta()`가 `model.meta.json`(§2.8)에 쓰이는 dict를 만든다.
 
 ### 4.2 Target dict — 세 서비스 공통 패턴
 
@@ -271,6 +286,9 @@ graph LR
 | `url` | `str` | `http(s)://` 필수 |
 | `selector` | `str` | CSS 셀렉터, 빈 문자열이면 페이지 첫 `img` |
 | `count` | `int` | 1 ~ `MAX_COUNT`(5000) |
+| `delay_ms` | `int` | 요청 사이 대기(ms), 0 ~ `MAX_DELAY_MS`(30000). 기본 0 |
+
+`clean_request()`는 실행용(URL 필수)이고, 같은 네 입력값의 **저장용** 검증은 `clean_params()`가 따로 맡는다 — 아직 URL을 안 넣고 개수/지연만 고쳐도 저장돼야 해서 URL이 비어 있어도 통과시킨다. `PERSIST_PARAMS = ("url", "selector", "count", "delay_ms")`가 `data_source_params.params` JSON에 저장되는 키이며(§2.5), `load_params()`가 `DEFAULT_PARAMS`(`""`, `""`, 500, 0) 위에 저장값을 덮어 돌려준다.
 
 ## 5. 데이터 흐름 시나리오
 

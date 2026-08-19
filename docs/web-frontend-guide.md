@@ -15,7 +15,7 @@
 ```
 templates/
 ├── base.html        # 레이아웃 뼈대: 사이드바, 헤더(버전 배지, 테마 스위치), breadcrumb, {% block content %}
-├── _nav.html         # 사이드바 메뉴 (5개 항목: Home/Predict/Train/Data Source/Status)
+├── _nav.html         # 사이드바 메뉴 (6개 항목: Home/Predict/Training/Data Source/API Docs/Model Status)
 ├── index.html         # "/"  — 단일 이미지 업로드 예측 폼
 ├── predict.html        # "/predict" — 일괄 추론 (images/pred 대상 검증)
 ├── train.html           # "/train" — 학습 실행/모니터링
@@ -52,7 +52,7 @@ templates/
 | `app.js` | `index.html` (`/`) | 드래그앤드롭 업로드 → `POST /api/v1/predictImage` → 결과 표시 |
 | `predict.js` | `predict.html` (`/predict`) | 일괄 추론 SSE 소비, 신뢰도 히스토그램, 오답 갤러리, 페이지네이션, 라이트박스 |
 | `train.js` | `train.html` (`/train`) | 학습 시작/중단, 파라미터 폼 자동 저장, SSE 세션 재생, 손실 곡선(SVG) |
-| `data_source.js` | `data_source.html` (`/data-source`) | 수집 SSE, draft 갤러리, 인라인 라벨링 입력 |
+| `data_source.js` | `data_source.html` (`/data-source`) | 캡차/리비전 분리 셀렉트(리비전은 템플릿이 심은 `#data-source-targets` JSON으로 캡차별로 채우고 가장 높은 리비전을 기본 선택), 수집 SSE(`delay_ms` 포함), draft 갤러리, 인라인 라벨링 입력 |
 
 각 파일은 IIFE나 모듈 래핑 없이 스크립트 최상위에서 `document.querySelector`로 DOM을 바로 참조한다 — 해당 템플릿에만 로드되므로 전역 스코프 충돌을 걱정할 필요가 없다(다른 페이지 JS와 함께 로드되지 않음).
 
@@ -81,9 +81,9 @@ source.addEventListener("error", (event) => {
 - **렌더링 스로틀링**: `predict.js`는 `item` 이벤트마다 DOM을 다시 그리면 브라우저가 못 따라가므로 `requestAnimationFrame`으로 리페인트를 큐잉한다 (`scheduleRepaint()`).
 - **DOM 상한**: `predict.js`의 오답 갤러리는 `GALLERY_LIMIT = 60`, `data_source.js`의 진행 표는 `ROW_LIMIT = 300`으로 무한정 쌓이는 것을 막는다. 갤러리류는 상한이 없는 경우도 있다(`data_source.js`의 라벨링 갤러리는 라벨을 붙이는 자리라 draft 전체를 보여줘야 하므로 상한 없음).
 
-## 6. 서버 상태 → 폼 동기화 패턴 (`train.js`)
+## 6. 서버 상태 → 폼 동기화 패턴 (`train.js`, `data_source.js`)
 
-Training 페이지는 세 가지 폼 동기화 규칙을 쓴다. 유사한 상태-저장형 폼을 새로 만들 때 참고할 것.
+Training 페이지는 세 가지 폼 동기화 규칙을 쓴다. Data Source 페이지도 1·2번을 그대로 따른다(`GET/POST /api/v1/data-source/params`, `applyParams()`/`saveCurrentParams()`, 캡차·리비전 전환 시 `loadParamsForTarget()`). 유사한 상태-저장형 폼을 새로 만들 때 참고할 것.
 
 1. **입력 변경 시 즉시 저장** — 각 필드에 `change` 리스너를 달아 `POST /api/v1/train/params`로 자동 저장한다. 저장 버튼이 따로 없다.
 2. **프로그램적 값 설정은 저장을 재유발하지 않는다** — `applyParams()`가 `.value`/`.checked`를 직접 대입하면 `change` 이벤트가 발생하지 않으므로, 서버에서 불러온 값으로 폼을 채울 때 그 값이 다시 저장되는 재귀를 막는다.

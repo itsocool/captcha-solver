@@ -127,3 +127,17 @@ CREATE TABLE IF NOT EXISTS train_run_params (
 
 INSERT OR IGNORE INTO schema_migrations(version, name)
 VALUES (7, 'train_run_params');
+
+-- Data Source 페이지에서 (캡차, 리비전)별로 마지막에 쓴 수집 입력값(url/selector/count/delay_ms).
+-- 대상을 바꾸면 저장된 값을 불러와 폼을 채운다. train_run_params 와 같은 이유로 JSON 한 컬럼이다.
+CREATE TABLE IF NOT EXISTS data_source_params (
+	captcha_id TEXT NOT NULL,
+	rev INTEGER NOT NULL DEFAULT 1,
+	params TEXT NOT NULL DEFAULT '{}',
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	PRIMARY KEY (captcha_id, rev),
+	FOREIGN KEY (captcha_id) REFERENCES captcha_types(captcha_id) ON DELETE CASCADE
+);
+
+INSERT OR IGNORE INTO schema_migrations(version, name)
+VALUES (9, 'data_source_params');

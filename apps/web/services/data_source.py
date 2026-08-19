@@ -24,7 +24,15 @@ _RUN_LOCK = threading.Lock()
 CAPTCHA_DATA_DIR = BASE_DIR / "captcha_data"
 
 MAX_COUNT = 5000
+# 요청 사이 지연 상한(ms). 대상 서버를 배려하려는 값이지 긴 대기용이 아니다.
+# 지연 중에는 yield 가 없어 소비자가 끊어도 다음 yield 까지 락이 안 풀리므로 짧게 잡는다.
+MAX_DELAY_MS = 30_000
 REQUEST_TIMEOUT = 15.0
+
+# 페이지 폼에서 (캡차, 리비전)별로 기억해 두는 입력값과 기본값. data_source_params 에
+# JSON 으로 저장된다 (services/train.PERSIST_PARAMS 와 같은 방식). 템플릿의 초기값도 이와 같다.
+DEFAULT_PARAMS = {"url": "", "selector": "", "count": 500, "delay_ms": 0}
+PERSIST_PARAMS = tuple(DEFAULT_PARAMS)
 # 응답을 통째로 메모리에 올리므로 상한이 필요하다. 캡차 한 장은 보통 수 KB 라
 # 8MB 면 충분히 넉넉하다.
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
@@ -57,7 +65,7 @@ def list_targets() -> list[dict]:
 	"""수집 대상으로 고를 수 있는 (캡차, 리비전) 목록.
 
 	학습과 달리 이미지가 없어도 고를 수 있어야 한다 — 없어서 모으는 것이다.
-	레지스트리에 있는 캡차는 디렉터리가 아직 없어도 rev 0 으로 넣는다.
+	레지스트리에 있는 캡차는 디렉터리가 아직 없어도 레지스트리 rev(1부터 시작)로 넣는다.
 	"""
 	from hypercaptcha import engine
 
@@ -85,7 +93,8 @@ def list_targets() -> list[dict]:
 	return targets
 
 
-def clean_request(captcha_id: str, rev: int, url: str, selector: str, count: int) -> dict:
+def clean_request(captcha_id: str, rev: int, url: str, selector: str, count: int,
+                  delay_ms: int = 0) -> dict:
 	"""요청 값을 검증해 확정한다. 잘못된 값은 실행 오류가 아니라 요청 오류다."""
 	from hypercaptcha import engine
 
@@ -106,13 +115,92 @@ def clean_request(captcha_id: str, rev: int, url: str, selector: str, count: int
 	if not (1 <= count <= MAX_COUNT):
 		raise ValueError(f"파일 개수는 1 ~ {MAX_COUNT} 범위여야 합니다 (받은 값 {count})")
 
+	try:
+		delay_ms = int(delay_ms or 0)
+	except (TypeError, ValueError):
+		raise ValueError(f"지연(ms)이 숫자가 아닙니다 ({delay_ms!r})")
+	if not (0 <= delay_ms <= MAX_DELAY_MS):
+		raise ValueError(f"지연(ms)은 0 ~ {MAX_DELAY_MS} 범위여야 합니다 (받은 값 {delay_ms})")
+
 	return {
 		"captcha_id": captcha_id,
 		"rev": rev,
 		"url": parsed.geturl(),
 		"selector": (selector or "").strip(),
 		"count": count,
+		"delay_ms": delay_ms,
 	}
+
+
+def clean_params(raw: dict) -> dict:
+	"""폼 저장용 검증. 실행(clean_request)과 달리 url 은 비어 있어도 된다 —
+	아직 주소를 안 넣고 개수/지연만 고쳐도 저장돼야 하기 때문이다. 넣었다면 http(s) 여야 한다."""
+	params = dict(DEFAULT_PARAMS)
+
+	url = (raw.get("url") or "").strip()
+	if url:
+		parsed = urlparse(url)
+		if parsed.scheme not in ("http", "https") or not parsed.netloc:
+			raise ValueError("URL 은 http:// 또는 https:// 로 시작하는 주소여야 합니다")
+		url = parsed.geturl()
+	params["url"] = url
+	params["selector"] = (raw.get("selector") or "").strip()
+
+	count = raw.get("count")
+	if count not in (None, ""):
+		try:
+			count = int(count)
+		except (TypeError, ValueError):
+			raise ValueError(f"파일 개수가 숫자가 아닙니다 ({count!r})")
+		if not (1 <= count <= MAX_COUNT):
+			raise ValueError(f"파일 개수는 1 ~ {MAX_COUNT} 범위여야 합니다 (받은 값 {count})")
+		params["count"] = count
+
+	delay_ms = raw.get("delay_ms")
+	if delay_ms not in (None, ""):
+		try:
+			delay_ms = int(delay_ms)
+		except (TypeError, ValueError):
+			raise ValueError(f"지연(ms)이 숫자가 아닙니다 ({delay_ms!r})")
+		if not (0 <= delay_ms <= MAX_DELAY_MS):
+			raise ValueError(f"지연(ms)은 0 ~ {MAX_DELAY_MS} 범위여야 합니다 (받은 값 {delay_ms})")
+		params["delay_ms"] = delay_ms
+
+	return params
+
+
+def load_params(captcha_id: str, rev: int) -> dict:
+	"""대상의 저장된 수집 입력값. 없으면 기본값. 저장 스키마가 바뀌어도 아는 키만 받는다."""
+	from web.core.db import get_data_source_params
+
+	params = dict(DEFAULT_PARAMS)
+	stored = get_data_source_params(captcha_id, rev) or {}
+	for key in PERSIST_PARAMS:
+		if key in stored:
+			params[key] = stored[key]
+	return params
+
+
+def _persist_params(captcha_id: str, rev: int, params: dict) -> None:
+	from web.core.db import save_data_source_params
+
+	save_data_source_params(captcha_id, rev, {k: params[k] for k in PERSIST_PARAMS if k in params})
+
+
+def save_params(captcha_id: str, rev: int, raw: dict) -> dict:
+	"""폼 입력값을 검증·저장한다. 수집을 시작하지 않아도 대상별로 유지된다.
+
+	실행 시점에만 저장하면 '값만 바꾸고 페이지를 떠나면' 사라진다. 편집 시 프런트가 호출한다.
+	"""
+	from hypercaptcha import engine
+
+	if captcha_id not in engine.get_captcha_type_list():
+		raise ValueError(f"등록되지 않은 캡차입니다: {captcha_id!r}")
+	if rev < 1:
+		raise ValueError(f"rev 는 1 이상이어야 합니다 (받은 값 {rev})")
+	params = clean_params(raw)
+	_persist_params(captcha_id, rev, params)
+	return params
 
 
 def draft_dir(captcha_id: str, rev: int) -> Path:
@@ -262,8 +350,16 @@ def _decode_png(content: bytes) -> bytes:
 		return buf.getvalue()
 
 
+def _sleep_ms(delay_ms: int, cancel: threading.Event | None = None) -> None:
+	"""요청 사이 지연. cancel 이 오면 남은 시간을 기다리지 않는다."""
+	if cancel is not None:
+		cancel.wait(delay_ms / 1000.0)
+	else:
+		time.sleep(delay_ms / 1000.0)
+
+
 def run(captcha_id: str, rev: int, url: str, selector: str, count: int,
-        cancel: threading.Event | None = None):
+        delay_ms: int = 0, cancel: threading.Event | None = None):
 	"""수집 이벤트 제너레이터.
 
 	이벤트는 셋이다:
@@ -277,7 +373,9 @@ def run(captcha_id: str, rev: int, url: str, selector: str, count: int,
 	"""
 	import httpx
 
-	request = clean_request(captcha_id, rev, url, selector, count)
+	request = clean_request(captcha_id, rev, url, selector, count, delay_ms)
+	# 실행에 쓴 값은 그 대상의 마지막 입력값으로 남긴다.
+	_persist_params(request["captcha_id"], request["rev"], request)
 
 	if not _RUN_LOCK.acquire(blocking=False):
 		raise DataSourceBusy("이미 다른 수집이 실행 중입니다")
@@ -291,7 +389,8 @@ def run(captcha_id: str, rev: int, url: str, selector: str, count: int,
 			"type": "start",
 			"captcha_id": request["captcha_id"], "rev": request["rev"],
 			"url": request["url"], "selector": request["selector"],
-			"total": request["count"], "draft_dir": str(target_dir),
+			"total": request["count"], "delay_ms": request["delay_ms"],
+			"draft_dir": str(target_dir),
 			"existing": len(list(target_dir.glob("*.png"))), "start_index": index,
 		}
 
@@ -302,6 +401,10 @@ def run(captcha_id: str, rev: int, url: str, selector: str, count: int,
 			for i in range(request["count"]):
 				if cancel is not None and cancel.is_set():
 					break
+				if i > 0 and request["delay_ms"] > 0:
+					_sleep_ms(request["delay_ms"], cancel)
+					if cancel is not None and cancel.is_set():
+						break
 
 				try:
 					body, content_type = _fetch(client, request["url"])

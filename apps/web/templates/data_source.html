@@ -10,23 +10,37 @@
 			<span class="text-sm text-muted-foreground">images/draft 에 저장</span>
 		</div>
 
-		<div class="grid gap-5 p-6 sm:grid-cols-2 xl:grid-cols-4">
+		{# (캡차, 리비전) 목록. 리비전 셀렉트는 JS 가 선택한 캡차 기준으로 채운다 (가장 높은 리비전이 기본). #}
+		<script id="data-source-targets" type="application/json">{{ targets | tojson }}</script>
+
+		<div class="grid gap-5 p-6 sm:grid-cols-2 xl:grid-cols-6">
 			<div>
-				<label class="mb-2 block text-sm font-medium" for="target">캡차 ID</label>
+				<label class="mb-2 block text-sm font-medium" for="captcha">캡차 ID</label>
 				<div class="relative">
-					<select id="target" class="h-11 w-full appearance-none rounded-lg border border-border bg-transparent pr-10 pl-4 text-sm outline-none focus:border-brand focus:ring-3 focus:ring-brand/10">
-						{% for target in targets %}
-						<option value="{{ target.captcha_id }}:{{ target.rev }}" class="bg-card">{{ target.name }} · {{ target.captcha_id }} rev{{ target.rev }} · draft {{ target.draft_count }}장</option>
+					<select id="captcha" class="h-11 w-full appearance-none rounded-lg border border-border bg-transparent pr-10 pl-4 text-sm outline-none focus:border-brand focus:ring-3 focus:ring-brand/10">
+						{% for captcha_id, group in targets | groupby("captcha_id") %}
+						<option value="{{ captcha_id }}" class="bg-card">{{ group[0].name }} · {{ captcha_id }}</option>
 						{% endfor %}
 					</select>
 					<svg class="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 						<path d="m6 9 6 6 6-6"></path>
 					</svg>
 				</div>
-				<p class="mt-1.5 text-xs text-muted-foreground">받은 이미지가 쌓일 대상</p>
+				<p class="mt-1.5 text-xs text-muted-foreground">받은 이미지가 쌓일 캡차</p>
 			</div>
 
-			<div class="sm:col-span-2">
+			<div>
+				<label class="mb-2 block text-sm font-medium" for="rev">리비전</label>
+				<div class="relative">
+					<select id="rev" class="h-11 w-full appearance-none rounded-lg border border-border bg-transparent pr-10 pl-4 text-sm outline-none focus:border-brand focus:ring-3 focus:ring-brand/10"></select>
+					<svg class="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="m6 9 6 6 6-6"></path>
+					</svg>
+				</div>
+				<p class="mt-1.5 text-xs text-muted-foreground">캡차의 가장 높은 리비전이 기본</p>
+			</div>
+
+			<div class="sm:col-span-2 xl:col-span-4">
 				<label class="mb-2 block text-sm font-medium" for="url">URL</label>
 				<input id="url" type="url" placeholder="https://example.com/login"
 					class="h-11 w-full rounded-lg border border-border bg-transparent px-4 text-sm outline-none focus:border-brand focus:ring-3 focus:ring-brand/10">
@@ -35,9 +49,16 @@
 
 			<div>
 				<label class="mb-2 block text-sm font-medium" for="count">파일 개수</label>
-				<input id="count" type="number" min="1" max="{{ max_count }}" value="100"
+				<input id="count" type="number" min="1" max="{{ max_count }}" value="500"
 					class="h-11 w-full rounded-lg border border-border bg-transparent px-4 text-sm outline-none focus:border-brand focus:ring-3 focus:ring-brand/10">
 				<p class="mt-1.5 text-xs text-muted-foreground">1 ~ {{ max_count }}</p>
+			</div>
+
+			<div>
+				<label class="mb-2 block text-sm font-medium" for="delay">지연 (ms)</label>
+				<input id="delay" type="number" min="0" max="{{ max_delay_ms }}" step="100" value="0"
+					class="h-11 w-full rounded-lg border border-border bg-transparent px-4 text-sm outline-none focus:border-brand focus:ring-3 focus:ring-brand/10">
+				<p class="mt-1.5 text-xs text-muted-foreground">요청 사이 대기. 0 ~ {{ max_delay_ms }}</p>
 			</div>
 
 			<div class="sm:col-span-2 xl:col-span-2">
