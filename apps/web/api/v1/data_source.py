@@ -35,7 +35,7 @@ async def data_source_params(captcha_id: str = Query(...), rev: int = Query(1)):
 @router.post("/data-source/params")
 async def data_source_params_save(request: Request, captcha_id: str = Query(...), rev: int = Query(1)):
 	"""폼 입력값을 저장한다. 수집을 시작하지 않아도 대상별로 유지된다 (편집 시 프런트가 호출)."""
-	raw = {name: request.query_params.get(name) for name in ("url", "selector", "count", "delay_ms")}
+	raw = {name: request.query_params.get(name) for name in ("url", "content_type", "selector", "count", "delay_ms")}
 	try:
 		saved = save_params(captcha_id, rev, raw)
 	except ValueError as e:
@@ -47,7 +47,7 @@ def _sse(event: str, payload: dict) -> str:
 	return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
-def _stream(captcha_id: str, rev: int, url: str, selector: str, count: int, delay_ms: int):
+def _stream(captcha_id: str, rev: int, url: str, selector: str, count: int, delay_ms: int, content_type: str):
 	"""SSE 프레임 제너레이터.
 
 	batch.py 와 같은 이유로 async 가 아닌 일반 def 다. 수집은 네트워크 대기가
@@ -55,7 +55,7 @@ def _stream(captcha_id: str, rev: int, url: str, selector: str, count: int, dela
 	동기 제너레이터를 주면 Starlette 이 스레드풀에서 돌려준다.
 	"""
 	try:
-		for event in run(captcha_id, rev, url, selector, count, delay_ms):
+		for event in run(captcha_id, rev, url, selector, count, delay_ms, content_type):
 			yield _sse(event["type"], event)
 	except DataSourceBusy as e:
 		# is_running() 확인과 실제 락 획득 사이에 다른 요청이 끼어든 경우.
@@ -75,11 +75,12 @@ async def data_source_stream(
 	selector: str = Query(""),
 	count: int = Query(...),
 	delay_ms: int = Query(0),
+	content_type: str = Query("image"),
 ):
 	"""수집 진행 상황 SSE. EventSource 가 GET 만 지원해서 GET 이다."""
 	# 시작 전에 확인 가능한 오류는 스트림을 열기 전에 상태 코드로 알린다.
 	try:
-		clean_request(captcha_id, rev, url, selector, count, delay_ms)
+		clean_request(captcha_id, rev, url, selector, count, delay_ms, content_type)
 	except ValueError as e:
 		raise HTTPException(status_code=400, detail=str(e))
 
@@ -87,7 +88,7 @@ async def data_source_stream(
 		raise HTTPException(status_code=409, detail="이미 다른 수집이 실행 중입니다")
 
 	return StreamingResponse(
-		_stream(captcha_id, rev, url, selector, count, delay_ms),
+		_stream(captcha_id, rev, url, selector, count, delay_ms, content_type),
 		media_type="text/event-stream",
 		headers={
 			"Cache-Control": "no-cache",

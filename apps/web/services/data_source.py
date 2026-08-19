@@ -31,11 +31,22 @@ REQUEST_TIMEOUT = 15.0
 
 # 페이지 폼에서 (캡차, 리비전)별로 기억해 두는 입력값과 기본값. data_source_params 에
 # JSON 으로 저장된다 (services/train.PERSIST_PARAMS 와 같은 방식). 템플릿의 초기값도 이와 같다.
-DEFAULT_PARAMS = {"url": "", "selector": "", "count": 500, "delay_ms": 0}
+# 응답 해석 방식. image: 본문이 이미지 그 자체. html: 페이지에서 CSS 셀렉터로 이미지 요소를
+# 찾아 그 주소를 다시 받는다. json: 본문을 JSON 으로 읽고 셀렉터를 키 경로(예: data.image,
+# items[0].url)로 써서 값을 꺼낸다 — 값은 이미지 URL, data: URI, base64 문자열 중 하나.
+CONTENT_TYPES = ("image", "html", "json")
+DEFAULT_PARAMS = {"url": "", "content_type": "image", "selector": "", "count": 500, "delay_ms": 0}
 PERSIST_PARAMS = tuple(DEFAULT_PARAMS)
 # 응답을 통째로 메모리에 올리므로 상한이 필요하다. 캡차 한 장은 보통 수 KB 라
 # 8MB 면 충분히 넉넉하다.
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+# 브라우저처럼 보이는 요청 헤더. 대법원(ssgo.scourt.go.kr) 등 공공기관 WAF 는 기본
+# python-httpx/x.y User-Agent 를 "보안 정책 위반"으로 막고 HTML 안내 페이지를 준다.
+REQUEST_HEADERS = {
+	"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
+	"Accept": "image/avif,image/webp,image/png,image/*,application/json,text/html,*/*;q=0.8",
+	"Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
+}
 
 # 이 서비스는 운영자가 넣은 URL 을 서버가 대신 요청한다. 사설/루프백 대역을 막자는
 # 통상적인 SSRF 대책은 여기서 쓸 수 없다 — 주 용도가 ipTIME 공유기(192.168.x.x)처럼
@@ -95,7 +106,7 @@ def list_targets() -> list[dict]:
 
 
 def clean_request(captcha_id: str, rev: int, url: str, selector: str, count: int,
-                  delay_ms: int = 0) -> dict:
+                  delay_ms: int = 0, content_type: str = "image") -> dict:
 	"""요청 값을 검증해 확정한다. 잘못된 값은 실행 오류가 아니라 요청 오류다."""
 	from hypercaptcha import engine
 
@@ -108,6 +119,11 @@ def clean_request(captcha_id: str, rev: int, url: str, selector: str, count: int
 	parsed = urlparse((url or "").strip())
 	if parsed.scheme not in ("http", "https") or not parsed.netloc:
 		raise ValueError("URL 은 http:// 또는 https:// 로 시작하는 주소여야 합니다")
+
+	content_type = _clean_content_type(content_type)
+	selector = (selector or "").strip()
+	if content_type == "json" and not selector:
+		raise ValueError("JSON 응답은 이미지 값의 키 경로가 필요합니다 (예: data.image)")
 
 	try:
 		count = int(count)
@@ -127,10 +143,18 @@ def clean_request(captcha_id: str, rev: int, url: str, selector: str, count: int
 		"captcha_id": captcha_id,
 		"rev": rev,
 		"url": parsed.geturl(),
-		"selector": (selector or "").strip(),
+		"content_type": content_type,
+		"selector": selector,
 		"count": count,
 		"delay_ms": delay_ms,
 	}
+
+
+def _clean_content_type(value) -> str:
+	value = (value or "image").strip().lower()
+	if value not in CONTENT_TYPES:
+		raise ValueError(f"content_type 은 {'/'.join(CONTENT_TYPES)} 중 하나여야 합니다 (받은 값 {value!r})")
+	return value
 
 
 def clean_params(raw: dict) -> dict:
@@ -145,6 +169,7 @@ def clean_params(raw: dict) -> dict:
 			raise ValueError("URL 은 http:// 또는 https:// 로 시작하는 주소여야 합니다")
 		url = parsed.geturl()
 	params["url"] = url
+	params["content_type"] = _clean_content_type(raw.get("content_type"))
 	params["selector"] = (raw.get("selector") or "").strip()
 
 	count = raw.get("count")
@@ -312,6 +337,66 @@ def _pick_image_url(html: str, page_url: str, selector: str) -> str:
 	return urljoin(page_url, src)
 
 
+def _json_path(data, path: str):
+	"""점 표기 키 경로로 JSON 값을 꺼낸다. 'a.b[0].c' 와 'a.b.0.c' 둘 다 받는다."""
+	current = data
+	for raw in path.replace("[", ".").replace("]", "").split("."):
+		key = raw.strip()
+		if key == "":
+			continue
+		if isinstance(current, list):
+			if not key.lstrip("-").isdigit():
+				raise DataSourceError(f"키 경로 {path!r}: 배열에는 숫자 인덱스가 와야 합니다 ({key!r})")
+			try:
+				current = current[int(key)]
+			except IndexError:
+				raise DataSourceError(f"키 경로 {path!r}: 배열 인덱스 {key} 가 범위를 벗어났습니다")
+		elif isinstance(current, dict):
+			if key not in current:
+				raise DataSourceError(f"키 경로 {path!r}: {key!r} 키가 없습니다 (있는 키: {', '.join(map(str, current))[:200]})")
+			current = current[key]
+		else:
+			raise DataSourceError(f"키 경로 {path!r}: {key!r} 앞에서 객체/배열이 아닌 값을 만났습니다")
+	return current
+
+
+def _pick_image_from_json(client, body: bytes, page_url: str, path: str) -> tuple[bytes, str]:
+	"""JSON 응답에서 키 경로로 이미지 값을 꺼낸다.
+
+	값은 세 가지 중 하나다: data: URI(그 자리에서 디코딩), 이미지 URL(다시 받음, 상대 경로면
+	요청 URL 기준), 순수 base64 문자열(디코딩). (bytes, 표시용 출처) 를 돌려준다.
+	"""
+	import base64
+	import json as _json
+
+	try:
+		data = _json.loads(body.decode("utf-8", errors="replace"))
+	except ValueError as e:
+		raise DataSourceError(f"JSON 으로 읽을 수 없습니다: {e}")
+
+	value = _json_path(data, path)
+	if not isinstance(value, str) or not value.strip():
+		raise DataSourceError(f"키 경로 {path!r} 의 값이 문자열이 아닙니다 ({type(value).__name__})")
+	value = value.strip()
+
+	if value.startswith("data:"):
+		header, _, payload = value.partition(",")
+		if ";base64" not in header:
+			raise DataSourceError("data: URI 가 base64 가 아닙니다")
+		return base64.b64decode(payload, validate=False), f"{page_url}#{path}"
+
+	if value.startswith(("http://", "https://", "/", "./", "../")):
+		image_url = urljoin(page_url, value)
+		content, _ = _fetch(client, image_url)
+		return content, image_url
+
+	try:
+		# 순수 base64. 개행/공백이 섞여 있어도 받는다.
+		return base64.b64decode("".join(value.split()), validate=True), f"{page_url}#{path}"
+	except Exception:
+		raise DataSourceError(f"키 경로 {path!r} 의 값이 이미지 URL/data URI/base64 가 아닙니다")
+
+
 def _fetch(client, url: str) -> tuple[bytes, str]:
 	"""응답을 크기 상한 안에서 받아 (본문, content-type) 으로 돌려준다.
 
@@ -346,6 +431,13 @@ def _decode_png(content: bytes) -> bytes:
 
 	with Image.open(io.BytesIO(content)) as im:
 		im.load()
+		# 투명 배경(RGBA/LA/투명 팔레트)은 흰 배경에 합성한다. convert("RGB") 만 하면 투명
+		# 픽셀의 RGB(보통 검정)가 그대로 남아 배경이 검게 저장된다 — 대법원 캡차가 그렇다.
+		# 학습 데이터와 TrainData 전처리(RGBA → 흰 배경)와 같은 규약이다.
+		if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
+			rgba = im.convert("RGBA")
+			background = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+			im = Image.alpha_composite(background, rgba)
 		buf = io.BytesIO()
 		im.convert("RGB").save(buf, "PNG")
 		return buf.getvalue()
@@ -360,7 +452,7 @@ def _sleep_ms(delay_ms: int, cancel: threading.Event | None = None) -> None:
 
 
 def run(captcha_id: str, rev: int, url: str, selector: str, count: int,
-        delay_ms: int = 0, cancel: threading.Event | None = None):
+        delay_ms: int = 0, content_type: str = "image", cancel: threading.Event | None = None):
 	"""수집 이벤트 제너레이터.
 
 	이벤트는 셋이다:
@@ -374,7 +466,7 @@ def run(captcha_id: str, rev: int, url: str, selector: str, count: int,
 	"""
 	import httpx
 
-	request = clean_request(captcha_id, rev, url, selector, count, delay_ms)
+	request = clean_request(captcha_id, rev, url, selector, count, delay_ms, content_type)
 	# 실행에 쓴 값은 그 대상의 마지막 입력값으로 남긴다.
 	_persist_params(request["captcha_id"], request["rev"], request)
 
@@ -389,7 +481,7 @@ def run(captcha_id: str, rev: int, url: str, selector: str, count: int,
 		yield {
 			"type": "start",
 			"captcha_id": request["captcha_id"], "rev": request["rev"],
-			"url": request["url"], "selector": request["selector"],
+			"url": request["url"], "content_type": request["content_type"], "selector": request["selector"],
 			"total": request["count"], "delay_ms": request["delay_ms"],
 			"draft_dir": str(target_dir),
 			"existing": len(list(target_dir.glob("*.png"))), "start_index": index,
@@ -398,7 +490,7 @@ def run(captcha_id: str, rev: int, url: str, selector: str, count: int,
 		started = time.time()
 		saved = failed = 0
 
-		with httpx.Client(timeout=REQUEST_TIMEOUT, follow_redirects=True) as client:
+		with httpx.Client(timeout=REQUEST_TIMEOUT, follow_redirects=True, headers=REQUEST_HEADERS) as client:
 			for i in range(request["count"]):
 				if cancel is not None and cancel.is_set():
 					break
@@ -408,18 +500,21 @@ def run(captcha_id: str, rev: int, url: str, selector: str, count: int,
 						break
 
 				try:
-					body, content_type = _fetch(client, request["url"])
+					body, _ = _fetch(client, request["url"])
 
-					# URL 이 이미지 자체를 주면 셀렉터는 필요 없다.
-					if content_type.startswith("image/"):
+					if request["content_type"] == "image":
+						# URL 이 이미지 자체를 준다. 셀렉터는 쓰지 않는다.
 						content = body
 						image_url = request["url"]
-					else:
+					elif request["content_type"] == "html":
 						# 셀렉터가 비면 페이지의 첫 이미지를 쓴다. 캡차 주소는 대개 그림
-						# 한 장만 있는 페이지라(ipTIME 의 captcha.cgi) 이걸로 충분하다.
+						# 한 장만 있는 페이지라 이걸로 충분하다.
 						html = body.decode("utf-8", errors="replace")
 						image_url = _pick_image_url(html, request["url"], request["selector"] or "img")
 						content, _ = _fetch(client, image_url)
+					else:
+						content, image_url = _pick_image_from_json(
+							client, body, request["url"], request["selector"])
 
 					png = _decode_png(content)
 				except Exception as e:

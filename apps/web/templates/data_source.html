@@ -41,7 +41,22 @@
 				<p class="mt-1.5 text-xs text-muted-foreground">캡차의 가장 높은 리비전이 기본</p>
 			</div>
 
-			<div class="sm:col-span-2 xl:col-span-4">
+			<div>
+				<label class="mb-2 block text-sm font-medium" for="content_type">응답 형식</label>
+				<div class="relative">
+					<select id="content_type" class="h-11 w-full appearance-none rounded-lg border border-border bg-transparent pr-10 pl-4 text-sm outline-none focus:border-brand focus:ring-3 focus:ring-brand/10">
+						<option value="image" class="bg-card">image</option>
+						<option value="html" class="bg-card">html</option>
+						<option value="json" class="bg-card">json</option>
+					</select>
+					<svg class="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="m6 9 6 6 6-6"></path>
+					</svg>
+				</div>
+				<p class="mt-1.5 text-xs text-muted-foreground">URL 응답을 어떻게 읽을지</p>
+			</div>
+
+			<div class="sm:col-span-2 xl:col-span-3">
 				<label class="mb-2 block text-sm font-medium" for="url">URL</label>
 				<input id="url" type="url" placeholder="https://example.com/login"
 					class="h-11 w-full rounded-lg border border-border bg-transparent px-4 text-sm outline-none focus:border-brand focus:ring-3 focus:ring-brand/10">
@@ -63,10 +78,10 @@
 			</div>
 
 			<div class="sm:col-span-2 xl:col-span-2">
-				<label class="mb-2 block text-sm font-medium" for="selector">CSS 셀렉터</label>
+				<label id="selector-label" class="mb-2 block text-sm font-medium" for="selector">CSS 셀렉터</label>
 				<input id="selector" type="text" placeholder="#captchaImg"
-					class="h-11 w-full rounded-lg border border-border bg-transparent px-4 font-mono text-sm outline-none focus:border-brand focus:ring-3 focus:ring-brand/10">
-				<p class="mt-1.5 text-xs text-muted-foreground">캡차 이미지 요소를 가리키는 셀렉터. 비워 두면 URL 이 이미지면 그대로, 아니면 첫 이미지를 씁니다</p>
+					class="h-11 w-full rounded-lg border border-border bg-transparent px-4 font-mono text-sm outline-none focus:border-brand focus:ring-3 focus:ring-brand/10 disabled:opacity-50">
+				<p id="selector-hint" class="mt-1.5 text-xs text-muted-foreground">캡차 이미지 요소를 가리키는 셀렉터. 비워 두면 첫 이미지를 씁니다</p>
 			</div>
 
 			<div class="flex items-end">

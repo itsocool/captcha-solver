@@ -52,7 +52,7 @@ templates/
 | `app.js` | `index.html` (`/`) | 드래그앤드롭 업로드 → `POST /api/v1/predictImage` → 결과 표시 |
 | `predict.js` | `predict.html` (`/predict`) | 캡차/리비전 분리 셀렉트(`#predict-targets` JSON, 선택 가능한 최고 리비전 기본), 일괄 추론 SSE 소비, 신뢰도 히스토그램, 오답 갤러리, 페이지네이션, 라이트박스 |
 | `train.js` | `train.html` (`/train`) | 캡차/리비전 분리 셀렉트(`#train-targets` JSON, 선택 가능한 최고 리비전 기본; 이어보기 시 `start` 이벤트의 대상으로 두 셀렉트를 맞춤), 학습 시작/중단, 파라미터 폼 자동 저장, SSE 세션 재생, 손실 곡선(SVG) |
-| `data_source.js` | `data_source.html` (`/data-source`) | 캡차/리비전 분리 셀렉트(리비전은 템플릿이 심은 `#data-source-targets` JSON으로 캡차별로 채우고 가장 높은 리비전을 기본 선택), 수집 SSE(`delay_ms` 포함), draft 갤러리, 인라인 라벨링 입력 |
+| `data_source.js` | `data_source.html` (`/data-source`) | 캡차/리비전 분리 셀렉트(리비전은 템플릿이 심은 `#data-source-targets` JSON으로 캡차별로 채우고 가장 높은 리비전을 기본 선택), 응답 형식(`content_type` image/html/json) 셀렉트에 따라 셀렉터 칸의 라벨·힌트·잠금을 바꾸는 `syncSelectorUi()`, 수집 SSE(`content_type`/`delay_ms` 포함; 추가 클릭 시 `saveCurrentParams()` 먼저 호출), draft 갤러리, 인라인 라벨링 입력 |
 
 캡차 셀렉트의 항목 순서는 서비스가 `captcha_types.seq`로 정렬해 내려준 `targets` 순서를 그대로 따른다 — 템플릿은 순서를 보존하는 `targets | unique(attribute="captcha_id")`로 중복만 걷어낸다(`groupby`는 알파벳순으로 정렬해 버리므로 쓰지 않는다).
 

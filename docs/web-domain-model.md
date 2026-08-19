@@ -90,7 +90,7 @@ Data Source 페이지에서 (캡차, 리비전)별로 마지막에 쓴 수집 �
 |---|---|---|---|
 | `captcha_id` | TEXT | PK(복합), FK → `captcha_types.captcha_id` ON DELETE CASCADE | |
 | `rev` | INTEGER | PK(복합), NOT NULL, DEFAULT 1 | |
-| `params` | TEXT | NOT NULL, DEFAULT `'{}'` | JSON `{url, selector, count, delay_ms}` (§4.6 `PERSIST_PARAMS`) |
+| `params` | TEXT | NOT NULL, DEFAULT `'{}'` | JSON `{url, content_type, selector, count, delay_ms}` (§4.6 `PERSIST_PARAMS`) |
 | `updated_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | |
 
 폼 편집 시 `POST /data-source/params`가, 수집 실행 시 `run()`이 각각 upsert한다.
@@ -149,7 +149,7 @@ captcha_data/<captcha_id>/<rev>/
 
 | 함수 | 반환 dict 키 | 비고 |
 |---|---|---|
-| `data_source.clean_request()` | `captcha_id, rev, url, selector, count, delay_ms` | §4에서 도메인 객체로도 재사용 |
+| `data_source.clean_request()` | `captcha_id, rev, url, content_type, selector, count, delay_ms` | §4에서 도메인 객체로도 재사용 |
 | `train.clean_params()` | `epochs, batch_size, early_stopping_patience, learning_rate, warmup_epochs, train_ratio, loss_type, use_amp, shuffle` | §4.4 `TrainParams` |
 
 **응답 측** (JSON으로 나가는 대표 dict 형태):
@@ -287,11 +287,12 @@ graph LR
 | `captcha_id` | `str` | 레지스트리에 등록되어 있어야 함 |
 | `rev` | `int` | ≥ 1 |
 | `url` | `str` | `http(s)://` 필수 |
-| `selector` | `str` | CSS 셀렉터, 빈 문자열이면 페이지 첫 `img` |
+| `content_type` | `str` | `image`(기본) / `html` / `json` — 응답 해석 방식(`CONTENT_TYPES`) |
+| `selector` | `str` | `html`: CSS 셀렉터(빈 문자열이면 첫 `img`) · `json`: 키 경로(필수) · `image`: 무시 |
 | `count` | `int` | 1 ~ `MAX_COUNT`(5000) |
 | `delay_ms` | `int` | 요청 사이 대기(ms), 0 ~ `MAX_DELAY_MS`(30000). 기본 0 |
 
-`clean_request()`는 실행용(URL 필수)이고, 같은 네 입력값의 **저장용** 검증은 `clean_params()`가 따로 맡는다 — 아직 URL을 안 넣고 개수/지연만 고쳐도 저장돼야 해서 URL이 비어 있어도 통과시킨다. `PERSIST_PARAMS = ("url", "selector", "count", "delay_ms")`가 `data_source_params.params` JSON에 저장되는 키이며(§2.5), `load_params()`가 `DEFAULT_PARAMS`(`""`, `""`, 500, 0) 위에 저장값을 덮어 돌려준다.
+`clean_request()`는 실행용(URL 필수)이고, 같은 네 입력값의 **저장용** 검증은 `clean_params()`가 따로 맡는다 — 아직 URL을 안 넣고 개수/지연만 고쳐도 저장돼야 해서 URL이 비어 있어도 통과시킨다. `PERSIST_PARAMS = ("url", "content_type", "selector", "count", "delay_ms")`가 `data_source_params.params` JSON에 저장되는 키이며(§2.5), `load_params()`가 `DEFAULT_PARAMS`(`""`, `"image"`, `""`, 500, 0) 위에 저장값을 덮어 돌려준다 — 이전에 저장된 행에 `content_type`이 없으면 기본 `image`.
 
 ## 5. 데이터 흐름 시나리오
 

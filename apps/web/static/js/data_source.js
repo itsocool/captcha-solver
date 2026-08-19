@@ -6,6 +6,9 @@ const revSelect = document.querySelector("#rev");
 // 서버가 내려준 (캡차, 리비전, draft 수) 목록. 리비전 셀렉트는 이걸로 캡차별로 채운다.
 const TARGETS = JSON.parse(document.querySelector("#data-source-targets").textContent);
 const urlInput = document.querySelector("#url");
+const contentTypeSelect = document.querySelector("#content_type");
+const selectorLabel = document.querySelector("#selector-label");
+const selectorHint = document.querySelector("#selector-hint");
 const selectorInput = document.querySelector("#selector");
 const countInput = document.querySelector("#count");
 const delayInput = document.querySelector("#delay");
@@ -63,7 +66,22 @@ function currentTarget() {
 	return {captchaId: captchaSelect.value, rev: revSelect.value};
 }
 
-const PARAM_FIELDS = {url: urlInput, selector: selectorInput, count: countInput, delay_ms: delayInput};
+const PARAM_FIELDS = {url: urlInput, content_type: contentTypeSelect, selector: selectorInput, count: countInput, delay_ms: delayInput};
+
+// 응답 형식에 따라 셀렉터 칸의 의미가 달라진다. image 는 쓰지 않아 잠근다.
+const SELECTOR_UI = {
+	image: {label: "셀렉터", placeholder: "", hint: "이미지 응답에는 필요 없습니다", disabled: true},
+	html: {label: "CSS 셀렉터", placeholder: "#captchaImg", hint: "캡차 이미지 요소를 가리키는 셀렉터. 비워 두면 첫 이미지를 씁니다", disabled: false},
+	json: {label: "JSON 키 경로", placeholder: "data.image", hint: "이미지 값이 있는 키 경로 (예: data.image, items[0].url). 값은 이미지 URL · data: URI · base64", disabled: false},
+};
+
+function syncSelectorUi() {
+	const ui = SELECTOR_UI[contentTypeSelect.value] || SELECTOR_UI.image;
+	selectorLabel.textContent = ui.label;
+	selectorInput.placeholder = ui.placeholder;
+	selectorHint.textContent = ui.hint;
+	selectorInput.disabled = ui.disabled || runButton.disabled;
+}
 
 /** 저장된 입력값으로 폼을 채운다. .value 대입은 change 를 안 띄우므로 저장이 되돌아 실행되지 않는다. */
 function applyParams(params) {
@@ -72,6 +90,7 @@ function applyParams(params) {
 			el.value = params[key];
 		}
 	});
+	syncSelectorUi();
 }
 
 function collectParams() {
@@ -117,7 +136,8 @@ async function saveCurrentParams() {
 function setRunning(running) {
 	runButton.disabled = running;
 	stopButton.disabled = !running;
-	[captchaSelect, revSelect, urlInput, selectorInput, countInput, delayInput].forEach((el) => (el.disabled = running));
+	[captchaSelect, revSelect, urlInput, contentTypeSelect, selectorInput, countInput, delayInput].forEach((el) => (el.disabled = running));
+	syncSelectorUi();
 }
 
 function updateStats() {
@@ -290,7 +310,7 @@ function finish(label) {
 	progressLabel.textContent = label;
 }
 
-runButton.addEventListener("click", () => {
+runButton.addEventListener("click", async () => {
 	const url = urlInput.value.trim();
 	if (!url) {
 		progressLabel.textContent = "URL 을 입력하세요";
@@ -298,6 +318,10 @@ runButton.addEventListener("click", () => {
 		return;
 	}
 	const {captchaId, rev} = currentTarget();
+
+	// 추가를 누른 시점의 입력값을 그 대상의 마지막 값으로 DB 에 남긴다. (change 이벤트 저장과
+	// 별개로 — 스트림이 검증 오류로 열리지 않아도 입력은 보존되도록.)
+	await saveCurrentParams();
 
 	reset();
 	counts.total = Number(countInput.value);
@@ -309,6 +333,7 @@ runButton.addEventListener("click", () => {
 		captcha_id: captchaId,
 		rev,
 		url,
+		content_type: contentTypeSelect.value,
 		selector: selectorInput.value.trim(),
 		count: countInput.value,
 		delay_ms: delayInput.value || "0",
@@ -364,6 +389,7 @@ stopButton.addEventListener("click", () => {
 
 galleryRefresh.addEventListener("click", loadGallery);
 Object.values(PARAM_FIELDS).forEach((el) => el.addEventListener("change", saveCurrentParams));
+contentTypeSelect.addEventListener("change", syncSelectorUi);
 
 captchaSelect.addEventListener("change", () => {
 	fillRevs();
@@ -375,5 +401,6 @@ revSelect.addEventListener("change", () => {
 	loadGallery();
 });
 fillRevs();
+syncSelectorUi();
 loadParamsForTarget();
 loadGallery();

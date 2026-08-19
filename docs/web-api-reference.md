@@ -180,27 +180,28 @@ SSE. 시작 전 검증 실패는 `400`(선택 불가 대상) 또는 `409`(이미
 
 ### `GET /api/v1/data-source/params?captcha_id=...&rev=1`
 
-대상에 마지막으로 저장된 수집 입력값(없으면 기본값 `{"url": "", "selector": "", "count": 500, "delay_ms": 0}`)을 돌려준다: `{"params": {...}}`.
+대상에 마지막으로 저장된 수집 입력값(없으면 기본값 `{"url": "", "content_type": "image", "selector": "", "count": 500, "delay_ms": 0}`)을 돌려준다: `{"params": {...}}`.
 
-### `POST /api/v1/data-source/params?captcha_id=...&rev=1&url=&selector=&count=&delay_ms=`
+### `POST /api/v1/data-source/params?captcha_id=...&rev=1&url=&content_type=&selector=&count=&delay_ms=`
 
-쿼리스트링으로 폼 입력값을 저장한다 (수집을 시작하지 않아도 유지됨). `url`은 비워도 되지만 넣으면 `http(s)://`여야 하고, `count`/`delay_ms`는 stream 과 같은 범위. 유효성 실패·미등록 캡차·`rev < 1`은 `400`. 수집을 실행하면(`/data-source/stream`) 그때 쓴 값도 같은 저장소에 남는다.
+쿼리스트링으로 폼 입력값을 저장한다 (수집을 시작하지 않아도 유지됨). `url`은 비워도 되지만 넣으면 `http(s)://`여야 하고, `count`/`delay_ms`는 stream 과 같은 범위. 유효성 실패·미등록 캡차·`rev < 1`은 `400`. 프런트는 입력 `change` 때와 **추가 버튼 클릭 때** 이걸 호출하고, 수집을 실행하면(`/data-source/stream`) 서버도 그때 쓴 값을 같은 저장소에 남긴다.
 
-### `GET /api/v1/data-source/stream?captcha_id=...&rev=1&url=...&selector=&count=N&delay_ms=0`
+### `GET /api/v1/data-source/stream?captcha_id=...&rev=1&url=...&content_type=image&selector=&count=N&delay_ms=0`
 
 | 파라미터 | 설명 |
 |---|---|
 | `rev` | 1 이상 (리비전은 1부터 시작) |
 | `url` | `http://`/`https://`로 시작해야 함 |
-| `selector` | CSS 셀렉터. 응답이 이미지가 아니라 HTML이면 이 셀렉터로 이미지 요소를 찾는다 (`src`/`data-src`/`href`/`background:url()` 순으로 탐색). 빈 값이면 `img` |
+| `content_type` | `image`(기본) \| `html` \| `json`. URL 응답을 어떻게 읽어 이미지를 얻을지 — `image`: 본문이 이미지 그 자체(셀렉터 미사용). `html`: 본문을 HTML로 파싱해 `selector`(CSS)로 이미지 요소를 찾고 그 주소를 다시 받는다. `json`: 본문을 JSON으로 읽고 `selector`를 키 경로(`data.image`, `items[0].url`)로 써서 값을 꺼낸다 — 값은 이미지 URL(상대 경로 허용) · `data:` URI · 순수 base64 |
+| `selector` | `html`: CSS 셀렉터(`src`/`data-src`/`href`/`background:url()` 순으로 탐색, 빈 값이면 `img`). `json`: 키 경로(**필수**). `image`: 무시 |
 | `count` | 1–5000 (`MAX_COUNT`) |
 | `delay_ms` | 요청 사이 대기(ms). 0–30000 (`MAX_DELAY_MS`), 기본 0. 첫 요청 앞에는 대기하지 않는다 |
 
-시작 전 검증 실패는 `400`, 이미 실행 중이면 `409`. 응답 크기 상한은 8MB (`MAX_RESPONSE_BYTES`)이며 초과 시 해당 건은 `item` 이벤트의 실패로 기록된다. 이 엔드포인트는 서버가 대신 임의 URL을 요청하므로(SSRF 성격), 사설 대역을 의도적으로 막지 않는다 — LAN 내부 장비에서 캡차를 가져오는 용도이기 때문이다 (자세한 배경은 [web-architecture.md §7](./web-architecture.md#7-동시성과-프로세스-로컬-상태-알아둘-것)).
+요청은 브라우저 유사 헤더(`REQUEST_HEADERS`: Chrome User-Agent 등)로 보낸다 — 대법원 등 공공기관 WAF가 기본 `python-httpx` UA를 차단하기 때문. 받은 이미지는 PNG로 통일해 저장하며 투명 배경(RGBA)은 흰 배경에 합성한다(학습 데이터 규약). 시작 전 검증 실패는 `400`, 이미 실행 중이면 `409`. 응답 크기 상한은 8MB (`MAX_RESPONSE_BYTES`)이며 초과 시 해당 건은 `item` 이벤트의 실패로 기록된다. 이 엔드포인트는 서버가 대신 임의 URL을 요청하므로(SSRF 성격), 사설 대역을 의도적으로 막지 않는다 — LAN 내부 장비에서 캡차를 가져오는 용도이기 때문이다 (자세한 배경은 [web-architecture.md §7](./web-architecture.md#7-동시성과-프로세스-로컬-상태-알아둘-것)).
 
 | 이벤트 | 설명 |
 |---|---|
-| `start` | 1회. `total`, `delay_ms`, `draft_dir`, `existing`(기존 draft 장수), `start_index` |
+| `start` | 1회. `total`, `content_type`, `delay_ms`, `draft_dir`, `existing`(기존 draft 장수), `start_index` |
 | `item` | 요청마다. `index`, `saved`, 성공 시 `name`/`image_url`/`bytes`, 실패 시 `error` |
 | `summary` | 1회. `requested`, `saved`, `failed`, `draft_total`, `elapsed_sec` |
 | `error` | 검증 통과 후 실행 중 예외 |
