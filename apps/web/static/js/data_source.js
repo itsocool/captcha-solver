@@ -21,6 +21,10 @@ const gallery = document.querySelector("#gallery");
 const galleryCount = document.querySelector("#gallery-count");
 const galleryRefresh = document.querySelector("#gallery-refresh");
 const draftDir = document.querySelector("#draft-dir");
+const autoLabelButton = document.querySelector("#autolabel");
+const autoLabelStatus = document.querySelector("#autolabel-status");
+const autoLabelMinConfidence = document.querySelector("#autolabel-min-confidence");
+let autoLabelSource = null;
 const rows = document.querySelector("#rows");
 
 const stat = {
@@ -137,6 +141,7 @@ function setRunning(running) {
 	runButton.disabled = running;
 	stopButton.disabled = !running;
 	[captchaSelect, revSelect, urlInput, contentTypeSelect, selectorInput, countInput, delayInput].forEach((el) => (el.disabled = running));
+	autoLabelButton.disabled = running || autoLabelSource !== null;
 	syncSelectorUi();
 }
 
@@ -166,7 +171,8 @@ function makeThumb(name) {
 	// 값은 확장자를 뺀 파일명이고, 원래 파일명은 data-name 에 남겨 둔다.
 	const label = document.createElement("input");
 	label.type = "text";
-	label.value = stem(name);
+	label.value = captionOf(name);
+	label.placeholder = isUnlabeled(name) ? "라벨 입력" : "";
 	label.dataset.name = name;
 	label.autocomplete = "off";
 	label.spellcheck = false;
@@ -193,6 +199,10 @@ function makeThumb(name) {
 }
 
 const stem = (name) => name.replace(/\.png$/i, "");
+// 라벨이 아직 없는 draft 파일 이름 (서버의 DRAFT_NAME_RE 와 같은 규칙).
+const isUnlabeled = (name) => /^draft-\d+$/.test(stem(name));
+// 캡션에 보여줄 값: 라벨 없는 파일은 빈 칸(placeholder)으로 보여 "아직 안 붙었음"이 드러나게.
+const captionOf = (name) => (isUnlabeled(name) ? "" : stem(name));
 
 /** 입력한 라벨을 파일 이름으로 굳힌다. 실패하면 원래 이름으로 되돌린다. */
 async function saveLabel(input) {
@@ -201,7 +211,7 @@ async function saveLabel(input) {
 	const label = input.value.trim();
 
 	if (!label || label === stem(before)) {
-		input.value = stem(before);
+		input.value = captionOf(before);
 		return;
 	}
 
@@ -215,14 +225,15 @@ async function saveLabel(input) {
 		}
 
 		input.dataset.name = data.name;
-		input.value = stem(data.name);
+		input.value = captionOf(data.name);
+		input.placeholder = isUnlabeled(data.name) ? "라벨 입력" : "";
 		// 썸네일 주소도 새 이름으로. 안 바꾸면 다음 새로 고침 전까지 404 를 가리킨다.
 		const img = input.parentElement.querySelector("img");
 		img.src = `${CONTEXT_PATH}/api/v1/data-source/image?${new URLSearchParams({captcha_id: captchaId, rev, name: data.name})}`;
 		img.alt = data.name;
 		progressLabel.textContent = `${stem(before)} → ${stem(data.name)}`;
 	} catch (e) {
-		input.value = stem(before);
+		input.value = captionOf(before);
 		progressLabel.textContent = `이름 변경 실패: ${e.message}`;
 	} finally {
 		input.disabled = false;
@@ -255,7 +266,7 @@ async function loadGallery() {
 
 		gallery.replaceChildren(...data.names.map(makeThumb));
 		draftDir.textContent = data.draft_dir;
-		galleryCount.textContent = `${data.total}장`;
+		galleryCount.textContent = data.unlabeled ? `${data.total}장 · 라벨 없음 ${data.unlabeled}장` : `${data.total}장`;
 		// 서버 렌더 시점의 draft 수는 수집 뒤에 낡으므로 셀렉트 라벨도 같이 맞춘다.
 		const target = TARGETS.find((t) => t.captcha_id === captchaId && String(t.rev) === String(rev));
 		if (target) {
@@ -385,6 +396,80 @@ stopButton.addEventListener("click", () => {
 	// EventSource 를 닫으면 서버 쪽 제너레이터가 정리되면서 수집 락이 풀린다.
 	finish(`중단됨 · ${counts.saved}장 저장`);
 	loadGallery();
+});
+
+/** 갤러리에서 name 에 해당하는 라벨 입력을 찾아 새 이름으로 바꾼다 (전체 다시 그리지 않고 제자리 갱신). */
+function updateThumbName(name, newName) {
+	const input = gallery.querySelector(`input[data-name="${CSS.escape(name)}"]`);
+	if (input) {
+		input.value = captionOf(newName);
+		input.placeholder = isUnlabeled(newName) ? "라벨 입력" : "";
+		input.dataset.name = newName;
+		const img = input.parentElement.querySelector("img");
+		if (img) {
+			const {captchaId, rev} = currentTarget();
+			img.src = `${CONTEXT_PATH}/api/v1/data-source/image?${new URLSearchParams({captcha_id: captchaId, rev, name: newName})}`;
+			img.alt = newName;
+		}
+	}
+}
+
+function finishAutoLabel(message) {
+	if (autoLabelSource) {
+		autoLabelSource.close();
+		autoLabelSource = null;
+	}
+	autoLabelStatus.textContent = message;
+	autoLabelButton.disabled = runButton.disabled; // 수집 중이면 계속 잠근다
+	[captchaSelect, revSelect].forEach((el) => (el.disabled = runButton.disabled));
+	loadGallery();
+}
+
+/** 라벨 없는 draft 이미지를 모델 예측값으로 이름 바꾼다 (draft 안에서 개명). 진행은 SSE 로 받는다. */
+autoLabelButton.addEventListener("click", () => {
+	const {captchaId, rev} = currentTarget();
+	if (!captchaId || !rev || autoLabelSource) {
+		return;
+	}
+	const minConfidence = autoLabelMinConfidence.value || "0";
+	autoLabelButton.disabled = true;
+	[captchaSelect, revSelect].forEach((el) => (el.disabled = true)); // 도중에 대상이 바뀌면 캡션 갱신이 엉킨다
+	autoLabelStatus.textContent = "모델 로드 중...";
+
+	const params = new URLSearchParams({captcha_id: captchaId, rev, device: "auto", min_confidence: minConfidence});
+	autoLabelSource = new EventSource(`${CONTEXT_PATH}/api/v1/data-source/auto-label/stream?${params}`);
+	let done = 0;
+	let total = 0;
+
+	autoLabelSource.addEventListener("start", (event) => {
+		const payload = JSON.parse(event.data);
+		total = payload.total;
+		autoLabelStatus.textContent = total
+			? `이름 변경 중 0 / ${total} (${payload.device})`
+			: "라벨 없는 이미지가 없습니다";
+	});
+	autoLabelSource.addEventListener("item", (event) => {
+		const payload = JSON.parse(event.data);
+		done += 1;
+		if (payload.renamed) {
+			updateThumbName(payload.name, payload.new_name);
+		}
+		autoLabelStatus.textContent = `이름 변경 중 ${done} / ${total}`;
+	});
+	autoLabelSource.addEventListener("summary", (event) => {
+		const payload = JSON.parse(event.data);
+		const parts = [`${payload.renamed}장 변경`];
+		if (payload.skipped) parts.push(`${payload.skipped}장 신뢰도 미달`);
+		if (payload.failed) parts.push(`${payload.failed}장 실패`);
+		finishAutoLabel(`완료 · ${parts.join(" · ")}`);
+	});
+	autoLabelSource.addEventListener("error", (event) => {
+		if (event.data) {
+			finishAutoLabel(`오류 · ${JSON.parse(event.data).message}`);
+		} else if (autoLabelSource && autoLabelSource.readyState === EventSource.CLOSED) {
+			finishAutoLabel("연결이 끊겼습니다");
+		}
+	});
 });
 
 galleryRefresh.addEventListener("click", loadGallery);

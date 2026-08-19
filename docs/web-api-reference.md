@@ -206,6 +206,17 @@ SSE. 시작 전 검증 실패는 `400`(선택 불가 대상) 또는 `409`(이미
 | `summary` | 1회. `requested`, `saved`, `failed`, `draft_total`, `elapsed_sec` |
 | `error` | 검증 통과 후 실행 중 예외 |
 
+### `GET /api/v1/data-source/auto-label/stream?captcha_id=...&rev=1&device=auto&min_confidence=0`
+
+draft 이미지를 **모델 예측값으로 이름 변경**(= 라벨 붙이기, draft 디렉터리 안에서 개명)하는 진행 상황 SSE. 대상은 라벨이 아직 없는 파일(이름이 `draft-NNNNNN` 형식)뿐이며 이미 라벨이 붙은 파일은 건드리지 않는다. `min_confidence`(0–1, 기본 0)보다 신뢰도가 낮으면 바꾸지 않고 `skipped: "low_confidence"`로 남긴다. 같은 이름이 이미 있으면 그 건은 `error`로 기록되고 원본은 그대로다. 수집과 같은 락을 쓰므로 수집 중이면 `409`.
+
+| 이벤트 | 설명 |
+|---|---|
+| `start` | 1회. `total`(대상 수), `already_labeled`, `device`, `min_confidence` |
+| `item` | 대상마다. `name`, `new_name`, `prediction`, `confidence`, `renamed`, 선택적 `skipped`/`error` |
+| `summary` | 1회. `total`, `renamed`, `skipped`, `failed` |
+| `error` | 실행 중 예외 (미등록 캡차, 잘못된 디바이스 등) |
+
 ### `GET /api/v1/data-source/drafts?captcha_id=...&rev=1&limit=N`
 
 draft 이미지 목록 (수집 순 = mtime 오름차순). `limit` 생략 시 전체.

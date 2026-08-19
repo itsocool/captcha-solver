@@ -23,6 +23,20 @@ _RUN_LOCK = threading.Lock()
 
 CAPTCHA_DATA_DIR = BASE_DIR / "captcha_data"
 
+# 라벨이 아직 없는 draft 파일 이름. 수집 순번을 접두사와 함께 쓴다 — 저장소 관례가
+# "파일 이름 = 정답" 이라 라벨을 붙이면 이름이 라벨로 바뀌는데, 캡차 대부분이 숫자
+# 라벨이라 순번(000123)과 라벨(967238)이 구별되지 않았다. 접두사가 있어야 "아직 라벨
+# 없음"을 판정할 수 있다 (예측으로 이름 변경 기능이 이미 라벨된 파일을 건드리지 않게).
+DRAFT_NAME_RE = re.compile(r"^draft-(\d+)$")
+
+
+def is_unlabeled_draft(name: str) -> bool:
+	return DRAFT_NAME_RE.match(Path(name).stem) is not None
+
+
+def draft_name(index: int) -> str:
+	return f"draft-{index:06d}.png"
+
 MAX_COUNT = 5000
 # 요청 사이 지연 상한(ms). 대상 서버를 배려하려는 값이지 긴 대기용이 아니다.
 # 지연 중에는 yield 가 없어 소비자가 끊어도 다음 yield 까지 락이 안 풀리므로 짧게 잡는다.
@@ -272,6 +286,7 @@ def list_drafts(captcha_id: str, rev: int, limit: int | None = None) -> dict:
 	return {
 		"names": names[:limit] if limit else names,
 		"total": len(names),
+		"unlabeled": sum(1 for n in names if is_unlabeled_draft(n)),
 		"draft_dir": str(directory),
 	}
 
@@ -301,15 +316,81 @@ def rename_draft(captcha_id: str, rev: int, name: str, label: str) -> dict:
 	return {"name": target.name, "renamed": True}
 
 
+def iter_auto_label(captcha_id: str, rev: int, device: str | None = None,
+                    min_confidence: float = 0.0):
+	"""draft 이미지를 모델 예측값으로 이름 바꾸는(=라벨 붙이는) 이벤트 제너레이터.
+
+	라벨이 아직 없는 파일(이름이 draft-순번인 것)만 대상이고, 이미 라벨이 붙은 파일은
+	건너뛴다. 예측 신뢰도가 min_confidence 보다 낮으면 바꾸지 않고 low_confidence 로
+	남긴다. 같은 이름이 이미 있으면 rename_draft 가 ValueError 를 내고 그 건은 실패로
+	기록한다. 수집(run)과 같은 draft 디렉터리를 만지므로 같은 락을 쓴다.
+
+	이벤트: start {total, device} → item {name, new_name, prediction, confidence, renamed,
+	skipped?, error?} (매 장) → summary {total, renamed, skipped, failed}.
+	"""
+	from hypercaptcha import engine
+	from web.services.captcha import get_model
+
+	if captcha_id not in engine.get_captcha_type_list():
+		raise ValueError(f"등록되지 않은 캡차입니다: {captcha_id!r}")
+	if rev < 1:
+		raise ValueError(f"rev 는 1 이상이어야 합니다 (받은 값 {rev})")
+	try:
+		min_confidence = float(min_confidence or 0.0)
+	except (TypeError, ValueError):
+		raise ValueError(f"신뢰도 하한이 숫자가 아닙니다 ({min_confidence!r})")
+	if not (0.0 <= min_confidence <= 1.0):
+		raise ValueError(f"신뢰도 하한은 0 ~ 1 범위여야 합니다 (받은 값 {min_confidence})")
+
+	if not _RUN_LOCK.acquire(blocking=False):
+		raise DataSourceBusy("이미 다른 수집/라벨링이 실행 중입니다")
+
+	try:
+		names = list_drafts(captcha_id, rev)["names"]
+		targets = [n for n in names if is_unlabeled_draft(n)]
+		model = get_model(captcha_id, device)  # 잘못된 디바이스는 여기서 ValueError
+		yield {"type": "start", "captcha_id": captcha_id, "rev": rev,
+		       "total": len(targets), "already_labeled": len(names) - len(targets),
+		       "device": str(model.device), "min_confidence": min_confidence}
+
+		renamed = skipped = failed = 0
+		for i, name in enumerate(targets):
+			try:
+				path = draft_image_path(captcha_id, rev, name)
+				prediction, confidence = engine.predict(model=model, image_path=str(path), verbose=0)
+				confidence = float(confidence)
+				if confidence < min_confidence:
+					skipped += 1
+					yield {"type": "item", "index": i, "name": name, "new_name": name,
+					       "prediction": prediction, "confidence": confidence,
+					       "renamed": False, "skipped": "low_confidence"}
+					continue
+				result = rename_draft(captcha_id, rev, name, prediction)
+				renamed += 1 if result["renamed"] else 0
+				yield {"type": "item", "index": i, "name": name, "new_name": result["name"],
+				       "prediction": prediction, "confidence": confidence,
+				       "renamed": result["renamed"]}
+			except Exception as e:
+				failed += 1
+				yield {"type": "item", "index": i, "name": name, "new_name": name,
+				       "renamed": False, "error": f"{type(e).__name__}: {e}"}
+
+		yield {"type": "summary", "total": len(targets), "renamed": renamed,
+		       "skipped": skipped, "failed": failed}
+	finally:
+		_RUN_LOCK.release()
+
+
 def _next_index(directory: Path) -> int:
 	"""이어붙일 파일 번호. 기존에서 가장 큰 순번 + 1 이라 이름이 겹치지 않는다.
 
-	숫자가 아닌 이름(라벨을 붙여 바꾼 파일)은 순번으로 세지 않는다.
+	draft-NNNNNN 형식이 아닌 이름(라벨을 붙여 바꾼 파일)은 순번으로 세지 않는다.
 	"""
 	largest = 0
 	for p in directory.glob("*.png"):
-		if p.stem.isdigit():
-			largest = max(largest, int(p.stem))
+		match = DRAFT_NAME_RE.match(p.stem)
+		if match:
+			largest = max(largest, int(match.group(1)))
 	return largest + 1
 
 
@@ -525,7 +606,7 @@ def run(captcha_id: str, rev: int, url: str, selector: str, count: int,
 					}
 					continue
 
-				name = f"{index:06d}.png"
+				name = draft_name(index)
 				(target_dir / name).write_bytes(png)
 				index += 1
 				saved += 1

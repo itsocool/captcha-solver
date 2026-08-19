@@ -130,8 +130,21 @@
 	<section class="rounded-2xl border border-border bg-card">
 		<div class="flex flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-5">
 			<h3 class="font-semibold">받은 이미지 <span id="gallery-count" class="text-sm font-normal text-muted-foreground">—</span></h3>
-			<div class="flex items-center gap-3">
+			<div class="flex flex-wrap items-center gap-3">
 				<span id="draft-dir" class="font-mono text-xs text-muted-foreground">—</span>
+				<span id="autolabel-status" class="text-xs text-muted-foreground"></span>
+				<label class="flex items-center gap-1.5 text-xs text-muted-foreground" title="예측 신뢰도가 이 값보다 낮으면 이름을 바꾸지 않습니다">
+					신뢰도 ≥
+					<input id="autolabel-min-confidence" type="number" min="0" max="1" step="0.05" value="0"
+						class="h-9 w-20 rounded-lg border border-border bg-transparent px-2 font-mono text-sm outline-none focus:border-brand">
+				</label>
+				<button id="autolabel" type="button" title="라벨이 없는(순번 이름) 이미지를 모델 예측값으로 이름 변경 (draft 안에서)"
+					class="flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-sm transition-colors hover:bg-surface disabled:opacity-60">
+					<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="M12 3a9 9 0 1 0 9 9"></path><path d="m16 8 2 2 4-4"></path><path d="M12 8v4l2 2"></path>
+					</svg>
+					예측으로 이름 변경
+				</button>
 				<button id="gallery-refresh" type="button" title="새로 고침"
 					class="flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-sm transition-colors hover:bg-surface disabled:opacity-60">
 					<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

@@ -116,13 +116,13 @@ captcha_data/<captcha_id>/<rev>/
 ├── images/
 │   ├── train/      # 학습용, 파일명 = 정답 라벨 (예: 3fk2p9.png)
 │   ├── pred/       # 검증/일괄추론용, 파일명 = 정답 라벨
-│   └── draft/      # 데이터 수집이 쌓은 라벨 미부착 원본, 파일명 = 순번 (000001.png…)
+│   └── draft/      # 데이터 수집이 쌓은 원본. 라벨 없음 = draft-000001.png(순번), 라벨 붙으면 <라벨>.png 로 개명
 └── model/
     ├── model.pth       # 학습된 가중치
     └── model.meta.json # 사이드카 메타 (아래 §4.1 CaptchaType.build_meta() 참고)
 ```
 
-"파일 이름 = 정답 라벨"이 저장소 전체의 관례다. `data_source.py`의 `rename_draft()`가 draft 이미지에 라벨을 붙이는 방법도 파일 rename이다.
+"파일 이름 = 정답 라벨"이 저장소 전체의 관례다. `data_source.py`의 `rename_draft()`가 draft 이미지에 라벨을 붙이는 방법도 파일 rename이다(수동 입력 또는 `iter_auto_label()`의 모델 예측). 라벨 없는 draft 는 `draft-NNNNNN.png`(`DRAFT_NAME_RE`)로 이름 지어 라벨된 파일과 구분한다 — 캡차 대부분이 숫자 라벨이라 순번(`000123`)과 라벨(`967238`)을 이름만으로 가를 수 없었기 때문.
 
 ## 3. DTO (API 요청/응답)
 
@@ -163,7 +163,7 @@ captcha_data/<captcha_id>/<rev>/
 | `POST /data-source/params` | `{"saved": true, "params": {...}}` |
 | `POST /train/start` | `{"started": true, "captcha_id": str, "rev": int}` |
 | `POST /train/stop` | `{"stopping": true, "save": bool}` |
-| `GET /data-source/drafts` | `{"names": [str], "total": int, "draft_dir": str}` |
+| `GET /data-source/drafts` | `{"names": [str], "total": int, "unlabeled": int, "draft_dir": str}` |
 | `POST /data-source/label` | `{"name": str, "renamed": bool}` |
 | SSE 이벤트 (`/batch/stream`, `/train/stream`, `/data-source/stream`) | `event: <type>\ndata: <JSON>` — §4.5 |
 
@@ -277,6 +277,7 @@ graph LR
 | 서비스 | 이벤트 흐름 |
 |---|---|
 | `data_source.run()` | `start` (1회) → `item` (매 장, `saved`/`error` 포함) → `summary` (1회) |
+| `data_source.iter_auto_label()` | `start` → `item` (매 장, `renamed`/`skipped`/`error`) → `summary` — draft 를 모델 예측으로 개명 |
 | `train.start()` (`_TrainSession`) | `hypercaptcha.engine`이 만드는 진행 이벤트(에폭 단위) + 선택적 `shuffle` 이벤트 + `error` (예외 시) — 세션 버퍼에 쌓여 재접속 시 재생됨 |
 | `batch_predict.run()` | `hypercaptcha.engine.iter_batch_predict()` 이벤트를 그대로 전달 |
 

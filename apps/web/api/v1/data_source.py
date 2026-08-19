@@ -9,6 +9,7 @@ from web.services.data_source import (
 	clean_request,
 	draft_image_path,
 	is_running,
+	iter_auto_label,
 	list_drafts,
 	list_targets,
 	load_params,
@@ -95,6 +96,37 @@ async def data_source_stream(
 			# nginx 등 리버스 프록시가 버퍼링하면 진행률이 끝나서야 한꺼번에 도착한다.
 			"X-Accel-Buffering": "no",
 		},
+	)
+
+
+def _auto_label_stream(captcha_id: str, rev: int, device: str | None, min_confidence: float):
+	try:
+		for event in iter_auto_label(captcha_id, rev, device, min_confidence):
+			yield _sse(event["type"], event)
+	except DataSourceBusy as e:
+		yield _sse("error", {"message": str(e)})
+	except (ValueError, DataSourceError) as e:
+		yield _sse("error", {"message": str(e)})
+	except Exception as e:
+		yield _sse("error", {"message": f"{type(e).__name__}: {e}"})
+
+
+@router.get("/data-source/auto-label/stream")
+async def data_source_auto_label_stream(
+	captcha_id: str = Query(...),
+	rev: int = Query(1),
+	device: str | None = Query(None),
+	min_confidence: float = Query(0.0),
+):
+	"""draft 이미지를 모델 예측값으로 이름 바꾸는 진행 상황 SSE."""
+	if not (0.0 <= min_confidence <= 1.0):
+		raise HTTPException(status_code=400, detail="min_confidence 는 0 ~ 1 범위여야 합니다")
+	if is_running():
+		raise HTTPException(status_code=409, detail="이미 다른 수집/라벨링이 실행 중입니다")
+	return StreamingResponse(
+		_auto_label_stream(captcha_id, rev, device, min_confidence),
+		media_type="text/event-stream",
+		headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
 	)
 
 
