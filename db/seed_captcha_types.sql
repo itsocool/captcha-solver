@@ -43,7 +43,8 @@ INSERT OR IGNORE INTO captcha_types(captcha_id, name, description, seq) VALUES
 	-- 여기서는 data.json 값을 따랐다.
 	('gov24',         '정부24',  '정부24 캡챠',        2),
 	('wetax',         'WETAX',   'WETAX 캡챠',         3),
-	('iptime',        'ipTIME',  'ipTIME 공유기 캡챠', 4);
+	('iptime',        'ipTIME',  'ipTIME 공유기 캡챠', 4),
+	('iros',          '인터넷등기소', '인터넷등기소 캡챠', 5);
 
 -- 마이그레이션 10: 표시 순서(seq). 이미 시드된 행은 INSERT OR IGNORE 가 안 건드리므로
 -- UPDATE 로 채운다. 멱등이라 반복 실행해도 안전하다.
@@ -75,7 +76,8 @@ INSERT OR IGNORE INTO train_data_configs(
 	('supreme_court', 'pytorch', 1, './captcha_data', 120, 40, 6, '0123456789', 255, 'supreme_court', NULL),
 	('gov24',         'pytorch', 1, './captcha_data', 200, 50, 6, '0123456789',  60, 'default', NULL),
 	('wetax',         'pytorch', 1, './captcha_data', 200, 60, 6, '0123456789', 255, 'default', NULL),
-	('iptime',        'pytorch', 1, './captcha_data', 200, 70, 5, 'abcdefghijklmnopqrstuvwxyz', 255, 'iptime', '[27, 10, 195, 70]');
+	('iptime',        'pytorch', 1, './captcha_data', 200, 70, 5, 'abcdefghijklmnopqrstuvwxyz', 255, 'iptime', '[27, 10, 195, 70]'),
+	('iros',          'pytorch', 1, './captcha_data', 200, 60, 6, '0123456789', 255, 'default', NULL);
 
 -- 이미 시드된 행은 INSERT OR IGNORE 가 건드리지 않으므로 preprocess/crop 을 UPDATE 로 보정한다.
 -- UPDATE 는 멱등이라 반복 실행해도 안전하다 (마이그레이션 6: preprocess/crop 컬럼 추가분).
@@ -101,5 +103,8 @@ UPDATE train_data_configs SET preprocess = 'supreme_court'
 
 INSERT OR IGNORE INTO schema_migrations(version, name)
 VALUES (5, 'seed_captcha_types');
+
+INSERT OR IGNORE INTO schema_migrations(version, name)
+VALUES (11, 'add_iros_captcha_type');
 
 COMMIT;

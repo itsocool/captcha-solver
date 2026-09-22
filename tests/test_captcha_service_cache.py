@@ -12,9 +12,9 @@ def clear_model_cache():
 
 @pytest.fixture
 def broken_wetax(tmp_path, monkeypatch, captcha_data_dir):
-	"""engine 기본 base_dir 이 './captcha_data' 라 cwd 를 픽스처 루트로 옮긴다."""
+	"""웹 서비스가 테스트 전용 데이터 디렉터리를 보도록 한다."""
 	captcha_data_dir("wetax", labels=("012345", "678901", "234567"), size=(200, 60))
-	monkeypatch.chdir(tmp_path)
+	monkeypatch.setattr(captcha_service, "CAPTCHA_DATA_DIR", tmp_path / "captcha_data")
 
 
 def test_get_model_raises_when_weights_cannot_be_loaded(broken_wetax):

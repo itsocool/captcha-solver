@@ -6,39 +6,39 @@ PyTorch 학습부터 Python·Rust·Spring Boot 추론까지 한 저장소에서 
 
 | 방식 | 용도 | 모델/런타임 | 시작점 |
 |---|---|---|---|
-| Python CLI | 이미지 한 장, 개발·디버깅 | `model_full.pt`, Python/PyTorch | `uv run python main.py ...` |
-| FastAPI | 웹 UI와 HTTP API | `model_full.pt`, Python/PyTorch | `uv run fastapi dev apps/web/app.py` |
+| Python CLI | 이미지 한 장, 개발·디버깅 | `model.pth`, Python/PyTorch | `uv run --project apps/web aso-ai ...` |
+| FastAPI | 웹 UI와 HTTP API | `model.pth`, Python/PyTorch | `uv run --project apps/web web` |
 | Rust CLI | 독립 실행 파일·배포 | portable ONNX + `meta.json` | `apps/cli`의 `captcha-cli` |
 | Spring Boot | JVM HTTP 서비스 | portable ONNX + `meta.json` | `apps/springBoot` |
 
 ## 요구사항 및 설치
 
-- Python `3.12.x` (고정), [uv](https://docs.astral.sh/uv/)
+- Python `3.13` 이상, [uv](https://docs.astral.sh/uv/)
 - Rust CLI: Rust toolchain과 Cargo
 - Spring Boot: JDK 25와 Maven
 - GPU/CUDA는 선택 사항이며 CPU에서도 실행됩니다.
 
 ```bash
-uv sync
+uv sync --project apps/web --locked
 cp .env.example .env       # 선택: 설정을 덮어쓸 때
 ```
 
-`uv lock`을 다시 생성한 현재 `uv.lock`은 `torch 2.12.0`과 `torchvision 0.27.0`을 PyPI 레지스트리(`https://pypi.org/simple`, 휠: `files.pythonhosted.org`)에서 해석합니다. `pyproject.toml`의 CUDA 13 추가 인덱스만으로 CUDA 휠이 선택되는 것은 아니므로, 설치 후 실제 `torch.version.cuda`와 설치된 휠을 확인하세요. 잠금 파일을 그대로 쓰려면 `uv run --locked ...` 형태로 실행하세요.
+웹 프로젝트와 잠금 파일은 `apps/web/pyproject.toml`, `apps/web/uv.lock`에 있습니다. `aso-ai` 라이브러리는 `packages/python_3.13`에서 로컬 의존성으로 설치됩니다. `uv build --project apps/web`으로 웹 wheel/sdist를 빌드합니다. 배포와 실행 명령은 [웹 프로젝트 안내](apps/web/README.md)를 참고하세요.
 
 ## 5분 빠른 시작
 
 ```bash
 # Python CLI (샘플 경로는 보유한 이미지로 바꾸세요)
-uv run python main.py -c supreme_court -i captcha_data/supreme_court/1/images/pred/091082.png
+uv run --project apps/web aso-ai -c supreme_court -i captcha_data/supreme_court/1/images/pred/091082.png
 
 # FastAPI 개발 서버: http://localhost:8000
-uv run fastapi dev apps/web/app.py --host 0.0.0.0 --port 8000
+uv run --project apps/web uvicorn web.app:app --host 0.0.0.0 --port 8000 --reload --reload-dir apps/web
 
-# Docker: http://localhost:5001
-docker compose up --build
+# Docker CPU: http://localhost:30008
+docker compose -f compose-cpu.yml up --build
 ```
 
-서버가 시작되면 `/health`와 `/docs`를 확인하세요. 운영 실행은 `uv run fastapi run apps/web/app.py --host 0.0.0.0 --port 8000`입니다.
+서버가 시작되면 `/health`와 `/docs`를 확인하세요. 운영 실행은 `uv run --project apps/web fastapi run apps/web/app.py --host 0.0.0.0 --port 8000`입니다.
 
 ## 아키텍처
 
@@ -70,23 +70,18 @@ models/
 └── <captcha_id>.meta.json  # image_width, image_height, label_length, characters, threshold, preprocess
 ```
 
-등록된 CAPTCHA ID는 `supreme_court`, `gov24`, `wetax`, `iptime` 네 가지이며, DB의 기본 서비스 대상도 동일합니다. 데이터/모델 리비전은 1부터 시작합니다(`captcha_data/<id>/1/`). 학습 데이터가 있으면 정렬된 `images/train/*.png` 목록의 마지막 PNG를 열어 이미지 크기를 감지하고, 파일명에서 레이블 길이와 문자 집합을 감지합니다.
+등록된 CAPTCHA ID는 `supreme_court`, `gov24`, `wetax`, `iptime`, `iros` 다섯 가지이며, DB의 기본 서비스 대상도 동일합니다. `iros`(인터넷등기소)는 `wetax`의 데이터·모델·전처리 설정을 복사한 초기 상태입니다. 데이터/모델 리비전은 1부터 시작합니다(`captcha_data/<id>/1/`). 학습 데이터가 있으면 정렬된 `images/train/*.png` 목록의 마지막 PNG를 열어 이미지 크기를 감지하고, 파일명에서 레이블 길이와 문자 집합을 감지합니다.
 
 CRNN은 입력에서 특징 맵 높이 `H/8`, 시간축 너비 `W/4`를 출력합니다. 고정 길이 CTC 디코딩은 `W/4 >= label_length`를 요구하므로 모델 입력 폭을 레이블 길이보다 충분히 크게 유지하세요.
 
 ## Python 학습 및 평가
 
-`hypercaptcha/train.py`와 `hypercaptcha/pred.py` 상단 변수를 수정한 뒤 실행합니다(명령 인자를 받는 스크립트가 아닙니다).
-
-```bash
-uv run python -m hypercaptcha.train   # 학습, PT/JIT/ONNX 산출물 생성
-uv run python -m hypercaptcha.pred    # images/pred 배치 평가
-```
-
-엔진 API로도 학습·배치 평가·데이터 재분배를 호출할 수 있습니다.
+웹의 `/train`에서 학습하고 `/predict`에서 일괄 평가합니다.
+Python에서는 아래 엔진 API로 학습·배치 평가·데이터 재분배를 호출합니다.
+하드코딩된 수동 실행 스크립트 `train.py`와 `pred.py`는 제거했습니다.
 
 ```python
-from hypercaptcha import engine
+from web.core import engine
 model = engine.get_captcha_model(captcha_id="supreme_court")
 engine.train_model(model=model)
 engine.batch_predict_model(model=model)
@@ -98,7 +93,7 @@ engine.redistribute_train_pred("captcha_data/supreme_court/1/images", train_rati
 ## Python CLI
 
 ```bash
-uv run python main.py -c <captcha_id> -i <image_path> [-v]
+uv run --project apps/web aso-ai -c <captcha_id> -i <image_path> [-v]
 ```
 
 기본 출력은 예측 문자열이고, `-v`는 `predicted_text`, `confidence`, `execution_time` JSON을 출력합니다. 이미지가 없으면 종료 코드 2, 모델 생성 실패면 3입니다. Rust ONNX CLI의 상세 사용법은 [Rust CLI 문서](apps/cli/README.md)를 참고하세요.
@@ -106,7 +101,7 @@ uv run python main.py -c <captcha_id> -i <image_path> [-v]
 ## FastAPI 웹 서비스
 
 ```bash
-uv run fastapi dev apps/web/app.py --host 0.0.0.0 --port 8000
+uv run --project apps/web uvicorn web.app:app --host 0.0.0.0 --port 8000 --reload --reload-dir apps/web
 ```
 
 `/`는 웹 UI, `/status`는 모델 상태, `/health`, `/ping`, `/version`은 상태·버전 엔드포인트입니다. 서버 기동 시 서비스 대상 모델을 preload/warm-up하고 `_MODEL_CACHE`에 보관하므로 모델 파일을 바꾼 뒤에는 프로세스를 재시작해야 합니다. `/health`는 서비스 대상 ID가 모두 로드됐을 때 `status: "ok"`, 하나라도 누락됐을 때 `status: "degraded"`를 반환합니다. `degraded`도 응답 자체는 HTTP 200이며 `serviced_captcha_ids`와 `loaded_captcha_ids`로 누락 항목을 확인합니다.
@@ -114,7 +109,7 @@ uv run fastapi dev apps/web/app.py --host 0.0.0.0 --port 8000
 ## Rust ONNX CLI
 
 ```powershell
-uv run python apps/cli/tools/sync_models.py       # 전체 ONNX + meta.json 동기화
+uv run --project apps/web python apps/cli/tools/sync_models.py       # 전체 ONNX + meta.json 동기화
 Push-Location apps/cli; cargo build --release; Pop-Location
 Push-Location apps/cli; cargo test; Pop-Location
 Push-Location apps/cli; .\target\release\captcha-cli.exe -c supreme_court -i <이미지.png> --json; Pop-Location
@@ -166,7 +161,7 @@ FastAPI는 누락 필수 필드·형식 불일치를 프레임워크 검증 응�
 | `APP_TITLE` | `Captcha Solver` | FastAPI 제목 |
 | `DB_PATH`, `DB_SCHEMA_PATH`, `DB_SEED_PATH` | SQLite 기본 경로 | 서비스 설정 DB·스키마·시드 |
 
-`APP_VERSION`은 FastAPI 설정 항목이 아닙니다. 버전은 `apps/web/core/version.py`가 `pyproject.toml` 등에서 조회합니다.
+`APP_VERSION`으로 표시 버전을 덮어쓸 수 있습니다. 미지정 시 `apps/web/core/version.py`가 `apps/web/pyproject.toml` 또는 설치된 `web` 패키지 메타데이터에서 조회합니다.
 
 ### Spring Boot (`application.yml` 또는 Spring 외부 설정)
 
@@ -200,7 +195,7 @@ Compose는 호스트 `5001`을 컨테이너 `8000`에 연결하고 `captcha_data
 ## 테스트와 검증
 
 ```bash
-uv run python apps/cli/tools/compare_with_python.py --limit 100   # Rust CLI 와 파이썬 결과 대조
+uv run --project apps/web python apps/cli/tools/compare_with_python.py --limit 100   # Rust CLI 와 파이썬 결과 대조
 ```
 
 ```powershell
@@ -208,8 +203,8 @@ Push-Location apps/cli; cargo test; Pop-Location
 ```
 
 ```bash
-uv run python apps/cli/tools/compare_with_python.py --limit 100   # Rust CLI ↔ Python
-uv run python apps/cli/tools/verify_pth_onnx.py                   # model.pth ↔ model.onnx
+uv run --project apps/web python apps/cli/tools/compare_with_python.py --limit 100   # Rust CLI ↔ Python
+uv run --project apps/web python apps/cli/tools/verify_pth_onnx.py                   # model.pth ↔ model.onnx
 ```
 
 ```powershell

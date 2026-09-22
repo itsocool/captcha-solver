@@ -1,9 +1,10 @@
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
 
 WORKDIR /app
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/app/.venv \
     PATH="/app/.venv/bin:$PATH"
 
 # 런타임 설정은 Settings(pydantic-settings) 가 읽는다. 우선순위는
@@ -15,27 +16,27 @@ ENV UV_COMPILE_BYTECODE=1 \
 # .env 는 .dockerignore 로 막아 이미지에 굽지 않는다.
 
 # 의존성 먼저 설치해 레이어 캐시를 살린다 (uv.lock이 단일 소스)
-# 워크스페이스 멤버(hypercaptcha)의 매니페스트도 있어야 lock 검증이 통과한다.
-COPY pyproject.toml uv.lock README.md ./
-COPY packages/python_3.12/hyperCaptcha/pyproject.toml packages/python_3.12/hyperCaptcha/README.md \
-     ./packages/python_3.12/hyperCaptcha/
+# 웹 프로젝트의 로컬 의존성(aso-ai) 매니페스트도 복사한다.
+COPY apps/web/pyproject.toml apps/web/uv.lock apps/web/README.md ./apps/web/
+COPY packages/python_3.13/pyproject.toml packages/python_3.13/README.md \
+     ./packages/python_3.13/
 # --mount=type=cache: uv 휠 캐시가 레이어에 구워지면 그만큼 이미지가 커진다.
 # 빌드 캐시로 빼면 재빌드는 빠르면서 이미지에는 남지 않는다.
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-install-workspace
+    uv sync --project apps/web --frozen --no-dev --no-install-project --no-install-package aso-ai
 
 # COPY . . 대신 실행에 필요한 것만 복사한다. .dockerignore 가 images/·*.sqlite3·.env 를
 # 이미 걸러내지만, 여기서 대상을 좁혀 불필요한 파일이 이미지에 들어가지 않게 한다.
 #   apps/web                     : FastAPI 앱(라우터·서비스·templates·static·favicon)
-#   packages/.../hyperCaptcha/src: 워크스페이스 패키지(추론·전처리) 소스 (매니페스트는 위에서 복사)
+#   packages/python_3.13/src: 로컬 의존성 패키지(추론·전처리) 소스 (매니페스트는 위에서 복사)
 #   db                           : schema.sql·seed (기동 시 init_db 가 읽는다)
 #   captcha_data                 : 모델(onnx/ort/pth/meta). compose 는 볼륨으로 덮어쓴다.
 COPY apps/web ./apps/web
-COPY packages/python_3.12/hyperCaptcha/src ./packages/python_3.12/hyperCaptcha/src
+COPY packages/python_3.13/src ./packages/python_3.13/src
 COPY db ./db
 COPY captcha_data ./captcha_data
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev
+    uv sync --project apps/web --frozen --no-dev
 
 EXPOSE 8000
 

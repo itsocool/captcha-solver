@@ -212,7 +212,7 @@ function Invoke-Start {
 	# 호출해야 즉시 flush 된다.
 	# PYTHONUNBUFFERED 는 파이썬 쪽 블록 버퍼링을 끄는 용도다.
 	$inner = "`$env:PYTHONUNBUFFERED = '1'; " +
-	         "& uv run uvicorn $AppModule --host $($script:BindHost) --port $($script:Port) $($reloadArgs)2>&1 | " +
+	         "& uv run --project apps/web uvicorn $AppModule --host $($script:BindHost) --port $($script:Port) $($reloadArgs)2>&1 | " +
 	         "ForEach-Object { Add-Content -LiteralPath '$LogFile' -Value `$_.ToString() -Encoding utf8 }"
 
 	Write-Step "기동 중... (host=$($script:BindHost) port=$($script:Port) reload=$(if ($NoReload) { 'off' } else { 'on' }))"

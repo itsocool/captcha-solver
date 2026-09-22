@@ -4,6 +4,7 @@ import os
 import tempfile
 from datetime import datetime
 
+from web.core.config import CAPTCHA_DATA_DIR
 from web.core.db import get_service_config
 from web.core.device import resolve as resolve_device
 
@@ -36,9 +37,9 @@ def list_captcha_types(serviced_only: bool = True) -> list[tuple[str, str]]:
 
 	기본은 DB(service_captchas)에서 서비스 대상으로 지정된 캡차만 반환한다.
 	"""
-	from hypercaptcha import engine
+	from web.core import engine
 
-	registered = engine.get_captcha_type_list()
+	registered = engine.get_captcha_type_list(train_data_base_dir=str(CAPTCHA_DATA_DIR))
 	if serviced_only:
 		ids = [cid for cid in get_service_config()["serviced"] if cid in registered]
 	else:
@@ -88,9 +89,12 @@ def get_model(captcha_id: str, device: str | None = None):
 	if cache_key in _MODEL_CACHE:
 		return _MODEL_CACHE[cache_key]
 
-	from hypercaptcha import engine
+	from web.core import engine
 
-	model = engine.get_captcha_model(captcha_id=captcha_id, verbose=0, device=device_key)
+	model = engine.get_captcha_model(
+		train_data_base_dir=str(CAPTCHA_DATA_DIR),
+		captcha_id=captcha_id, verbose=0, device=device_key,
+	)
 	model.load_prediction_model()
 	_MODEL_CACHE[cache_key] = model
 	return model
@@ -133,11 +137,11 @@ def preload_models() -> dict[str, str]:
 
 def model_status() -> list[dict]:
 	"""등록된 캡차별 모델 상태. /status 페이지용."""
-	from hypercaptcha import engine
+	from web.core import engine
 
 	serviced = get_service_config()["serviced"]
 	rows = []
-	registered = engine.get_captcha_type_list()
+	registered = engine.get_captcha_type_list(train_data_base_dir=str(CAPTCHA_DATA_DIR))
 	for captcha_id in ordered_captcha_ids(registered):
 		captcha_type = registered[captcha_id]
 		train_data = captcha_type.train_data
@@ -202,7 +206,7 @@ def predict_from_bytes(
 	# 모델을 만들기 전에 검증한다. 잘못된 디바이스는 예측 실패(500)가 아니라 요청 오류(400)다.
 	device_key = resolve_device(device)
 
-	from hypercaptcha import engine
+	from web.core import engine
 
 	safe_filename = os.path.basename(filename) or "captcha.png"
 	with tempfile.TemporaryDirectory() as td:

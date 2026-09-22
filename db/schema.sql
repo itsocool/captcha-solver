@@ -87,7 +87,8 @@ INSERT OR IGNORE INTO service_captchas(captcha_id, enabled, is_default, sort_ord
 	('supreme_court', 1, 1, 0),
 	('gov24', 1, 0, 1),
 	('wetax', 1, 0, 2),
-	('iptime', 1, 0, 3);
+	('iptime', 1, 0, 3),
+	('iros', 1, 0, 4);
 
 INSERT OR IGNORE INTO schema_migrations(version, name)
 VALUES (2, 'service_captchas');

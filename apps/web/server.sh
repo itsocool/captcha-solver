@@ -15,7 +15,7 @@
 #   RELOAD         1 이면 코드 변경 시 자동 리로드 (기본 1)
 #   START_TIMEOUT  기동 대기 한계, 초 (기본 120 — lifespan 이 ONNX 모델을 preload 한다)
 #   STOP_TIMEOUT   graceful 종료 대기 한계, 초 (기본 20)
-#   UVICORN        uvicorn 실행 파일 (기본: 저장소 .venv/bin/uvicorn, 없으면 PATH)
+#   UVICORN        uvicorn 실행 파일 (기본: apps/web/.venv/bin/uvicorn, 없으면 PATH)
 
 set -euo pipefail
 
@@ -32,8 +32,8 @@ START_TIMEOUT="${START_TIMEOUT:-120}"
 STOP_TIMEOUT="${STOP_TIMEOUT:-20}"
 UVICORN="${UVICORN:-}"
 if [[ -z $UVICORN ]]; then
-    if [[ -x "$REPO_ROOT/.venv/bin/uvicorn" ]]; then
-        UVICORN="$REPO_ROOT/.venv/bin/uvicorn"
+    if [[ -x "$APP_DIR/.venv/bin/uvicorn" ]]; then
+        UVICORN="$APP_DIR/.venv/bin/uvicorn"
     else
         UVICORN="uvicorn"
     fi

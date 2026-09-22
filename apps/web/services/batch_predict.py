@@ -3,21 +3,20 @@
 FastAPI 를 모르는 순수 파이썬이다. 평범한 dict 를 yield 하는 제너레이터라
 서버 없이도 호출해서 확인할 수 있다.
 
-hypercaptcha 임포트는 함수 안에서 한다 (services/captcha.py 와 같은 이유).
+aso_ai 임포트는 함수 안에서 한다 (services/captcha.py 와 같은 이유).
 """
 
 import os
 import threading
 from pathlib import Path
 
-from web.core.config import BASE_DIR
+from web.core.config import CAPTCHA_DATA_DIR
 from web.core.device import resolve as resolve_device
 
 
 # 검증은 CPU 를 길게 물고 있어서 서빙과 경합한다. 서버 전체에서 한 번에 하나만 돌린다.
 _RUN_LOCK = threading.Lock()
 
-CAPTCHA_DATA_DIR = BASE_DIR / "captcha_data"
 
 
 class BatchPredictBusy(Exception):
@@ -39,10 +38,10 @@ def list_targets() -> list[dict]:
 	실제로 학습 결과가 놓이는 곳은 파일시스템이므로 그쪽을 진실로 삼는다.
 	모델이 없는 리비전도 이유를 보여주려고 목록에는 포함하되 selectable=False 로 둔다.
 	"""
-	from hypercaptcha import engine
+	from web.core import engine
 	from web.services.captcha import ordered_captcha_ids
 
-	registered = engine.get_captcha_type_list()
+	registered = engine.get_captcha_type_list(train_data_base_dir=str(CAPTCHA_DATA_DIR))
 	targets: list[dict] = []
 
 	for captcha_id in ordered_captcha_ids(registered):
@@ -130,11 +129,12 @@ def run(captcha_id: str, rev: int, device: str | None = None):
 		raise BatchPredictBusy("이미 다른 일괄 추론이 실행 중입니다")
 
 	try:
-		from hypercaptcha import engine
+		from web.core import engine
 
 		# 서빙 캐시(_MODEL_CACHE)를 건드리지 않는 별도 인스턴스를 쓴다.
 		# iter_batch_predict 가 loss_type/use_amp 를 직접 바꾸기 때문이다.
 		model = engine.get_captcha_model(
+			train_data_base_dir=str(CAPTCHA_DATA_DIR),
 			captcha_id=captcha_id,
 			verbose=0,
 			device=device_key,

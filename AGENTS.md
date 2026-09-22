@@ -2,44 +2,44 @@
 
 ## Quick Start
 
-- Python 3.12 (`requires-python = "==3.12.*"`), package manager: **uv** (lockfile: `uv.lock`). 설치: `uv sync`
+- Python 3.13+ (`requires-python = ">=3.13"`), package manager: **uv**. 웹 프로젝트·lockfile: `apps/web/pyproject.toml`, `apps/web/uv.lock`. 설치: `uv sync --project apps/web --locked`
 - Run web API (dev): `./apps/web/server.sh start` (bash) 또는 `.\apps\web\server.ps1 start` (Windows)
   - 둘 다 `start|stop|restart|status|logs` 를 제공하고 상태 파일은 `apps/web/.dev/` 를 공유한다
   - ps1 옵션: `-Port` / `-BindHost` / `-NoReload` / `logs -Follow -Lines N`
   - 포그라운드로 직접 띄우려면 저장소 루트에서
-    `uv run uvicorn web.app:app --host 0.0.0.0 --port 5000 --reload --reload-dir apps/web`
+    `uv run --project apps/web uvicorn web.app:app --host 0.0.0.0 --port 5000 --reload --reload-dir apps/web`
     (`--reload-dir` 없이 띄우면 `captcha_data` 수만 장을 감시하느라 리로드가 사실상 멈춘다)
-- Run web API (prod): `docker compose up` (호스트 5001 → 컨테이너 8000)
-- Run CLI: `uv run hypercaptcha -c supreme_court -i captcha_data/<id>/images/<path>.png`
+- Run web API (CPU prod): `docker compose -f compose-cpu.yml up --build` (호스트 30008 → 컨테이너 8000). GPU 개발 이미지는 `docker compose up --build`.
+- Run CLI: `uv run --project apps/web aso-ai -c supreme_court -i captcha_data/<id>/images/<path>.png`
 
 ## Architecture
 
-Single-repo PyTorch captcha solver. 라이브러리 코드는 `packages/python_3.12/hyperCaptcha`
-(배포명 `hypercaptcha`, uv workspace 멤버)에만 있다. 루트에 있던 플랫 모듈 사본은 제거됐고,
-모든 소비자(`apps/web/`, 루트 스크립트, `apps/cli/tools/`)가 `from hypercaptcha import engine`으로 참조한다.
-`uv sync` 하면 editable로 설치된다.
+Single-repo PyTorch captcha solver. 모델 구현은 `packages/python_3.13/src/aso_ai/core.py`
+(배포명 `aso-ai`)에 있고, 실행 엔진과 데이터 모델은 `apps/web/core/engine.py`·`dataclass.py`에 있다.
+웹 서비스와 CLI 보조 도구는 `from web.core import engine`으로 참조한다.
+`uv sync --project apps/web` 하면 두 패키지가 editable로 설치된다. CLI 명령 `aso-ai`는 웹 프로젝트가 등록한다.
 
 ### Core Modules
 
-라이브러리 모듈은 모두 `packages/python_3.12/hyperCaptcha/src/hypercaptcha/` 아래에 있다.
+모델·CLI 구현은 `packages/python_3.13/src/aso_ai/`, 엔진·데이터 모델은 `apps/web/core/`에 있다.
 
 | File | Description |
 |------|-------------|
-| `hypercaptcha/engine.py` | Entrypoints: `get_captcha_type_list()`, `with_rev()`, `get_captcha_model()`, `train_model()`, `predict()`, `iter_batch_predict()`, `batch_predict_model()`, `redistribute_train_pred()` |
-| `hypercaptcha/core.py` | `PyTorchModel` (CRNN build/train/eval/export), `CRNN`, `SpecAugment`, `FocalCTCLoss`, transforms, dataset, beam decoding |
-| `hypercaptcha/dataclass.py` | `TrainData`, `CaptchaType` (Pydantic models); paths, char sets, image preprocessing (`default`/`supreme_court`/`iptime`) |
-| `hypercaptcha/cli.py` | CLI predictor. `hypercaptcha` 콘솔 스크립트 / `python -m hypercaptcha` |
+| `apps/web/core/engine.py` | Entrypoints: `get_captcha_type_list()`, `with_rev()`, `get_captcha_model()`, `train_model()`, `predict()`, `iter_batch_predict()`, `batch_predict_model()`, `redistribute_train_pred()` |
+| `aso_ai/core.py` | `PyTorchModel` (CRNN build/train/eval/export), `CRNN`, `SpecAugment`, `FocalCTCLoss`, transforms, dataset, beam decoding |
+| `apps/web/core/dataclass.py` | `TrainData`, `CaptchaType` (Pydantic models); paths, char sets, image preprocessing (`default`/`supreme_court`/`iptime`) |
+| `aso_ai/cli.py` | CLI predictor. `aso-ai` 콘솔 스크립트 / `python -m aso_ai` |
 | `apps/web/app.py` | FastAPI 앱 조립: 프런트 라우터(Jinja2) + `/health`,`/version` + `/api/v1/*` (predict/batch/train/data-source). 모델은 `services/captcha.py` 의 `_MODEL_CACHE` 에 캐시 |
-| `hypercaptcha/train.py` / `hypercaptcha/pred.py` | Thin wrappers around `engine` (edit hardcoded vars at top). `python -m hypercaptcha.train` / `.pred` |
 
-상세는 `docs/` 참고 — 문서 맵과 갱신 규칙은 `CLAUDE.md` 에 있다.
+상세는 `docs/`와 `apps/web/README.md`를 참고한다.
 
 ### Supported Captcha Types
 
-Hardcoded in `engine.get_captcha_type_list()` (4종):
+Hardcoded in `web.core.engine.get_captcha_type_list()` (5종):
 
 - `supreme_court` — `preprocess="supreme_court"` (고정 ROI crop → 캔버스 paste), 120×40
 - `gov24` — threshold=60
+- `iros` — 인터넷등기소. `wetax` 복사본으로 초기화, threshold=255, 200×60, 숫자 6자리
 - `wetax` — height=60
 - `iptime` — `preprocess="iptime"`, 원본 200×70 을 `crop=[27,10,195,70]` 으로 168×60 으로 자르기만 함. 유일하게 숫자가 아닌 캡차(소문자 5글자, `label_length=5`, `characters=LOWER_CASE`)
 
@@ -87,7 +87,7 @@ captcha_data/<captcha_id>/<rev>/images/{train,pred,draft}/
 ## Key Conventions
 
 - Label length and character set are **auto-extracted** from training file names in `TrainData`.
-- `hypercaptcha.train` / `hypercaptcha.pred` are **not argument-driven** — edit hardcoded vars at top of the module.
+- 학습·일괄 평가는 웹 `/train`·`/predict` 또는 `engine.train_model()`·`engine.batch_predict_model()`을 사용한다. 별도의 하드코딩 실행 스크립트는 없다.
 - PyTorch cuDNN benchmarking is enabled globally in `core.py`. Never import `core.py` just to check imports — it triggers GPU setup.
 - Model architecture is CRNN only.
 - Training loss: **`'focal'` 만 지원** (`FocalCTCLoss`). `train_model()` 은 그 외 `loss_type` 에 `ValueError` 를 던진다 (`core.py`). 표준 `'ctc'` 는 제거됐다.
@@ -133,11 +133,14 @@ CUDA 가용 시 CUDA, 아니면 CPU 다 (`PyTorchModel` 의 원래 동작). 응�
 
 ## Gotchas
 
-- **테스트**: `tests/` 에 pytest 스위트가 있다 (`uv run pytest tests/`, 웹 서비스 캐시·컨텍스트 경로·모델 로드 위주).
-  모델 품질은 테스트로 안 잡히니 `python -m hypercaptcha.train` / `.pred` 를 작은 데이터셋으로 돌리거나
+- **테스트**: `tests/` 에 pytest 스위트가 있다 (`uv run --project apps/web pytest tests/`, 웹 서비스 캐시·컨텍스트 경로·모델 로드 위주).
+  모델 품질은 테스트로 안 잡히니 웹 또는 `engine`의 학습·일괄 평가 함수를 작은 데이터셋으로 돌리거나
   `apps/cli/tools/compare_with_python.py` 로 Rust CLI 와 대조해 확인한다.
-- No lint/typecheck config (ruff, mypy, flake8 모두 없음). 패키징 설정은 `pyproject.toml` 한 곳에 있음.
-- `apps/web/services/captcha.py`는 `from hypercaptcha import engine`을 **함수 안에서** 지연 import 한다.
+- No lint/typecheck config (ruff, mypy, flake8 모두 없음). 웹 패키징은 `apps/web/pyproject.toml`, 라이브러리는 `packages/python_3.13/pyproject.toml`에 있음.
+- `apps/web/services/captcha.py`는 `from web.core import engine`을 **함수 안에서** 지연 import 한다.
   최상위에서 import 하면 서버 기동 시점에 torch/CUDA 초기화가 딸려온다.
-- `web` 파이썬 패키지는 `apps/web/`에 있다 (`pyproject.toml`의 `[tool.setuptools.package-dir] web = "apps/web"`).
+- `web` 파이썬 패키지는 `apps/web/`에 있다 (`apps/web/pyproject.toml`의 `[tool.setuptools.package-dir] web = "."`).
   import 이름은 여전히 `web.*` 이고, `fastapi dev apps/web/app.py`가 `apps/`를 sys.path에 넣는다.
+
+- 빌드: `uv build --project apps/web` (wheel + sdist). `apps/web/src`는 쓰지 않는다.
+- `WEB_DATA_DIR`는 `.env`·`db/`·`captcha_data/` 기준 경로. 소스 설치 기본은 저장소 루트, wheel 설치는 작업 디렉터리다.

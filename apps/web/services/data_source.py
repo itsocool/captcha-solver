@@ -14,14 +14,13 @@ import time
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
-from web.core.config import BASE_DIR
+from web.core.config import CAPTCHA_DATA_DIR
 
 
 # 네트워크와 디스크를 함께 쓴다. 같은 대상에 두 수집이 겹치면 파일명이 부딪히므로
 # 서버 전체에서 한 번에 하나만 돌린다 (일괄 추론·학습과 같은 방식).
 _RUN_LOCK = threading.Lock()
 
-CAPTCHA_DATA_DIR = BASE_DIR / "captcha_data"
 
 # 라벨이 아직 없는 draft 파일 이름. 수집 순번을 접두사와 함께 쓴다 — 저장소 관례가
 # "파일 이름 = 정답" 이라 라벨을 붙이면 이름이 라벨로 바뀌는데, 캡차 대부분이 숫자
@@ -92,10 +91,10 @@ def list_targets() -> list[dict]:
 	학습과 달리 이미지가 없어도 고를 수 있어야 한다 — 없어서 모으는 것이다.
 	레지스트리에 있는 캡차는 디렉터리가 아직 없어도 레지스트리 rev(1부터 시작)로 넣는다.
 	"""
-	from hypercaptcha import engine
+	from web.core import engine
 	from web.services.captcha import ordered_captcha_ids
 
-	registered = engine.get_captcha_type_list()
+	registered = engine.get_captcha_type_list(train_data_base_dir=str(CAPTCHA_DATA_DIR))
 	targets: list[dict] = []
 
 	for captcha_id in ordered_captcha_ids(registered):
@@ -122,9 +121,9 @@ def list_targets() -> list[dict]:
 def clean_request(captcha_id: str, rev: int, url: str, selector: str, count: int,
                   delay_ms: int = 0, content_type: str = "image") -> dict:
 	"""요청 값을 검증해 확정한다. 잘못된 값은 실행 오류가 아니라 요청 오류다."""
-	from hypercaptcha import engine
+	from web.core import engine
 
-	if captcha_id not in engine.get_captcha_type_list():
+	if captcha_id not in engine.get_captcha_type_list(train_data_base_dir=str(CAPTCHA_DATA_DIR)):
 		raise ValueError(f"등록되지 않은 캡차입니다: {captcha_id!r}")
 
 	if rev < 1:
@@ -232,9 +231,9 @@ def save_params(captcha_id: str, rev: int, raw: dict) -> dict:
 
 	실행 시점에만 저장하면 '값만 바꾸고 페이지를 떠나면' 사라진다. 편집 시 프런트가 호출한다.
 	"""
-	from hypercaptcha import engine
+	from web.core import engine
 
-	if captcha_id not in engine.get_captcha_type_list():
+	if captcha_id not in engine.get_captcha_type_list(train_data_base_dir=str(CAPTCHA_DATA_DIR)):
 		raise ValueError(f"등록되지 않은 캡차입니다: {captcha_id!r}")
 	if rev < 1:
 		raise ValueError(f"rev 는 1 이상이어야 합니다 (받은 값 {rev})")
@@ -328,10 +327,10 @@ def iter_auto_label(captcha_id: str, rev: int, device: str | None = None,
 	이벤트: start {total, device} → item {name, new_name, prediction, confidence, renamed,
 	skipped?, error?} (매 장) → summary {total, renamed, skipped, failed}.
 	"""
-	from hypercaptcha import engine
+	from web.core import engine
 	from web.services.captcha import get_model
 
-	if captcha_id not in engine.get_captcha_type_list():
+	if captcha_id not in engine.get_captcha_type_list(train_data_base_dir=str(CAPTCHA_DATA_DIR)):
 		raise ValueError(f"등록되지 않은 캡차입니다: {captcha_id!r}")
 	if rev < 1:
 		raise ValueError(f"rev 는 1 이상이어야 합니다 (받은 값 {rev})")

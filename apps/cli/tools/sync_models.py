@@ -16,7 +16,7 @@ import sys
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 MODELS_DIR = os.path.join(REPO_ROOT, "models")
 
-from hypercaptcha import engine
+from web.core import engine
 
 
 def main() -> int:

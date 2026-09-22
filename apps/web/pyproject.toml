@@ -1,0 +1,65 @@
+[project]
+name = "web"
+version = "0.1.0"
+description = "FastAPI CAPTCHA inference, training, and data management application"
+readme = "README.md"
+authors = [
+    { name = "th.kim", email = "yesicankor@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "aso-ai",
+    "beautifulsoup4>=4.15.0",
+    "fastapi[standard]>=0.135.3",
+    "httpx>=0.28.1",
+    "pydantic-settings>=2.13.1",
+    "python-multipart>=0.0.22",
+    # GTX 10xx (Pascal) 지원. CUDA 13.x 빌드에는 이 GPU의 커널이 없다.
+    "torch==2.14.0",
+    "torchvision==0.29.0",
+]
+
+[project.scripts]
+web = "web.__main__:main"
+aso-ai = "aso_ai.cli:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["web", "web.api", "web.api.v1", "web.core", "web.frontend", "web.schemas", "web.services"]
+include-package-data = true
+
+[tool.setuptools.package-dir]
+web = "."
+
+[tool.setuptools.package-data]
+web = ["templates/*.html", "static/*.ico", "static/js/*.js", "static/vendor/*.js"]
+
+[tool.uv.sources]
+aso-ai = { path = "../../packages/python_3.13", editable = true }
+torch = [
+    { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { index = "pypi", marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
+]
+torchvision = [
+    { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { index = "pypi", marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+default = true
+
+[tool.fastapi]
+entrypoint = "web.app:app"
+
+[dependency-groups]
+dev = ["pytest>=9.1.1"]

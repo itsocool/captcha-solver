@@ -1,10 +1,10 @@
 import tomllib
 from importlib.metadata import PackageNotFoundError, version as package_version
 
-from web.core.config import BASE_DIR, get_settings
+from web.core.config import WEB_DIR, get_settings
 
 
-PROJECT_NAME = "captcha-solver"
+PROJECT_NAME = "web"
 
 
 def get_app_version() -> str:
@@ -15,7 +15,7 @@ def get_app_version() -> str:
 
 	# 폴백: pyproject.toml (editable 설치의 메타데이터는 오래된 버전을 들 수 있어 이걸 먼저 본다).
 	try:
-		with (BASE_DIR / "pyproject.toml").open("rb") as pyproject_file:
+		with (WEB_DIR / "pyproject.toml").open("rb") as pyproject_file:
 			return tomllib.load(pyproject_file)["project"]["version"]
 	except (OSError, tomllib.TOMLDecodeError, KeyError):
 		pass

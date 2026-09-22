@@ -2,7 +2,7 @@
 
 services/batch_predict.py 와 같은 규칙이다. FastAPI 를 모르는 순수 파이썬이고,
 평범한 dict 를 yield 하는 제너레이터라 서버 없이도 호출해서 확인할 수 있다.
-hypercaptcha 임포트는 함수 안에서 한다.
+aso_ai 임포트는 함수 안에서 한다.
 
 일괄 추론과 다른 점 하나. engine.train_model() 은 제너레이터가 아니라 끝까지
 돌아버리는 동기 호출이라 그대로는 진행률을 흘릴 수 없다. 그래서 학습을 워커
@@ -13,7 +13,7 @@ yield 한다. 학습 루프 자체를 제너레이터로 뒤집는 것보다 훨
 import threading
 from pathlib import Path
 
-from web.core.config import BASE_DIR
+from web.core.config import CAPTCHA_DATA_DIR
 from web.core.device import resolve as resolve_device
 
 
@@ -27,7 +27,6 @@ _RUN_LOCK = threading.Lock()
 _SESSION: "_TrainSession | None" = None
 _SESSION_GUARD = threading.Lock()
 
-CAPTCHA_DATA_DIR = BASE_DIR / "captcha_data"
 
 LOSS_TYPES = ("focal",)
 
@@ -78,10 +77,10 @@ def list_targets() -> list[dict]:
 	를 보지만 학습은 모델을 만드는 쪽이라 'images/train 에 이미지가 있는가' 를 본다.
 	기존 모델이 있으면 has_model 로 알려준다 — 덮어쓰기 확인 모달의 근거다.
 	"""
-	from hypercaptcha import engine
+	from web.core import engine
 	from web.services.captcha import ordered_captcha_ids
 
-	registered = engine.get_captcha_type_list()
+	registered = engine.get_captcha_type_list(train_data_base_dir=str(CAPTCHA_DATA_DIR))
 	targets: list[dict] = []
 
 	for captcha_id in ordered_captcha_ids(registered):
@@ -304,10 +303,11 @@ def start(captcha_id: str, rev: int, device: str | None = None, params: dict | N
 
 	def worker():
 		try:
-			from hypercaptcha import engine
+			from web.core import engine
 
 			# 서빙 캐시(_MODEL_CACHE)와 섞이지 않는 별도 인스턴스.
 			model = engine.get_captcha_model(
+				train_data_base_dir=str(CAPTCHA_DATA_DIR),
 				captcha_id=captcha_id, verbose=1, device=device_key, rev=rev,
 			)
 
@@ -322,6 +322,7 @@ def start(captcha_id: str, rev: int, device: str | None = None, params: dict | N
 				session.emit({"type": "shuffle", **moved})
 				# 재분배 뒤에는 감지 정보(장수)가 바뀌므로 모델을 다시 만든다.
 				model = engine.get_captcha_model(
+					train_data_base_dir=str(CAPTCHA_DATA_DIR),
 					captcha_id=captcha_id, verbose=1, device=device_key, rev=rev,
 				)
 

@@ -13,7 +13,7 @@ import subprocess
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 CLI_BIN = os.path.join(REPO_ROOT, "apps", "cli", "target", "release", "captcha-cli")
 
-from hypercaptcha import engine
+from web.core import engine
 
 
 def run_cli(captcha_id: str, image_path: str) -> dict:

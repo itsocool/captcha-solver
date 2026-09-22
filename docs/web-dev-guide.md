@@ -5,7 +5,7 @@
 ## 1. 로컬에서 띄우기
 
 ```bash
-uv sync                    # 저장소 루트에서 1회, 의존성 설치 (hypercaptcha workspace 포함)
+uv sync --project apps/web --locked  # 저장소 루트에서 설치 (Python 3.13+, aso-ai 로컬 의존성 포함)
 ./apps/web/server.sh start # 백그라운드 기동, /health 응답까지 대기
 ```
 
@@ -14,7 +14,7 @@ uv sync                    # 저장소 루트에서 1회, 의존성 설치 (hype
 포그라운드로 직접 띄우려면 (저장소 루트에서):
 
 ```bash
-uv run uvicorn web.app:app --host 0.0.0.0 --port 5000 --reload --reload-dir apps/web
+uv run --project apps/web uvicorn web.app:app --host 0.0.0.0 --port 5000 --reload --reload-dir apps/web
 ```
 
 `--reload-dir` 없이 띄우면 uvicorn이 `captcha_data`(이미지 수만 장)까지 감시해 리로드가 사실상 멈춘다.
@@ -28,16 +28,20 @@ uv run uvicorn web.app:app --host 0.0.0.0 --port 5000 --reload --reload-dir apps
 | `RELOAD` | 1 | 1이면 코드 변경 시 자동 리로드 |
 | `START_TIMEOUT` | 120 | 기동 대기 한계(초) — lifespan이 ONNX 모델을 preload하므로 여유를 둠 |
 | `STOP_TIMEOUT` | 20 | graceful 종료 대기 한계(초) |
-| `UVICORN` | `.venv/bin/uvicorn` 우선 | uvicorn 실행 파일 경로 |
+| `UVICORN` | `apps/web/.venv/bin/uvicorn` 우선 | uvicorn 실행 파일 경로 |
+
+wheel/sdist 빌드는 `uv build --project apps/web`, 라이브러리 빌드는
+`uv build --project packages/python_3.13`을 사용한다. wheel 설치와 런타임 데이터 배치는
+[apps/web/README.md](../apps/web/README.md)를 참고한다. 기본 생성용 `src/web`은 사용하지 않는다.
 
 ## 2. 앱 설정 (`.env`)
 
-`core/config.py`의 `Settings`(pydantic-settings)가 저장소 루트 `.env`를 읽는다. `.env.example`을 복사해 시작한다.
+`core/config.py`의 `Settings`(pydantic-settings)가 데이터 기준 경로의 `.env`를 읽는다. 소스 설치는 저장소 루트, wheel 설치는 작업 디렉터리가 기준이다. `WEB_DATA_DIR` 환경 변수로 기준 경로를 명시할 수 있고, DB와 모든 웹 서비스의 `captcha_data`도 이 기준을 공유한다. `.env.example`을 복사해 시작한다.
 
 | 필드 | 기본값 | 설명 |
 |---|---|---|
 | `app_title` | `Captcha Solver` | FastAPI 타이틀 |
-| `app_version` | (비어있음) | 표시용 버전. 비면 `pyproject.toml` → 패키지 메타데이터로 폴백. 이미지 재빌드 없이 이 값만 바꿔 배포 가능 |
+| `app_version` | (비어있음) | 표시용 버전. 비면 `apps/web/pyproject.toml` → `web` 패키지 메타데이터로 폴백. 이미지 재빌드 없이 이 값만 바꿔 배포 가능 |
 | `default_captcha_id` | `supreme_court` | `service_captchas` 테이블이 비어있을 때만 쓰는 폴백 |
 | `web_context_path` / `WEB_CONTEXT_PATH` | (비어있음) | 리버스 프록시 뒤 하위 경로에 물릴 때의 접두사 (예: `/captcha`). 자세한 내용은 §8 |
 | `web_host` / `WEB_HOST` | `0.0.0.0` | 직접 실행 시 바인드 주소 |
@@ -59,21 +63,23 @@ uv run uvicorn web.app:app --host 0.0.0.0 --port 5000 --reload --reload-dir apps
 ## 4. 테스트
 
 ```bash
-uv run pytest tests/
+uv run --project apps/web pytest tests/
 ```
 
-현재 `tests/`에는 웹 서비스 계층에 대한 두 테스트가 있다.
+현재 `tests/`는 서비스 캐시, 모델 로드, 컨텍스트 경로와 독립 패키지 동작을 검증한다.
 
 - `tests/test_captcha_service_cache.py` — `services/captcha.py`의 `_MODEL_CACHE` 동작 (device 키, 로드 실패 시 캐시 미보관 등)
 - `tests/test_prediction_model_load.py` — 모델 로드 경로
+- `tests/test_context_path.py` — 프록시 접두사와 정적 파일/HTML 경로
+- `tests/test_web_project.py` — 버전, 데이터 기준 경로, 패키지 리소스와 API 라우트
 
-`services/*.py`는 FastAPI에 의존하지 않는 순수 파이썬이라 서버를 띄우지 않고도 함수를 직접 호출해 확인할 수 있다 (`services/batch_predict.py`, `services/train.py`, `services/data_source.py`의 `run()`은 평범한 `dict`-yield 제너레이터). 새 서비스 로직을 추가할 때 이 성질을 유지하면 테스트가 쉬워진다 — `hypercaptcha`/`torch` import를 함수 안으로 지연시키는 관례도 이와 맞물려 있다 (§6 참고).
+`services/*.py`는 FastAPI에 의존하지 않는 순수 파이썬이라 서버를 띄우지 않고도 함수를 직접 호출해 확인할 수 있다 (`services/batch_predict.py`, `services/train.py`, `services/data_source.py`의 `run()`은 평범한 `dict`-yield 제너레이터). 새 서비스 로직을 추가할 때 이 성질을 유지하면 테스트가 쉬워진다 — `web.core.engine`/`torch` import를 함수 안으로 지연시키는 관례도 이와 맞물려 있다 (§6 참고).
 
 저장소 전체에는 별도 lint/typecheck 설정(ruff, mypy 등)이 없다.
 
 ## 5. 새 API 엔드포인트 추가 절차
 
-1. **`services/`에 순수 함수 작성** — FastAPI를 import하지 않는다. 검증 실패는 `ValueError`(→ 라우터가 400으로 변환)로, 상태 충돌은 전용 예외(`XxxBusy` → 409)로 던진다. 무거운 라이브러리(`hypercaptcha`, `torch`)는 함수 본문 안에서 import한다.
+1. **`services/`에 순수 함수 작성** — FastAPI를 import하지 않는다. 검증 실패는 `ValueError`(→ 라우터가 400으로 변환)로, 상태 충돌은 전용 예외(`XxxBusy` → 409)로 던진다. 무거운 라이브러리(`web.core.engine`, `torch`)는 함수 본문 안에서 import한다.
 2. **필요하면 `schemas/`에 Pydantic 모델 추가** — JSON 요청/응답 스키마 (`schemas/predict.py` 참고).
 3. **`api/v1/<feature>.py`에 라우터 작성** — `services/`를 호출하고 예외를 HTTP 상태로 매핑한다. 장시간 실행 + 진행률이 필요하면 [web-architecture.md §4.2](./web-architecture.md#42-백그라운드-작업--sse-일괄-추론--학습--데이터-수집)의 SSE 패턴을 따른다: 동기 제너레이터 + `StreamingResponse(media_type="text/event-stream")` + 시작 전 검증은 스트림을 열기 전에.
 4. **`api/v1/router.py`에 `include_router()` 등록**.
@@ -82,7 +88,7 @@ uv run pytest tests/
 
 ## 6. Gotchas (apps/web 한정)
 
-- **`hypercaptcha`/`torch` import는 함수 안에서** — `services/captcha.py`, `services/batch_predict.py`, `services/train.py`, `core/device.py` 전부 이 규칙을 따른다. 모듈 최상위에서 import하면 그 모듈이 로드되는 순간(예: 다른 코드가 무심코 import만 해도) CUDA/cuDNN 초기화가 딸려 붙는다.
+- **`web.core.engine`/`torch` import는 함수 안에서** — `services/captcha.py`, `services/batch_predict.py`, `services/train.py`, `core/device.py` 전부 이 규칙을 따른다. 모듈 최상위에서 import하면 그 모듈이 로드되는 순간(예: 다른 코드가 무심코 import만 해도) CUDA/cuDNN 초기화가 딸려 붙는다.
 - **모델 캐시는 `(captcha_id, device)` 키** — `captcha_id`만으로 `_MODEL_CACHE`를 조회하는 코드를 새로 쓰지 않는다.
 - **모델/DB를 바꿔도 실행 중 서버에 자동 반영되지 않는다** — 재시작 필요. `/status` 페이지가 현재 로드 상태를 보여준다.
 - **멀티 워커 미지원** — 모델 캐시·서비스 설정 캐시·학습 세션이 전부 프로세스 로컬이다. `uvicorn --workers N`으로 띄우면 워커마다 상태가 어긋난다.
@@ -94,7 +100,7 @@ uv run pytest tests/
 
 ## 7. Docker
 
-- `Dockerfile`(GPU, CUDA 빌드) / `Dockerfile.cpu`(CPU 전용) 두 가지가 있다.
+- `Dockerfile`(GPU, CUDA 빌드) / `Dockerfile.cpu`(CPU 전용) 두 가지가 있다. 둘 다 Python 3.13 이미지에서 `apps/web/uv.lock`과 `packages/python_3.13` 로컬 의존성을 사용한다. CPU 이미지는 lock의 torch/torchvision 버전을 읽어 동일 버전의 CPU 휠로 교체한다.
 - `compose.yml`은 호스트 `30008` → 컨테이너 `8000`으로 노출하고, `deploy.resources.reservations.devices`로 NVIDIA GPU를 예약한다(호스트에 NVIDIA Container Toolkit 필요). GPU가 없는 호스트에서는 `compose-cpu.yml`을 쓴다.
 - `captcha_data/`는 읽기-쓰기 볼륨으로 마운트한다 — `/train` UI가 여기 `model/`에 가중치를 쓰므로 `:ro`로 두면 저장이 실패한다.
 - `.env`는 `env_file`로 런타임에 주입되며(이미지에는 굽지 않음), 값을 바꾸면 재빌드 없이 재기동만으로 반영된다.
@@ -117,5 +123,5 @@ docker compose -f compose-cpu.yml up --build  # CPU 전용
 기본값(빈 문자열)은 루트(`/`)에 뜬 것으로 보고 아무것도 변하지 않는다. 동작을 확인하려면 `tests/test_context_path.py`를 참고 — 정규화 케이스와, 프록시가 접두사를 떼거나 안 떼는 두 시나리오 모두 같은 라우트/정적 파일/Swagger로 연결되는지를 검증한다.
 
 ```bash
-uv run pytest tests/test_context_path.py -v
+uv run --project apps/web pytest tests/test_context_path.py -v
 ```

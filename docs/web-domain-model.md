@@ -9,7 +9,7 @@
 | 계층 | 저장/전달 형태 | 위치 |
 |---|---|---|
 | **DTO** (요청/응답) | Pydantic `BaseModel` (일부는 평범한 `dict`/쿼리스트링) | `schemas/predict.py`, `api/v1/*.py` |
-| **도메인 객체** (서비스 내부) | `dict`, `dataclass` 없이 대부분 plain `dict` + `hypercaptcha` 의 Pydantic 모델(`CaptchaType`, `TrainData`) | `services/*.py`, `hypercaptcha.dataclass` |
+| **도메인 객체** (서비스 내부) | `dict`, `dataclass` 없이 대부분 plain `dict` + `web.core.dataclass`의 Pydantic 모델(`CaptchaType`, `TrainData`) | `services/*.py`, `web.core.dataclass` |
 | **엔티티** (영속 데이터) | SQLite 테이블 + 파일시스템(PNG 이미지, `model.pth`, `meta.json`) | `core/db.py`, `db/schema.sql`, `captcha_data/` |
 
 ORM은 쓰지 않는다. `core/db.py`는 `sqlite3` 표준 라이브러리를 SQL 문 그대로 사용하는 얇은 접근 계층이고, 스키마는 코드가 아니라 `db/schema.sql` + `db/seed_captcha_types.sql`이 정의한다(`init_db()`가 기동 시 순서대로 실행). 영속 데이터의 상당 부분(학습/검증 이미지, 학습된 모델 가중치)은 DB가 아니라 `captcha_data/<captcha_id>/<rev>/` 아래 파일시스템에 있다 — DB는 "그 파일들을 어떻게 다룰지"에 대한 설정/이력만 들고 있다.
@@ -20,7 +20,7 @@ DB 파일 경로는 `Settings.db_path` (기본 `./db/captchaSolver.sqlite3`, 저
 
 ### 2.1 `captcha_types`
 
-캡차 종류의 표시용 메타데이터. `captcha_id`는 `hypercaptcha.engine.get_captcha_type_list()`가 코드로 등록한 캡차 ID와 일치해야 의미가 있다(DB가 등록 자체를 강제하지는 않음).
+캡차 종류의 표시용 메타데이터. `captcha_id`는 `web.core.engine.get_captcha_type_list()`가 코드로 등록한 캡차 ID와 일치해야 의미가 있다(DB가 등록 자체를 강제하지는 않음).
 
 | 컬럼 | 타입 | 제약 | 설명 |
 |---|---|---|---|
@@ -100,7 +100,7 @@ Data Source 페이지에서 (캡차, 리비전)별로 마지막에 쓴 수집 �
 아래 세 테이블은 `db/schema.sql`에 정의·시드되어 있으나, `apps/web`과 `hypercaptcha` 어디에도 이 테이블을 `SELECT`하는 코드가 없다(예약된 구조 또는 향후 확장용으로 보인다). 문서 정확성을 위해 명시해 둔다.
 
 - **`train_data_characters`** — `train_data_configs.characters`를 문자 단위로 쪼갠 표현(문자별 정렬 순서). `schema.sql` 주석대로 "보통은 시드할 필요가 없다."
-- **`train_info_cache`** — 캡차별 자동 감지 결과(이미지 크기/라벨 길이/문자셋)를 캐시하기 위한 테이블. 실제 감지 캐시는 DB가 아니라 `hypercaptcha.dataclass.TrainData._train_info` (런타임 메모리)가 담당한다.
+- **`train_info_cache`** — 캡차별 자동 감지 결과(이미지 크기/라벨 길이/문자셋)를 캐시하기 위한 테이블. 실제 감지 캐시는 DB가 아니라 `web.core.dataclass.TrainData._train_info` (런타임 메모리)가 담당한다.
 - **`character_sets`** — 이름 붙은 문자 집합 상수(`DIGITS`, `ALPHA_NUMERIC` 등)의 참고용 사전 데이터.
 
 ### 2.7 `schema_migrations`
@@ -169,11 +169,11 @@ captcha_data/<captcha_id>/<rev>/
 
 ## 4. 도메인 객체 (서비스 계층)
 
-`services/*.py`는 FastAPI를 모르는 순수 파이썬이며, 대부분의 도메인 객체는 dataclass가 아니라 **명시적 키를 가진 dict**다(주석에 "평범한 dict를 yield하는 제너레이터"라고 스스로 설명). `hypercaptcha` 패키지 쪽에는 Pydantic 모델(`CaptchaType`, `TrainData`)이 실제 도메인 엔티티로 존재한다.
+`services/*.py`는 FastAPI를 모르는 순수 파이썬이며, 대부분의 도메인 객체는 dataclass가 아니라 **명시적 키를 가진 dict**다(주석에 "평범한 dict를 yield하는 제너레이터"라고 스스로 설명). `web.core.dataclass`에는 Pydantic 모델(`CaptchaType`, `TrainData`)이 실제 도메인 엔티티로 존재한다.
 
 ```mermaid
 graph LR
-    subgraph hypercaptcha["hypercaptcha (packages/python_3.12/hyperCaptcha)"]
+    subgraph hypercaptcha["web.core (engine, dataclass) / aso_ai.core (model)"]
         CT[CaptchaType]
         TD[TrainData]
         CT -->|train_data| TD
@@ -195,7 +195,7 @@ graph LR
     Session --> ModelStatus
 ```
 
-### 4.1 `CaptchaType` / `TrainData` (`hypercaptcha.dataclass`, Pydantic `BaseModel`)
+### 4.1 `CaptchaType` / `TrainData` (`web.core.dataclass`, Pydantic `BaseModel`)
 
 `apps/web`이 직접 정의하지는 않지만, `services/captcha.py`·`services/train.py`가 이 두 모델을 통해 캡차 도메인을 다룬다.
 
@@ -278,8 +278,8 @@ graph LR
 |---|---|
 | `data_source.run()` | `start` (1회) → `item` (매 장, `saved`/`error` 포함) → `summary` (1회) |
 | `data_source.iter_auto_label()` | `start` → `item` (매 장, `renamed`/`skipped`/`error`) → `summary` — draft 를 모델 예측으로 개명 |
-| `train.start()` (`_TrainSession`) | `hypercaptcha.engine`이 만드는 진행 이벤트(에폭 단위) + 선택적 `shuffle` 이벤트 + `error` (예외 시) — 세션 버퍼에 쌓여 재접속 시 재생됨 |
-| `batch_predict.run()` | `hypercaptcha.engine.iter_batch_predict()` 이벤트를 그대로 전달 |
+| `train.start()` (`_TrainSession`) | `web.core.engine`이 만드는 진행 이벤트(에폭 단위) + 선택적 `shuffle` 이벤트 + `error` (예외 시) — 세션 버퍼에 쌓여 재접속 시 재생됨 |
+| `batch_predict.run()` | `web.core.engine.iter_batch_predict()` 이벤트를 그대로 전달 |
 
 ### 4.6 `data_source.clean_request()` — 수집 요청 도메인 객체
 
@@ -304,7 +304,7 @@ sequenceDiagram
     participant C as 클라이언트
     participant API as api/v1/predict.py
     participant Svc as services/captcha.py
-    participant Eng as hypercaptcha.engine
+    participant Eng as web.core.engine
     participant DB as SQLite
 
     C->>API: PredictJsonRequest {captcha_id?, image_data, device?}
@@ -327,7 +327,7 @@ sequenceDiagram
     participant C as 클라이언트
     participant API as api/v1/train.py
     participant Svc as services/train.py
-    participant Eng as hypercaptcha.engine
+    participant Eng as web.core.engine
     participant DB as SQLite
     participant FS as captcha_data/
 
@@ -350,7 +350,7 @@ sequenceDiagram
 
 | 용어 | 의미 |
 |---|---|
-| **captcha_id** | 캡차 종류 식별자. `hypercaptcha.engine`의 레지스트리가 유일한 등록 소스이고, DB(`captcha_types`, `service_captchas` 등)는 이를 참조만 한다 |
+| **captcha_id** | 캡차 종류 식별자. `web.core.engine`의 레지스트리가 유일한 등록 소스이고, DB(`captcha_types`, `service_captchas` 등)는 이를 참조만 한다 |
 | **rev** | 같은 캡차의 데이터/모델 세대 번호. **1부터 시작**하며(`TrainData.rev` 기본값 1, DB `rev` DEFAULT 1, `captcha_data/<id>/1/` 이 첫 세대) 리라벨링·재수집으로 학습 데이터가 바뀌면 새 rev를 쓴다 |
 | **감지(detected) 값** | `TrainData`가 `images/train/*.png` 파일명·이미지 크기에서 실행 시점에 자동으로 뽑아내는 값(이미지 크기, 라벨 길이, 문자셋). DB 컬럼값은 이 감지값의 스냅샷일 뿐 진실 소스가 아니다 |
 | **draft / train / pred** | 이미지 디렉터리 3종. draft=라벨 없는 수집 원본, train=학습용(라벨=파일명), pred=검증/일괄추론용(라벨=파일명) |

@@ -1,13 +1,19 @@
 from functools import lru_cache
+import os
 from pathlib import Path
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-# WEB_DIR = apps/web, BASE_DIR = 저장소 루트 (.env / pyproject.toml / db 상대경로의 기준)
+# 소스 설치는 저장소 루트, wheel 설치는 작업 디렉터리를 데이터 기준으로 삼는다.
+# WEB_DATA_DIR 로 .env / db / captcha_data 의 기준을 명시할 수 있다.
 WEB_DIR = Path(__file__).resolve().parents[1]
-BASE_DIR = WEB_DIR.parents[1]
+BASE_DIR = Path(os.environ.get(
+	"WEB_DATA_DIR",
+	WEB_DIR.parents[1] if (WEB_DIR / "pyproject.toml").is_file() else Path.cwd(),
+)).resolve()
+CAPTCHA_DATA_DIR = BASE_DIR / "captcha_data"
 ENV_FILE = BASE_DIR / ".env"
 
 

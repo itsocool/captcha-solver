@@ -12,7 +12,7 @@
 
 ### 2.1 전체 구조
 
-시스템의 중심은 `hypercaptcha` 패키지(`packages/python_3.12/hyperCaptcha/src/hypercaptcha/`)다. `dataclass.py`가 CAPTCHA별 데이터와 경로 규칙을 정의하고, `core.py`가 모델과 학습/추론 알고리즘을 구현하며, `engine.py`가 외부 진입점을 제공한다. `cli.py`, 루트 스크립트, `apps/web/`은 이 API를 사용하는 전달 계층이다. (아래 표의 파일명은 모두 이 패키지 안의 경로다.)
+CAPTCHA별 데이터·경로·전처리는 `apps/web/core/dataclass.py`, 학습·추론 진입점은 `apps/web/core/engine.py`에 있다. 모델 알고리즘은 `packages/python_3.13/src/aso_ai/core.py`가 구현한다. 웹 서비스와 CLI 보조 도구는 `web.core.engine`을 사용한다. 단건 CLI 구현은 `aso_ai/cli.py`에 남고 명령은 웹 프로젝트가 등록한다.
 
 Rust와 Java 구현은 별도 학습 기능이 없다. Python이 만든 `model.onnx`와 `sync_models.py`가 생성한 `.meta.json`을 받아 Python의 전처리와 디코딩 의미를 재현한다. 따라서 모델 파일만이 아니라 문자셋, 이미지 크기, 라벨 길이, threshold, 전처리 종류가 담긴 사이드카가 배포 계약의 일부다.
 
@@ -265,9 +265,9 @@ Python은 `apps/web/api/v1` 라우터와 `apps/web/schemas`, Java는 controller/
 | Python 의존성 설치 | `uv sync` |
 | FastAPI 개발 서버 | `uv run fastapi dev apps/web/app.py --host 0.0.0.0 --port 8000` |
 | Python CLI | `uv run hypercaptcha -c supreme_court -i <image>` |
-| 학습 | `hypercaptcha/train.py` 상단 설정 후 `uv run python -m hypercaptcha.train` |
+| 학습 | 웹 `/train` 또는 `web.core.engine.train_model()` |
 | Rust 테스트 | `cd apps/cli && cargo test` |
-| Rust/Python 비교 | `uv run python apps/cli/tools/compare_with_python.py --limit 100` |
+| Rust/Python 비교 | `uv run --project apps/web python apps/cli/tools/compare_with_python.py --limit 100` |
 | Spring 테스트 | `cd apps/springBoot && ./mvnw test` (Windows: `mvnw.cmd test`) |
 | Docker 웹 서비스 | `docker compose up --build` |
 

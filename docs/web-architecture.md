@@ -4,12 +4,12 @@
 
 ## 1. 개요
 
-`apps/web`은 `hypercaptcha` 라이브러리(`packages/python_3.12/hyperCaptcha`)를 소비하는 FastAPI 애플리케이션이다. 두 가지 역할을 동시에 한다.
+`apps/web`은 `aso_ai` 라이브러리(`packages/python_3.13`)를 소비하는 FastAPI 애플리케이션이다. 두 가지 역할을 동시에 한다.
 
 1. **추론 API 서버** — 외부 클라이언트가 이미지를 보내 캡차 문자열을 받는다 (`/api/v1/predictImage`, `/api/v1/predictJson`).
 2. **운영/실험용 관리 UI** — 브라우저에서 모델 상태 확인, 일괄 추론 검증, 데이터 수집, 학습을 수행한다 (`/`, `/predict`, `/train`, `/data-source`, `/status`).
 
-Python 패키지 이름은 `web`이지만 디스크 경로는 `apps/web`이다 (`pyproject.toml`의 `[tool.setuptools.package-dir] web = "apps/web"`). import 문에는 항상 `web.*`을 쓴다.
+Python 패키지 이름은 `web`이지만 디스크 경로는 `apps/web`이다 (`apps/web/pyproject.toml`의 `[tool.setuptools.package-dir] web = "."`). import 문에는 항상 `web.*`을 쓴다.
 
 ## 2. 디렉터리 구조
 
@@ -18,6 +18,8 @@ apps/web/
 ├── app.py                 # FastAPI 앱 조립 (lifespan, root_path/PrependRootPath, 라우터, static/templates 마운트)
 ├── server.sh / server.ps1 # 개발서버 프로세스 관리 (start/stop/restart/status/logs)
 ├── core/
+│   ├── engine.py             # 캡차 레지스트리, 학습·추론 진입점
+│   ├── dataclass.py          # 캡차 설정, 전처리·데이터 모델
 │   ├── config.py           # pydantic-settings 기반 Settings (.env 로드)
 │   ├── db.py                # SQLite 접근 계층 (서비스 설정, 학습 파라미터 영속화)
 │   ├── device.py            # cpu/cuda/auto 디바이스 판정
@@ -53,16 +55,16 @@ graph TD
     API --> Services
 
     Services --> Core[core/config.py, core/db.py, core/device.py]
-    Services -->|지연 import| Engine[hypercaptcha.engine]
+    Services -->|지연 import| Engine[web.core.engine]
 
     Core --> SQLite[(SQLite<br/>db/captchaSolver.sqlite3)]
     Engine --> Disk[(captcha_data/&lt;id&gt;/&lt;rev&gt;/<br/>images, model)]
 ```
 
 - **`api/`, `frontend/`** — FastAPI 라우터. HTTP 계약(상태 코드, 응답 스키마)을 다루고 실제 로직은 `services/`에 위임한다.
-- **`services/`** — FastAPI 의존성이 없는 순수 파이썬. 함수는 평범한 값이나 dict-yield 제너레이터를 돌려주므로 서버 없이 REPL/테스트에서 그대로 호출해 확인할 수 있다. `hypercaptcha`와 `torch` import는 **함수 안에서 지연 실행**한다 — 모듈 최상위에서 import하면 서버 기동 시점에 CUDA 초기화가 딸려와 느려진다 (`core/device.py`, `services/captcha.py` 주석 참고).
-- **`core/`** — 설정, DB, 디바이스 판정, 버전 조회처럼 여러 서비스가 공유하는 낮은 층.
-- **`hypercaptcha`** — 학습/추론 엔진 (별도 워크스페이스 패키지). `apps/web`은 이 라이브러리의 소비자일 뿐 알고리즘을 갖지 않는다.
+- **`services/`** — FastAPI 의존성이 없는 순수 파이썬. 함수는 평범한 값이나 dict-yield 제너레이터를 돌려주므로 서버 없이 REPL/테스트에서 그대로 호출해 확인할 수 있다. `web.core.engine`과 `torch` import는 **함수 안에서 지연 실행**한다 — 모듈 최상위에서 import하면 서버 기동 시점에 CUDA 초기화가 딸려와 느려진다 (`core/device.py`, `services/captcha.py` 주석 참고).
+- **`core/`** — 설정, DB, 디바이스 판정, 버전 조회와 캡차 엔진·데이터 모델. `engine.py`가 `aso_ai.core.PyTorchModel`을 사용하고 `dataclass.py`가 전처리와 메타데이터 캐시를 소유한다.
+- **`aso_ai`** — CRNN과 `PyTorchModel` 구현을 제공하는 로컬 의존성 패키지. 모델 코드는 데이터 객체의 메서드를 사용하며 웹 패키지를 런타임에 import하지 않는다. CLI 구현은 웹 엔진을 사용하고 명령 등록은 웹 프로젝트가 담당한다.
 
 ## 4. 요청 흐름
 
@@ -74,7 +76,7 @@ sequenceDiagram
     participant Route as api/v1/predict.py
     participant Service as services/captcha.py
     participant Cache as _MODEL_CACHE
-    participant Engine as hypercaptcha.engine
+    participant Engine as web.core.engine
 
     Client->>Route: multipart 이미지 또는 base64 JSON
     Route->>Service: predict_from_bytes(captcha_id, bytes, device)
