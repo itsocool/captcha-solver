@@ -1,146 +1,64 @@
-# AGENTS.md
+# 기본 언어
 
-## Quick Start
+- 응답, 코드 주석, 문서는 기본적으로 한국어로 작성한다. 사용자가 다른 언어를 명시적으로 요청하면 해당 언어를 사용한다.
+- 군더더기 없이 간결하고 전문용어, 약어를 활용하여 정확하게 응답 한다.
 
-- Python 3.13+ (`requires-python = ">=3.13"`), package manager: **uv**. 웹 프로젝트·lockfile: `apps/web/pyproject.toml`, `apps/web/uv.lock`. 설치: `uv sync --project apps/web --locked`
-- Run web API (dev): `./apps/web/server.sh start` (bash) 또는 `.\apps\web\server.ps1 start` (Windows)
-  - 둘 다 `start|stop|restart|status|logs` 를 제공하고 상태 파일은 `apps/web/.dev/` 를 공유한다
-  - ps1 옵션: `-Port` / `-BindHost` / `-NoReload` / `logs -Follow -Lines N`
-  - 포그라운드로 직접 띄우려면 저장소 루트에서
-    `uv run --project apps/web uvicorn web.app:app --host 0.0.0.0 --port 5000 --reload --reload-dir apps/web`
-    (`--reload-dir` 없이 띄우면 `captcha_data` 수만 장을 감시하느라 리로드가 사실상 멈춘다)
-- Run web API (CPU prod): `docker compose -f compose-cpu.yml up --build` (호스트 30008 → 컨테이너 8000). GPU 개발 이미지는 `docker compose up --build`.
-- Run CLI: `uv run --project apps/web aso-ai -c supreme_court -i captcha_data/<id>/images/<path>.png`
+# 요구사항 기반 작업 하네스
 
-## Architecture
+- 기능 구현·수정·검증 및 설계 문서 작업의 기준 문서는 [요구사항 정의서](docs/00.requirements.md)다. 작업 시작 시 관련 요구사항 ID와 수용 기준을 읽고, 대상 앱의 `AGENTS.md` 및 구현 근거를 확인한다.
+- 정의서의 **확정**, **현행 기준**, **미정**을 구분한다. 미정 사항을 임의로 확정하거나 화면·문서의 존재만으로 기능이 완성됐다고 판단하지 않는다.
+- 현재 사용자 요청이 기존 문서와 다르면 사용자 요청을 우선하며, 영향을 받는 요구사항과 수용 기준을 함께 갱신한다. 미정 사항이 작업 결과를 바꾸는 경우에만 필요한 정보를 확인한다.
+- 변경 후 정의서의 검증 표에서 영향 범위에 맞는 검사를 수행한다. 완료 보고에는 대상 ID, 변경 사항, 실제 검증 결과와 미검증·차단 항목을 간결하게 남긴다.
+- 상세 요구사항과 실행 명령은 정의서에서 관리한다. 이 파일에는 참조·실행 규칙만 유지하고 비밀번호나 API Key를 기록하지 않는다.
+- 공용 코드 변경은 [패키지 경계 규칙](packages/README.md)을 따른다.
 
-Single-repo PyTorch captcha solver. 모델 구현은 `packages/python_3.13/src/aso_ai/core.py`
-(배포명 `aso-ai`)에 있고, 실행 엔진과 데이터 모델은 `apps/web/core/engine.py`·`dataclass.py`에 있다.
-웹 서비스와 CLI 보조 도구는 `from web.core import engine`으로 참조한다.
-`uv sync --project apps/web` 하면 두 패키지가 editable로 설치된다. CLI 명령 `aso-ai`는 웹 프로젝트가 등록한다.
+# Git/GitHub 저장소 작업
 
-### Core Modules
+- Git/GitHub 저장소 작업은 전용 서브에이전트를 생성하여 위임한다. 모델은 `gpt-5.6-luna`, 추론 수준은 `medium`으로 지정한다.
+- 서브에이전트 생성 시 `fork_turns="none"`으로 설정하고, 작업 범위, 저장소 경로, 필요한 맥락과 사용자 승인 범위를 명시적으로 전달한다.
+- 전용 서브에이전트는 위임받은 작업을 직접 처리하고, 변경 사항과 검증 결과를 주 에이전트에 보고한다. 동일 작업을 다시 위임하지 않는다.
+- 위임은 사용자 승인 범위를 확대하지 않는다. 사용자 변경 사항을 보존하고, 파괴적인 Git 작업은 명시적인 승인 없이 수행하지 않는다.
 
-모델·CLI 구현은 `packages/python_3.13/src/aso_ai/`, 엔진·데이터 모델은 `apps/web/core/`에 있다.
+# Simple 에이전트
 
-| File | Description |
-|------|-------------|
-| `apps/web/core/engine.py` | Entrypoints: `get_captcha_type_list()`, `with_rev()`, `get_captcha_model()`, `train_model()`, `predict()`, `iter_batch_predict()`, `batch_predict_model()`, `redistribute_train_pred()` |
-| `aso_ai/core.py` | `PyTorchModel` (CRNN build/train/eval/export), `CRNN`, `SpecAugment`, `FocalCTCLoss`, transforms, dataset, beam decoding |
-| `apps/web/core/dataclass.py` | `TrainData`, `CaptchaType` (Pydantic models); paths, char sets, image preprocessing (`default`/`supreme_court`/`iptime`) |
-| `aso_ai/cli.py` | CLI predictor. `aso-ai` 콘솔 스크립트 / `python -m aso_ai` |
-| `apps/web/app.py` | FastAPI 앱 조립: 프런트 라우터(Jinja2) + `/health`,`/version` + `/api/v1/*` (predict/batch/train/data-source). 모델은 `services/captcha.py` 의 `_MODEL_CACHE` 에 캐시 |
+- 간단한 질문에 대한 답변, 이름 변경, 오타 수정 등 범위가 명확한 단순 작업은 `simple` 전용 서브에이전트를 생성하여 위임한다. 모델은 `gpt-5.6-luna`, 추론 수준은 `medium`으로 지정한다.
+- 생성 시 `fork_turns="none"`으로 설정하고, 작업 범위, 필요한 맥락과 대상 경로, 사용자 승인 범위를 전달한다.
+- `simple` 에이전트는 작업을 직접 처리하고 필요한 검증 후 결과를 주 에이전트에 보고한다. 동일 작업을 다시 위임하지 않으며, 사용자 변경 사항과 승인 범위를 보존한다.
+- Git/GitHub 저장소 작업은 해당 전용 서브에이전트 규칙을 우선 적용한다.
 
-상세는 `docs/`와 `apps/web/README.md`를 참고한다.
+# Serena
 
-### Supported Captcha Types
+Use Serena as the default tool for semantic code navigation and precise edits.
 
-Hardcoded in `web.core.engine.get_captcha_type_list()` (5종):
+Prefer Serena for:
 
-- `supreme_court` — `preprocess="supreme_court"` (고정 ROI crop → 캔버스 paste), 120×40
-- `gov24` — threshold=60
-- `iros` — 인터넷등기소. `wetax` 복사본으로 초기화, threshold=255, 200×60, 숫자 6자리
-- `wetax` — height=60
-- `iptime` — `preprocess="iptime"`, 원본 200×70 을 `crop=[27,10,195,70]` 으로 168×60 으로 자르기만 함. 유일하게 숫자가 아닌 캡차(소문자 5글자, `label_length=5`, `characters=LOWER_CASE`)
+- finding classes, functions, methods, interfaces, and constants
+- inspecting symbol definitions
+- finding references to symbols
+- understanding nearby code structure
+- editing or renaming specific symbols
 
-`iptime` 의 모델 입력 크기는 crop 결과에서 자동 감지된다 (`image_width`/`image_height` 는 crop 좌표계의 기준인 원본 크기).
-
-### Data Layout
+Prefer symbol-level operations such as:
 
 ```
-captcha_data/<captcha_id>/<rev>/images/{train,pred,draft}/
+get_symbols_overview
+find_symbol
+find_referencing_symbols
+replace_symbol_body
+insert_before_symbol
+insert_after_symbol
 ```
 
-- Image **filename** (no extension) = label (e.g., `abc12.png` → label `abc12`). `draft/` 는 데이터 수집이 쌓은 원본 — 라벨 없으면 `draft-NNNNNN.png`, 라벨 붙으면 `<라벨>.png`(수동 또는 모델 예측으로 개명)
-- 리비전은 **1부터 시작**한다 (`TrainData.rev` 기본값 1, DB `rev` DEFAULT 1, `captcha_data/<id>/1/` 이 첫 세대). 시드의 마이그레이션 8 이 옛 rev 0 DB 행을 1 로 옮긴다.
-- Models: `captcha_data/<id>/<rev>/model/model.pth` (state dict checkpoint), `model.pt2` (`torch.export` archive), `model.onnx` (ONNX), `model.ort` (ORT format, baked from the ONNX at `ORT_ENABLE_EXTENDED` so it stays CPU-portable), `model.meta.json` (charset/size/preprocess sidecar, built by `CaptchaType.build_meta()`). `finalize_artifacts()` writes all of them from the finalized `.pth` on disk (never the in-memory model) and fails training if the checkpoint and the exported models disagree.
+Avoid reading entire source files when symbol-level access is sufficient.
 
-## Image Preprocessing
+Use this priority:
 
-### Pipeline (`preprocess="default"`)
+```
+Serena symbol lookup
+→ Serena references
+→ targeted text search
+→ partial file read
+→ full file read only when necessary
+```
 
-1. **RGBA handling** — composite onto white background
-2. **Grayscale** — `convert("L")`
-3. **Threshold** — `p > threshold` 인 픽셀만 255 로 (`0 < threshold < 255` 일 때만; 완전 이진화는 아님)
-4. **Border removal** — crop outer 2px margin
-5. **Background white** — pixels > 128 become 255
-6. **Resize** — to `detected_image_width × detected_image_height`
-
-### Training transforms (`core.get_train_transform`)
-
-| Transform | Parameters |
-|-----------|-----------|
-| `RandomAffine` | rotation ±5°, translate 5%, scale 95–105%, shear 0–3°, fill=255 |
-| `RandomPerspective` | distortion 0.1, p=0.3 |
-| `RandomGrayscale` | p=0.1 inside `RandomApply(p=0.2)` |
-| `GaussianBlur` | kernel 3, sigma 0.1–0.5, p=0.3 |
-| `ColorJitter` | brightness/contrast 0.4, saturation 0.2, p=0.3 |
-| `RandomErasing` | p=0.15, scale 1–5%, value=1.0 (흰색) |
-
-추가로 CNN 출력 시퀀스에 `SpecAugment`(time/freq 마스킹)가 학습 시에만 적용된다.
-
-### Captcha-specific preprocess
-
-- `supreme_court`: fixed ROI crop → paste into fixed canvas → grayscale → border remove → background white → resize
-- `iptime`: RGBA→흰 배경 → grayscale → 원본 크기로 맞춤 → `crop` 만. 배경이 이미 흰색
-
-## Key Conventions
-
-- Label length and character set are **auto-extracted** from training file names in `TrainData`.
-- 학습·일괄 평가는 웹 `/train`·`/predict` 또는 `engine.train_model()`·`engine.batch_predict_model()`을 사용한다. 별도의 하드코딩 실행 스크립트는 없다.
-- PyTorch cuDNN benchmarking is enabled globally in `core.py`. Never import `core.py` just to check imports — it triggers GPU setup.
-- Model architecture is CRNN only.
-- Training loss: **`'focal'` 만 지원** (`FocalCTCLoss`). `train_model()` 은 그 외 `loss_type` 에 `ValueError` 를 던진다 (`core.py`). 표준 `'ctc'` 는 제거됐다.
-- LR 스케줄: Linear Warmup → Cosine Annealing (`LambdaLR`). `ReduceLROnPlateau` 는 쓰지 않는다.
-
-## Image Size & CTC Constraints
-
-- CRNN CNN 은 MaxPool 2×2, 2×2, (2,1) 을 거쳐 `H/8 × W/4` 로 줄인다. **Time steps T = W/4** (전처리·crop 후 폭 기준).
-- Constraint: `detected_image_width / 4 >= label_length`. 위반 시 `CRNN.__init__` 이 `ValueError`.
-- Example: 6-char captcha → 최소 24px 폭. 실제 캡차(120~168px)에서는 여유가 크다.
-
-## Web API
-
-| Env var | Default | Description |
-|---------|---------|-------------|
-| `WEB_HOST` | `0.0.0.0` | Bind host |
-| `WEB_PORT` | `5000` | Bind port |
-| `WEB_DEBUG` | `false` | Debug mode |
-| `WEB_CONTEXT_PATH` | (비어있음) | 리버스 프록시 하위 경로 접두사 (예: `/captcha`). FastAPI `root_path` + 템플릿/JS 링크에 붙는다 |
-| `DB_PATH` / `DB_SCHEMA_PATH` / `DB_SEED_PATH` | `./db/...` | SQLite 경로·스키마·시드 |
-
-기본 캡차는 환경 변수가 아니라 `db/schema.sql` 의 `service_captchas.is_default` 가 정한다.
-
-Endpoints (전체 목록·스키마는 `docs/web-api-reference.md`):
-
-- 시스템: `GET /health`, `GET /version`
-- 추론: `POST /api/v1/predictImage` (multipart), `POST /api/v1/predictJson` (base64)
-- 일괄추론: `GET /api/v1/batch/{targets,stream,image}`
-- 학습: `GET /api/v1/train/{targets,params,stream}`, `POST /api/v1/train/{params,start,stop}`
-- 데이터 수집: `GET /api/v1/data-source/{targets,stream,drafts,image}`, `POST /api/v1/data-source/label`
-- 프런트(HTML): `/`, `/predict`, `/train`, `/data-source`, `/status`
-
-### 연산 디바이스 선택
-
-`POST /api/v1/predictImage` (form) 와 `POST /api/v1/predictJson` (body) 는 선택적
-`device` 필드를 받는다: `auto`(기본) / `cpu` / `cuda`. 생략하면 auto 이고, auto 는
-CUDA 가용 시 CUDA, 아니면 CPU 다 (`PyTorchModel` 의 원래 동작). 응답의 `device` 에
-실제로 사용된 디바이스가 담긴다. 쓸 수 없는 디바이스를 요청하면 사유와 함께 400 이다.
-
-판정 로직은 `apps/web/core/device.py` 한 곳에 있다. 모델 인스턴스는 특정 디바이스에
-묶이므로 `services/captcha.py` 의 `_MODEL_CACHE` 키는 `(captcha_id, device)` 다 —
-`captcha_id` 만으로 캐시를 뒤지는 코드를 새로 쓰지 말 것.
-
-## Gotchas
-
-- **테스트**: `tests/` 에 pytest 스위트가 있다 (`uv run --project apps/web pytest tests/`, 웹 서비스 캐시·컨텍스트 경로·모델 로드 위주).
-  모델 품질은 테스트로 안 잡히니 웹 또는 `engine`의 학습·일괄 평가 함수를 작은 데이터셋으로 돌리거나
-  `apps/cli/tools/compare_with_python.py` 로 Rust CLI 와 대조해 확인한다.
-- No lint/typecheck config (ruff, mypy, flake8 모두 없음). 웹 패키징은 `apps/web/pyproject.toml`, 라이브러리는 `packages/python_3.13/pyproject.toml`에 있음.
-- `apps/web/services/captcha.py`는 `from web.core import engine`을 **함수 안에서** 지연 import 한다.
-  최상위에서 import 하면 서버 기동 시점에 torch/CUDA 초기화가 딸려온다.
-- `web` 파이썬 패키지는 `apps/web/`에 있다 (`apps/web/pyproject.toml`의 `[tool.setuptools.package-dir] web = "."`).
-  import 이름은 여전히 `web.*` 이고, `fastapi dev apps/web/app.py`가 `apps/`를 sys.path에 넣는다.
-
-- 빌드: `uv build --project apps/web` (wheel + sdist). `apps/web/src`는 쓰지 않는다.
-- `WEB_DATA_DIR`는 `.env`·`db/`·`captcha_data/` 기준 경로. 소스 설치 기본은 저장소 루트, wheel 설치는 작업 디렉터리다.
+Retrieve only the code required for the current task to minimize context and token usage.
