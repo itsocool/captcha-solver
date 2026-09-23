@@ -145,3 +145,37 @@ CREATE TABLE IF NOT EXISTS data_source_params (
 
 INSERT OR IGNORE INTO schema_migrations(version, name)
 VALUES (9, 'data_source_params');
+
+-- 이미지별 모델 예측. 파일이 교체되면 크기/mtime 비교로 기존 결과를 무효화한다.
+CREATE TABLE IF NOT EXISTS data_source_predictions (
+	captcha_id TEXT NOT NULL,
+	rev INTEGER NOT NULL CHECK (rev >= 1),
+	name TEXT NOT NULL,
+	prediction TEXT NOT NULL,
+	confidence REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+	image_size INTEGER NOT NULL,
+	image_mtime_ns INTEGER NOT NULL,
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	PRIMARY KEY (captcha_id, rev, name)
+);
+
+INSERT OR IGNORE INTO schema_migrations(version, name)
+VALUES (12, 'data_source_predictions');
+
+-- 수동 레이블 편집 이력. 전/후 이름과 시각은 보존하고 현재 파일 연결만 이동한다.
+CREATE TABLE IF NOT EXISTS data_source_label_edits (
+	id INTEGER PRIMARY KEY,
+	captcha_id TEXT NOT NULL,
+	rev INTEGER NOT NULL CHECK (rev >= 1),
+	previous_name TEXT NOT NULL,
+	new_name TEXT NOT NULL,
+	current_name TEXT,
+	image_size INTEGER NOT NULL,
+	image_mtime_ns INTEGER NOT NULL,
+	edited_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_data_source_label_edits_current
+	ON data_source_label_edits(captcha_id, rev, current_name);
+
+INSERT OR IGNORE INTO schema_migrations(version, name)
+VALUES (13, 'data_source_label_edits');

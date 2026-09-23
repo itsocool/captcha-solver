@@ -245,3 +245,14 @@ draft 이미지 썸네일 (`image/png`). 경로 검증은 `/batch/image`와 동�
 | 404 | (FastAPI 기본) 경로 없음 | 존재하지 않는 엔드포인트 |
 | 409 | 동일 종류 작업 중복 실행 | 배치/학습/수집이 이미 실행 중일 때 |
 | 500 | 서버 내부 오류 | 추론 실패 등 예기치 못한 예외 |
+
+### 데이터 소스 신뢰도 저장·조회
+
+- `GET /api/v1/data-source/drafts`: 기존 목록에 `confidences: {파일명: 신뢰도}` 필드를 추가한다. 미예측·변경된 이미지는 해당 맵에서 제외된다.
+- `GET /api/v1/data-source/confidence/stream?captcha_id=iros&rev=1&device=auto`: 저장값이 없는 이미지의 신뢰도를 계산·저장하며 이름은 유지한다. SSE는 `start` → `item` → `summary`이며 `summary.predicted`는 DB 저장 성공 건수다. 동일 수집/라벨링 실행 중이면 409, 잘못된 rev는 422, 모델/저장 오류는 스트림 오류 또는 항목별 오류로 알린다.
+- 자동 라벨링도 예측을 DB에 저장한 뒤 이름을 변경한다. 하한 미달·이름 충돌의 예측값은 보존한다.
+- `POST /api/v1/data-source/label` 응답의 `confidence`는 새 파일명에 연결한 신뢰도이며 기록이 없으면 `null`이다.
+
+### 수동 레이블 편집 이력
+
+`POST /api/v1/data-source/label`은 실제 변경을 성공한 경우에만 편집 전·후 파일명과 UTC 시각을 기록하고 `edited_at`을 반환한다. 자동 라벨링은 수동 이력을 만들지 않는다. `GET /api/v1/data-source/drafts`의 `label_edits`는 현재 파일명과 마지막 수동 저장 시각의 맵이다. 파일 교체로 크기·mtime이 달라진 경우에는 과거 편집 상태를 반환하지 않는다.

@@ -13,6 +13,7 @@ from web.services.data_source import (
 	list_drafts,
 	list_targets,
 	load_params,
+	move_checked_to_train,
 	rename_draft,
 	run,
 	save_params,
@@ -99,9 +100,9 @@ async def data_source_stream(
 	)
 
 
-def _auto_label_stream(captcha_id: str, rev: int, device: str | None, min_confidence: float):
+def _auto_label_stream(captcha_id: str, rev: int, device: str | None, min_confidence: float, rename_files: bool = True):
 	try:
-		for event in iter_auto_label(captcha_id, rev, device, min_confidence):
+		for event in iter_auto_label(captcha_id, rev, device, min_confidence, rename_files=rename_files):
 			yield _sse(event["type"], event)
 	except DataSourceBusy as e:
 		yield _sse("error", {"message": str(e)})
@@ -130,6 +131,22 @@ async def data_source_auto_label_stream(
 	)
 
 
+@router.get("/data-source/confidence/stream")
+async def data_source_confidence_stream(
+	captcha_id: str = Query(...),
+	rev: int = Query(1, ge=1),
+	device: str | None = Query(None),
+):
+	"""DB 신뢰도가 없는 이미지에 대해서만 계산한다. 파일명을 변경하지 않는다."""
+	if is_running():
+		raise HTTPException(status_code=409, detail="이미 다른 수집/라벨링이 실행 중입니다")
+	return StreamingResponse(
+		_auto_label_stream(captcha_id, rev, device, 0.0, rename_files=False),
+		media_type="text/event-stream",
+		headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+	)
+
+
 @router.get("/data-source/drafts")
 async def data_source_drafts(
 	captcha_id: str = Query(...),
@@ -143,6 +160,17 @@ async def data_source_drafts(
 	return JSONResponse(list_drafts(captcha_id, rev, limit))
 
 
+@router.post("/data-source/move-to-train")
+def data_source_move_to_train(captcha_id: str = Query(...), rev: int = Query(1)):
+	"""선택한 대상의 DB 확인 이미지를 학습 폴더로 이동한다."""
+	try:
+		return JSONResponse(move_checked_to_train(captcha_id, rev))
+	except DataSourceBusy as e:
+		raise HTTPException(status_code=409, detail=str(e))
+	except ValueError as e:
+		raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.post("/data-source/label")
 async def data_source_label(
 	captcha_id: str = Query(...),
@@ -150,9 +178,9 @@ async def data_source_label(
 	name: str = Query(...),
 	label: str = Query(...),
 ):
-	"""draft 이미지에 라벨을 붙인다 (파일 이름 변경)."""
+	"""draft 라벨을 저장하고 수동 확인을 기록한다. 같은 라벨이면 파일명은 유지한다."""
 	try:
-		return JSONResponse(rename_draft(captcha_id, rev, name, label))
+		return JSONResponse(rename_draft(captcha_id, rev, name, label, manual_edit=True))
 	except ValueError as e:
 		raise HTTPException(status_code=400, detail=str(e))
 

@@ -216,3 +216,109 @@ def get_captcha_seq() -> dict[str, int]:
 		print(f"[db] captcha_types.seq 조회 실패: {e}")
 		return {}
 	return {row["captcha_id"]: int(row["seq"]) for row in rows}
+
+
+def get_data_source_predictions(captcha_id: str, rev: int) -> dict[str, dict]:
+	"""신뢰도 조회 실패를 빈 결과로 숨기지 않고 호출부로 전달한다."""
+	from contextlib import closing
+
+	with closing(connect()) as conn:
+		rows = conn.execute(
+			"SELECT name, prediction, confidence, image_size, image_mtime_ns"
+			" FROM data_source_predictions WHERE captcha_id = ? AND rev = ?",
+			(captcha_id, rev),
+		).fetchall()
+	return {row["name"]: dict(row) for row in rows}
+
+
+def save_data_source_prediction(captcha_id: str, rev: int, name: str,
+                               prediction: str, confidence: float, image_stat) -> None:
+	"""예측을 커밋한 뒤 반환한다. 저장 실패 시 성공 이벤트를 보내지 않는다."""
+	from contextlib import closing
+
+	if not (0 <= confidence <= 1):
+		raise ValueError("예측 신뢰도는 0 ~ 1 범위여야 합니다")
+	with closing(connect()) as conn, conn:
+		conn.execute(
+			"INSERT INTO data_source_predictions"
+			" (captcha_id, rev, name, prediction, confidence, image_size, image_mtime_ns)"
+			" VALUES (?, ?, ?, ?, ?, ?, ?)"
+			" ON CONFLICT(captcha_id, rev, name) DO UPDATE SET"
+			" prediction=excluded.prediction, confidence=excluded.confidence,"
+			" image_size=excluded.image_size, image_mtime_ns=excluded.image_mtime_ns,"
+			" updated_at=CURRENT_TIMESTAMP",
+			(captcha_id, rev, name, prediction, confidence, image_stat.st_size, image_stat.st_mtime_ns),
+		)
+
+
+def move_data_source_prediction(conn: sqlite3.Connection, captcha_id: str, rev: int,
+                                name: str, new_name: str, image_stat) -> float | None:
+	"""파일명 변경 트랜잭션에서 유효한 예측만 새 이름으로 연결한다."""
+	row = conn.execute(
+		"SELECT confidence FROM data_source_predictions"
+		" WHERE captcha_id = ? AND rev = ? AND name = ?"
+		" AND image_size = ? AND image_mtime_ns = ?",
+		(captcha_id, rev, name, image_stat.st_size, image_stat.st_mtime_ns),
+	).fetchone()
+	conn.execute(
+		"DELETE FROM data_source_predictions WHERE captcha_id = ? AND rev = ? AND name = ?",
+		(captcha_id, rev, new_name),
+	)
+	if row is None:
+		conn.execute(
+			"DELETE FROM data_source_predictions WHERE captcha_id = ? AND rev = ? AND name = ?",
+			(captcha_id, rev, name),
+		)
+		return None
+	conn.execute(
+		"UPDATE data_source_predictions SET name = ? WHERE captcha_id = ? AND rev = ? AND name = ?",
+		(new_name, captcha_id, rev, name),
+	)
+	return float(row["confidence"])
+
+
+def get_data_source_label_edits(captcha_id: str, rev: int) -> dict[str, dict]:
+	"""현재 파일에 연결된 마지막 수동 편집 기록을 조회한다."""
+	from contextlib import closing
+
+	with closing(connect()) as conn:
+		rows = conn.execute(
+			"SELECT current_name AS name, image_size, image_mtime_ns, edited_at"
+			" FROM data_source_label_edits WHERE id IN ("
+			" SELECT MAX(id) FROM data_source_label_edits"
+			" WHERE captcha_id = ? AND rev = ? AND current_name IS NOT NULL"
+			" GROUP BY current_name)",
+			(captcha_id, rev),
+		).fetchall()
+	return {row["name"]: dict(row) for row in rows}
+
+
+def move_data_source_label_edits(conn: sqlite3.Connection, captcha_id: str, rev: int,
+                                 name: str, new_name: str, image_stat,
+                                 manual_edit: bool) -> str | None:
+	"""같은 트랜잭션 안에서 이력의 파일 연결을 옮기고 수동 편집만 추가한다."""
+	if name != new_name:
+		conn.execute(
+			"UPDATE data_source_label_edits SET current_name = NULL"
+			" WHERE captcha_id = ? AND rev = ? AND current_name = ?",
+			(captcha_id, rev, new_name),
+		)
+	conn.execute(
+		"UPDATE data_source_label_edits SET current_name ="
+		" CASE WHEN image_size = ? AND image_mtime_ns = ? THEN ? ELSE NULL END"
+		" WHERE captcha_id = ? AND rev = ? AND current_name = ?",
+		(image_stat.st_size, image_stat.st_mtime_ns, new_name, captcha_id, rev, name),
+	)
+	if manual_edit:
+		conn.execute(
+			"INSERT INTO data_source_label_edits"
+			" (captcha_id, rev, previous_name, new_name, current_name, image_size, image_mtime_ns)"
+			" VALUES (?, ?, ?, ?, ?, ?, ?)",
+			(captcha_id, rev, name, new_name, new_name, image_stat.st_size, image_stat.st_mtime_ns),
+		)
+	row = conn.execute(
+		"SELECT edited_at FROM data_source_label_edits"
+		" WHERE captcha_id = ? AND rev = ? AND current_name = ? ORDER BY id DESC LIMIT 1",
+		(captcha_id, rev, new_name),
+	).fetchone()
+	return row["edited_at"] if row else None

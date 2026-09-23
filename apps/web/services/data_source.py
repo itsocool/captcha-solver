@@ -5,7 +5,7 @@ services/batch_predict.py 와 같은 규칙이다. FastAPI 를 모르는 순수 
 
 캡차는 요청할 때마다 다른 그림을 주므로, 페이지를 count 번 다시 열어 매번 한 장씩
 받는다. 받은 그림은 정답을 모르니 images/draft/ 에 쌓는다 (라벨 없는 원본을 두는
-기존 관례). 라벨을 붙여 train/pred 로 옮기는 건 사람 몫이다.
+기존 관례). 수동 확인한 이미지는 페이지에서 train으로 옮길 수 있다.
 """
 
 import re
@@ -271,64 +271,145 @@ def draft_image_path(captcha_id: str, rev: int, image_name: str) -> Path:
 
 
 def list_drafts(captcha_id: str, rev: int, limit: int | None = None) -> dict:
-	"""draft 에 쌓인 이미지 목록. 만들어진 순서(오래된 것부터)다.
+	"""파일 생성 순서(mtime)와 이미지에 대응하는 DB 신뢰도를 함께 돌려준다."""
+	from web.core.db import get_data_source_predictions, get_data_source_label_edits
 
-	이름순으로 정렬하면 라벨을 붙여 이름이 바뀔 때마다 자리가 튄다. 받은 순서는
-	라벨을 붙여도 그대로라 보고 있던 자리가 유지된다 (rename 은 mtime 을 건드리지
-	않는다). 같은 시각이면 이름으로 가른다.
-	limit 을 주지 않으면 전부 준다 — 라벨을 붙이려면 다 보여야 한다.
-	"""
 	directory = draft_dir(captcha_id, rev)
-	names = [
-		p.name for p in sorted(directory.glob("*.png"), key=lambda p: (p.stat().st_mtime, p.name))
-	] if directory.is_dir() else []
+	files = [(p, p.stat()) for p in directory.glob("*.png")] if directory.is_dir() else []
+	files.sort(key=lambda item: (item[1].st_mtime_ns, item[0].name))
+	visible = files[:limit] if limit else files
+	stored = get_data_source_predictions(captcha_id, rev)
+	edits = get_data_source_label_edits(captcha_id, rev)
+	label_edits = {}
+	confidences = {}
+	for path, stat in visible:
+		record = stored.get(path.name)
+		if record and record["image_size"] == stat.st_size and record["image_mtime_ns"] == stat.st_mtime_ns:
+			confidences[path.name] = record["confidence"]
+		edit = edits.get(path.name)
+		if edit and edit["image_size"] == stat.st_size and edit["image_mtime_ns"] == stat.st_mtime_ns:
+			label_edits[path.name] = edit["edited_at"]
 	return {
-		"names": names[:limit] if limit else names,
-		"total": len(names),
-		"unlabeled": sum(1 for n in names if is_unlabeled_draft(n)),
+		"names": [path.name for path, _ in visible],
+		"confidences": confidences,
+		"label_edits": label_edits,
+		"total": len(files),
+		"unlabeled": sum(1 for path, _ in files if is_unlabeled_draft(path.name)),
 		"draft_dir": str(directory),
 	}
 
 
-def rename_draft(captcha_id: str, rev: int, name: str, label: str) -> dict:
-	"""draft 이미지에 라벨을 붙인다.
+def rename_draft(captcha_id: str, rev: int, name: str, label: str, *, manual_edit: bool = False) -> dict:
+	"""파일·DB 이름을 함께 변경하고 수동 확인을 기록한다. 모델 신뢰도는 보존한다."""
+	from contextlib import closing
+	from web.core import db
 
-	저장소 관례가 '파일 이름 = 정답' 이라(train/pred 를 보면 aaarv.png 식이다)
-	이름을 바꾸는 것이 곧 라벨링이다. 경로 탈출 방어는 draft_image_path 가 한다.
-	"""
 	source = draft_image_path(captcha_id, rev, name)
-
 	label = (label or "").strip()
 	if not label:
 		raise ValueError("라벨이 비었습니다")
 	if any(c in label for c in "/\\\0") or label in (".", ".."):
 		raise ValueError(f"파일 이름으로 쓸 수 없는 라벨입니다: {label!r}")
-
 	target = source.with_name(f"{label}.png")
 	if target == source:
-		return {"name": source.name, "renamed": False}
-	# rename 은 있는 파일을 조용히 덮어쓴다. 먼저 막는다.
+		if manual_edit:
+			with closing(db.connect()) as conn, conn:
+				db.move_data_source_label_edits(
+					conn, captcha_id, rev, source.name, source.name, source.stat(), True,
+				)
+		drafts = list_drafts(captcha_id, rev)
+		return {"name": source.name, "renamed": False,
+		        "confidence": drafts["confidences"].get(source.name),
+		        "edited_at": drafts["label_edits"].get(source.name)}
 	if target.exists():
 		raise ValueError(f"이미 같은 이름이 있습니다: {target.name}")
 
-	source.rename(target)
-	return {"name": target.name, "renamed": True}
+	moved = False
+	try:
+		with closing(db.connect()) as conn, conn:
+			image_stat = source.stat()
+			confidence = db.move_data_source_prediction(
+				conn, captcha_id, rev, source.name, target.name, image_stat,
+			)
+			# DB 쓰기 잠금을 기다리는 동안 다른 요청이 같은 이름을 만들 수 있다.
+			if target.exists():
+				raise ValueError(f"이미 같은 이름이 있습니다: {target.name}")
+			edited_at = db.move_data_source_label_edits(
+				conn, captcha_id, rev, source.name, target.name, image_stat, manual_edit,
+			)
+			source.rename(target)
+			moved = True
+	except Exception:
+		# DB 커밋 실패 시 파일명도 되돌려 두 저장소의 연결을 보존한다.
+		if moved:
+			target.rename(source)
+		raise
+	return {"name": target.name, "renamed": True, "confidence": confidence, "edited_at": edited_at}
+
+
+def move_checked_to_train(captcha_id: str, rev: int) -> dict:
+	"""DB에서 확인된 draft만 train으로 옮긴다. 충돌 파일과 편집 이력은 보존한다."""
+	import os
+	from contextlib import closing
+	from web.core import db, engine
+
+	if captcha_id not in engine.get_captcha_type_list(train_data_base_dir=str(CAPTCHA_DATA_DIR)):
+		raise ValueError("등록되지 않은 캡차입니다")
+	if rev < 1 or Path(captcha_id).name != captcha_id:
+		raise ValueError("허용되지 않은 대상입니다")
+	directory = draft_dir(captcha_id, rev)
+	target_dir = directory.parent / "train"
+	root = CAPTCHA_DATA_DIR.resolve()
+	if (directory.is_symlink() or target_dir.is_symlink()
+		or not directory.resolve().is_relative_to(root)
+		or not target_dir.resolve().is_relative_to(root)):
+		raise ValueError("허용되지 않은 이미지 경로입니다")
+	if not _RUN_LOCK.acquire(blocking=False):
+		raise DataSourceBusy("수집 또는 예측 작업이 진행 중입니다")
+
+	result = {"moved": 0, "skipped": [], "failed": []}
+	try:
+		# 수동 파일명 변경과 동시에 이동하지 않도록 기존 DB 쓰기 잠금을 공유한다.
+		with closing(db.connect()) as conn, conn:
+			conn.execute("BEGIN IMMEDIATE")
+			checked = list_drafts(captcha_id, rev)["label_edits"]
+			records = db.get_data_source_label_edits(captcha_id, rev)
+			if checked:
+				target_dir.mkdir(parents=True, exist_ok=True)
+			for name in checked:
+				source = directory / name
+				target = target_dir / name
+				try:
+					if source.is_symlink():
+						raise ValueError("심볼릭 링크 이미지는 이동할 수 없습니다")
+					stat = source.stat()
+					record = records[name]
+					if stat.st_size != record["image_size"] or stat.st_mtime_ns != record["image_mtime_ns"]:
+						raise ValueError("확인 후 이미지가 변경되었습니다")
+					# link는 목적지가 존재하면 실패하므로 기존 학습 이미지를 덮어쓰지 않는다.
+					try:
+						os.link(source, target)
+					except FileExistsError:
+						result["skipped"].append(name)
+						continue
+					try:
+						source.unlink()
+					except OSError:
+						target.unlink()
+						raise
+					result["moved"] += 1
+				except (OSError, ValueError) as e:
+					result["failed"].append({"name": name, "error": str(e)})
+		return result
+	finally:
+		_RUN_LOCK.release()
 
 
 def iter_auto_label(captcha_id: str, rev: int, device: str | None = None,
-                    min_confidence: float = 0.0):
-	"""draft 이미지를 모델 예측값으로 이름 바꾸는(=라벨 붙이는) 이벤트 제너레이터.
-
-	라벨이 아직 없는 파일(이름이 draft-순번인 것)만 대상이고, 이미 라벨이 붙은 파일은
-	건너뛴다. 예측 신뢰도가 min_confidence 보다 낮으면 바꾸지 않고 low_confidence 로
-	남긴다. 같은 이름이 이미 있으면 rename_draft 가 ValueError 를 내고 그 건은 실패로
-	기록한다. 수집(run)과 같은 draft 디렉터리를 만지므로 같은 락을 쓴다.
-
-	이벤트: start {total, device} → item {name, new_name, prediction, confidence, renamed,
-	skipped?, error?} (매 장) → summary {total, renamed, skipped, failed}.
-	"""
-	from web.core import engine
-	from web.services.captcha import get_model
+                    min_confidence: float = 0.0, *, rename_files: bool = True):
+	"""예측을 DB에 저장한다. 신뢰도 계산 모드는 누락분만 추론하고 파일명을 보존한다."""
+	from web.core import db, engine
+	from web.core.device import resolve as resolve_device
 
 	if captcha_id not in engine.get_captcha_type_list(train_data_base_dir=str(CAPTCHA_DATA_DIR)):
 		raise ValueError(f"등록되지 않은 캡차입니다: {captcha_id!r}")
@@ -340,42 +421,57 @@ def iter_auto_label(captcha_id: str, rev: int, device: str | None = None,
 		raise ValueError(f"신뢰도 하한이 숫자가 아닙니다 ({min_confidence!r})")
 	if not (0.0 <= min_confidence <= 1.0):
 		raise ValueError(f"신뢰도 하한은 0 ~ 1 범위여야 합니다 (받은 값 {min_confidence})")
-
+	device_key = resolve_device(device)
 	if not _RUN_LOCK.acquire(blocking=False):
 		raise DataSourceBusy("이미 다른 수집/라벨링이 실행 중입니다")
 
 	try:
-		names = list_drafts(captcha_id, rev)["names"]
-		targets = [n for n in names if is_unlabeled_draft(n)]
-		model = get_model(captcha_id, device)  # 잘못된 디바이스는 여기서 ValueError
+		drafts = list_drafts(captcha_id, rev)
+		targets = [
+			n for n in drafts["names"]
+			if (is_unlabeled_draft(n) if rename_files else n not in drafts["confidences"])
+		]
+		model = None
+		if targets:
+			# 선택한 리비전의 가중치를 사용한다. 서빙 캐시는 기본 리비전 전용이다.
+			model = engine.get_captcha_model(
+				train_data_base_dir=str(CAPTCHA_DATA_DIR), captcha_id=captcha_id,
+				rev=rev, device=device_key, verbose=0,
+			)
+			model.load_prediction_model()
 		yield {"type": "start", "captcha_id": captcha_id, "rev": rev,
-		       "total": len(targets), "already_labeled": len(names) - len(targets),
-		       "device": str(model.device), "min_confidence": min_confidence}
+		       "total": len(targets), "already_labeled": drafts["total"] - drafts["unlabeled"],
+		       "device": str(model.device) if model else device_key, "min_confidence": min_confidence}
 
-		renamed = skipped = failed = 0
+		renamed = skipped = failed = predicted = 0
 		for i, name in enumerate(targets):
+			event = {"type": "item", "index": i, "name": name, "new_name": name, "renamed": False}
 			try:
 				path = draft_image_path(captcha_id, rev, name)
+				before = path.stat()
 				prediction, confidence = engine.predict(model=model, image_path=str(path), verbose=0)
 				confidence = float(confidence)
-				if confidence < min_confidence:
-					skipped += 1
-					yield {"type": "item", "index": i, "name": name, "new_name": name,
-					       "prediction": prediction, "confidence": confidence,
-					       "renamed": False, "skipped": "low_confidence"}
-					continue
-				result = rename_draft(captcha_id, rev, name, prediction)
-				renamed += 1 if result["renamed"] else 0
-				yield {"type": "item", "index": i, "name": name, "new_name": result["name"],
-				       "prediction": prediction, "confidence": confidence,
-				       "renamed": result["renamed"]}
+				after = path.stat()
+				if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+					raise DataSourceError("예측 중 이미지가 변경되었습니다. 다시 실행하세요")
+				db.save_data_source_prediction(captcha_id, rev, name, prediction, confidence, after)
+				predicted += 1
+				event.update(prediction=prediction, confidence=confidence)
+				if rename_files:
+					if confidence < min_confidence:
+						skipped += 1
+						event["skipped"] = "low_confidence"
+					else:
+						result = rename_draft(captcha_id, rev, name, prediction)
+						renamed += int(result["renamed"])
+						event.update(new_name=result["name"], renamed=result["renamed"], edited_at=result["edited_at"])
 			except Exception as e:
 				failed += 1
-				yield {"type": "item", "index": i, "name": name, "new_name": name,
-				       "renamed": False, "error": f"{type(e).__name__}: {e}"}
+				event["error"] = f"{type(e).__name__}: {e}"
+			yield event
 
 		yield {"type": "summary", "total": len(targets), "renamed": renamed,
-		       "skipped": skipped, "failed": failed}
+		       "skipped": skipped, "failed": failed, "predicted": predicted}
 	finally:
 		_RUN_LOCK.release()
 

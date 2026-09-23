@@ -20,9 +20,15 @@ const progressBar = document.querySelector("#progress-bar");
 const gallery = document.querySelector("#gallery");
 const galleryCount = document.querySelector("#gallery-count");
 const galleryRefresh = document.querySelector("#gallery-refresh");
+const moveToTrainButton = document.querySelector("#move-to-train");
+const moveToTrainStatus = document.querySelector("#move-to-train-status");
+const pendingLabelSaves = new Set();
+let movingToTrain = false;
 const draftDir = document.querySelector("#draft-dir");
+const confidenceButton = document.querySelector("#confidence-calculate");
 const autoLabelButton = document.querySelector("#autolabel");
 const autoLabelStatus = document.querySelector("#autolabel-status");
+const autoLabelHighConfidence = document.querySelector("#autolabel-high-confidence");
 const autoLabelMinConfidence = document.querySelector("#autolabel-min-confidence");
 let autoLabelSource = null;
 const rows = document.querySelector("#rows");
@@ -142,6 +148,8 @@ function setRunning(running) {
 	stopButton.disabled = !running;
 	[captchaSelect, revSelect, urlInput, contentTypeSelect, selectorInput, countInput, delayInput].forEach((el) => (el.disabled = running));
 	autoLabelButton.disabled = running || autoLabelSource !== null;
+	confidenceButton.disabled = autoLabelButton.disabled;
+	moveToTrainButton.disabled = autoLabelButton.disabled || movingToTrain;
 	syncSelectorUi();
 }
 
@@ -154,12 +162,129 @@ function updateStats() {
 	progressCount.textContent = `${counts.done} / ${counts.total}`;
 }
 
-function makeThumb(name) {
+// DB 조회와 저장 완료 SSE로 받은 신뢰도만 화면에 사용한다.
+const confidenceCache = new Map();
+let nextGalleryOrder = 0;
+let gallerySortPending = false;
+const confidenceClasses = ["text-success", "text-orange-700", "dark:text-orange-400", "text-red-700", "dark:text-red-400"];
+
+function confidenceKey(name) {
+	const {captchaId, rev} = currentTarget();
+	return `draft-confidence:${JSON.stringify([CONTEXT_PATH, captchaId, rev, name])}`;
+}
+
+function readConfidence(name) {
+	return confidenceCache.get(confidenceKey(name));
+}
+
+function rememberConfidence(name, confidence) {
+	const key = confidenceKey(name);
+	if (confidence === undefined || confidence === null) confidenceCache.delete(key);
+	else confidenceCache.set(key, confidence);
+}
+
+function readConfidenceThresholds(report = false) {
+	autoLabelMinConfidence.setCustomValidity("");
+	const high = autoLabelHighConfidence.valueAsNumber;
+	const low = autoLabelMinConfidence.valueAsNumber;
+	if (low > high) autoLabelMinConfidence.setCustomValidity("두 번째 신뢰도는 첫 번째 신뢰도 이하여야 합니다.");
+	for (const input of [autoLabelHighConfidence, autoLabelMinConfidence]) {
+		if (!input.checkValidity()) {
+			if (report) input.reportValidity();
+			return null;
+		}
+	}
+	return {high, low};
+}
+
+function renderConfidence(figure, confidence) {
+	const label = figure.querySelector("input");
+	const badge = figure.querySelector("[data-confidence-label]");
+	const valid = typeof confidence === "number" && Number.isFinite(confidence) && confidence >= 0 && confidence <= 1;
+	const thresholds = readConfidenceThresholds();
+	const level = valid && thresholds ? (confidence >= thresholds.high ? "high" : confidence >= thresholds.low ? "medium" : "low") : "unknown";
+	const colors = {high: ["text-success"], medium: ["text-orange-700", "dark:text-orange-400"], low: ["text-red-700", "dark:text-red-400"], unknown: []};
+	figure.dataset.confidenceLevel = level;
+	figure.dataset.confidence = valid ? String(confidence) : "";
+	for (const node of [label, badge]) {
+		node.classList.remove(...confidenceClasses);
+		node.classList.add(...colors[level]);
+	}
+	badge.classList.toggle("text-muted-foreground", level === "unknown");
+	badge.textContent = valid ? `신뢰도 ${confidence.toFixed(2)}` : "신뢰도 —";
+	badge.title = valid ? `예측 신뢰도 ${confidence} · ${{high: "높음", medium: "보통", low: "낮음", unknown: "기준값 확인 필요"}[level]}` : "저장된 예측이 없습니다. 신뢰도 계산을 실행하세요";
+}
+
+/** 신뢰도 내림차순, 동률이면 서버가 제공한 생성 순서(mtime)로 정렬한다. */
+function sortGallery() {
+	// 입력 중인 카드가 이동하면서 포커스나 편집값을 잃지 않게 한다.
+	if (gallery.contains(document.activeElement)) return;
+	const figures = [...gallery.querySelectorAll("figure")];
+	const sorted = [...figures].sort((a, b) => {
+		const score = (figure) => figure.dataset.confidence === "" ? -Infinity : Number(figure.dataset.confidence);
+		return (score(b) - score(a)) || (Number(a.dataset.createdOrder) - Number(b.dataset.createdOrder));
+	});
+	if (sorted.some((figure, index) => figure !== figures[index])) gallery.append(...sorted);
+}
+
+function scheduleGallerySort() {
+	if (gallerySortPending) return;
+	gallerySortPending = true;
+	requestAnimationFrame(() => {
+		gallerySortPending = false;
+		sortGallery();
+	});
+}
+
+function renderEditBadge(figure, editedAt) {
+	const badge = figure.querySelector("[data-edit-badge]");
+	badge.hidden = !editedAt;
+	badge.classList.toggle("hidden", !editedAt);
+	badge.classList.toggle("inline-flex", Boolean(editedAt));
+	badge.title = editedAt ? `레이블 편집 저장됨 · ${editedAt}` : "";
+}
+
+/** object-contain으로 그려지는 이미지 크기와 레이블 길이에 맞춘 글자 크기. */
+function calculateLabelFontSize(image, box, text) {
+	if (!image.width || !image.height || box.width <= 0 || box.height <= 0 || box.labelWidth <= 0) return 22;
+	const scale = Math.min(box.width / image.width, box.height / image.height);
+	const drawnWidth = image.width * scale;
+	const drawnHeight = image.height * scale;
+	const characters = Math.max(1, [...text].length);
+	const fittingSize = Math.min(drawnWidth, box.labelWidth) / (characters * 0.62);
+	return Math.max(12, Math.min(36, drawnHeight * 0.62, fittingSize));
+}
+
+function resizeLabel(figure) {
+	const img = figure.querySelector("img");
+	const label = figure.querySelector("input");
+	const imageStyle = getComputedStyle(img);
+	const labelStyle = getComputedStyle(label);
+	const size = calculateLabelFontSize(
+		{width: img.naturalWidth, height: img.naturalHeight},
+		{
+			width: img.clientWidth - parseFloat(imageStyle.paddingLeft) - parseFloat(imageStyle.paddingRight),
+			height: img.clientHeight - parseFloat(imageStyle.paddingTop) - parseFloat(imageStyle.paddingBottom),
+			labelWidth: label.clientWidth - parseFloat(labelStyle.paddingLeft) - parseFloat(labelStyle.paddingRight),
+		},
+		label.value || label.placeholder,
+	);
+	label.style.fontSize = `${size.toFixed(1)}px`;
+}
+
+const thumbnailResizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver((entries) => {
+	for (const {target} of entries) {
+		if (target.isConnected) resizeLabel(target.parentElement);
+	}
+});
+
+function makeThumb(name, editedAt = null) {
 	const {captchaId, rev} = currentTarget();
 	const params = new URLSearchParams({captcha_id: captchaId, rev, name});
 
 	const figure = document.createElement("figure");
-	figure.className = "overflow-hidden rounded-xl border border-border bg-background";
+	figure.dataset.createdOrder = String(nextGalleryOrder++);
+	figure.className = "relative overflow-hidden rounded-xl border border-border bg-background";
 
 	const img = document.createElement("img");
 	img.src = `${CONTEXT_PATH}/api/v1/data-source/image?${params}`;
@@ -176,6 +301,7 @@ function makeThumb(name) {
 	label.dataset.name = name;
 	label.autocomplete = "off";
 	label.spellcheck = false;
+	label.disabled = autoLabelSource !== null || movingToTrain;
 	label.className = "w-full border-t border-border bg-transparent px-2 py-1 text-center font-mono text-[22px] outline-none focus:bg-surface";
 
 	// 포커스가 오면 전체 선택 — 바로 덮어쓸 수 있게. mouseup 을 막지 않으면
@@ -191,10 +317,31 @@ function makeThumb(name) {
 		}
 	});
 
-	// change 는 값이 바뀐 채 포커스가 빠져나갈 때(엔터 포함) 한 번만 온다.
-	label.addEventListener("change", () => saveLabel(label));
+	// 값을 바꾸지 않고 확인한 경우도 포커스를 벗어나면 저장한다.
+	label.addEventListener("blur", () => {
+		const pending = saveLabel(label);
+		pendingLabelSaves.add(pending);
+		pending.finally(() => pendingLabelSaves.delete(pending));
+	});
+	label.addEventListener("input", () => resizeLabel(figure));
+	img.addEventListener("load", () => resizeLabel(figure));
 
-	figure.append(img, label);
+	const caption = document.createElement("figcaption");
+	caption.className = "relative border-t border-border px-7 py-1 text-center font-mono text-[11px] leading-4 whitespace-nowrap";
+	const confidence = document.createElement("span");
+	confidence.dataset.confidenceLabel = "";
+	const editBadge = document.createElement("span");
+	editBadge.dataset.editBadge = "";
+	editBadge.className = "absolute left-2 top-1/2 size-4 -translate-y-1/2 items-center justify-center rounded-full bg-success-soft text-xs font-semibold text-success";
+	editBadge.textContent = "✓";
+	editBadge.setAttribute("role", "img");
+	editBadge.setAttribute("aria-label", "레이블 편집 저장됨");
+	caption.append(editBadge, confidence);
+	label.setAttribute("aria-label", `${name} 라벨`);
+	figure.append(img, label, caption);
+	renderConfidence(figure, readConfidence(name));
+	renderEditBadge(figure, editedAt);
+	thumbnailResizeObserver?.observe(img);
 	return figure;
 }
 
@@ -206,12 +353,14 @@ const captionOf = (name) => (isUnlabeled(name) ? "" : stem(name));
 
 /** 입력한 라벨을 파일 이름으로 굳힌다. 실패하면 원래 이름으로 되돌린다. */
 async function saveLabel(input) {
+	if (input.disabled) return;
 	const {captchaId, rev} = currentTarget();
 	const before = input.dataset.name;
 	const label = input.value.trim();
 
-	if (!label || label === stem(before)) {
+	if (!label) {
 		input.value = captionOf(before);
+		resizeLabel(input.parentElement);
 		return;
 	}
 
@@ -224,6 +373,12 @@ async function saveLabel(input) {
 			throw new Error(data.detail || `HTTP ${response.status}`);
 		}
 
+		rememberConfidence(before, undefined);
+		rememberConfidence(data.name, data.confidence);
+		renderConfidence(input.parentElement, data.confidence);
+		renderEditBadge(input.parentElement, data.edited_at);
+		scheduleGallerySort();
+		input.setAttribute("aria-label", `${data.name} 라벨`);
 		input.dataset.name = data.name;
 		input.value = captionOf(data.name);
 		input.placeholder = isUnlabeled(data.name) ? "라벨 입력" : "";
@@ -231,22 +386,26 @@ async function saveLabel(input) {
 		const img = input.parentElement.querySelector("img");
 		img.src = `${CONTEXT_PATH}/api/v1/data-source/image?${new URLSearchParams({captcha_id: captchaId, rev, name: data.name})}`;
 		img.alt = data.name;
-		progressLabel.textContent = `${stem(before)} → ${stem(data.name)}`;
+		progressLabel.textContent = data.renamed ? `${stem(before)} → ${stem(data.name)}` : `${stem(data.name)} 확인 저장됨`;
 	} catch (e) {
 		input.value = captionOf(before);
 		progressLabel.textContent = `이름 변경 실패: ${e.message}`;
 	} finally {
-		input.disabled = false;
+		input.disabled = movingToTrain;
+		resizeLabel(input.parentElement);
 	}
 }
 
 function focusNextLabel(current) {
 	const labels = [...gallery.querySelectorAll("input")];
-	labels[labels.indexOf(current) + 1]?.focus();
+	const next = labels[labels.indexOf(current) + 1];
+	if (next) next.focus();
+	else current.blur();
 }
 
 /** 방금 저장된 그림을 뒤에 붙인다. 순번 오름차순이라 새 그림이 항상 마지막이다. */
 function appendThumb(name) {
+	rememberConfidence(name, undefined);
 	gallery.querySelector("p")?.remove();
 	gallery.append(makeThumb(name));
 }
@@ -263,8 +422,14 @@ async function loadGallery() {
 			throw new Error(`목록을 못 받았습니다 (${response.status})`);
 		}
 		const data = await response.json();
+		const current = currentTarget();
+		if (current.captchaId !== captchaId || current.rev !== rev) return;
 
-		gallery.replaceChildren(...data.names.map(makeThumb));
+		nextGalleryOrder = 0;
+		data.names.forEach((name) => rememberConfidence(name, data.confidences?.[name]));
+		thumbnailResizeObserver?.disconnect();
+		gallery.replaceChildren(...data.names.map((name) => makeThumb(name, data.label_edits?.[name])));
+		sortGallery();
 		draftDir.textContent = data.draft_dir;
 		galleryCount.textContent = data.unlabeled ? `${data.total}장 · 라벨 없음 ${data.unlabeled}장` : `${data.total}장`;
 		// 서버 렌더 시점의 draft 수는 수집 뒤에 낡으므로 셀렉트 라벨도 같이 맞춘다.
@@ -399,12 +564,15 @@ stopButton.addEventListener("click", () => {
 });
 
 /** 갤러리에서 name 에 해당하는 라벨 입력을 찾아 새 이름으로 바꾼다 (전체 다시 그리지 않고 제자리 갱신). */
-function updateThumbName(name, newName) {
+function updateThumbName(name, newName, editedAt = null) {
 	const input = gallery.querySelector(`input[data-name="${CSS.escape(name)}"]`);
 	if (input) {
 		input.value = captionOf(newName);
 		input.placeholder = isUnlabeled(newName) ? "라벨 입력" : "";
 		input.dataset.name = newName;
+		input.setAttribute("aria-label", `${newName} 라벨`);
+		renderEditBadge(input.parentElement, editedAt);
+		resizeLabel(input.parentElement);
 		const img = input.parentElement.querySelector("img");
 		if (img) {
 			const {captchaId, rev} = currentTarget();
@@ -420,24 +588,36 @@ function finishAutoLabel(message) {
 		autoLabelSource = null;
 	}
 	autoLabelStatus.textContent = message;
+	runButton.disabled = source !== null;
 	autoLabelButton.disabled = runButton.disabled; // 수집 중이면 계속 잠근다
+	confidenceButton.disabled = runButton.disabled;
+	moveToTrainButton.disabled = runButton.disabled || movingToTrain;
+	gallery.querySelectorAll("input").forEach((input) => (input.disabled = false));
 	[captchaSelect, revSelect].forEach((el) => (el.disabled = runButton.disabled));
 	loadGallery();
 }
 
-/** 라벨 없는 draft 이미지를 모델 예측값으로 이름 바꾼다 (draft 안에서 개명). 진행은 SSE 로 받는다. */
-autoLabelButton.addEventListener("click", () => {
+/** 이름 변경과 누락 신뢰도 계산은 동일한 저장 완료 SSE 흐름을 사용한다. */
+function startPrediction(renameFiles) {
 	const {captchaId, rev} = currentTarget();
-	if (!captchaId || !rev || autoLabelSource) {
+	if (!captchaId || !rev || autoLabelSource || source || movingToTrain) {
 		return;
 	}
-	const minConfidence = autoLabelMinConfidence.value || "0";
+	const thresholds = readConfidenceThresholds(true);
+	if (!thresholds) return;
+	const minConfidence = String(thresholds.low);
+	runButton.disabled = true;
 	autoLabelButton.disabled = true;
+	confidenceButton.disabled = true;
+	moveToTrainButton.disabled = true;
+	gallery.querySelectorAll("input").forEach((input) => (input.disabled = true));
 	[captchaSelect, revSelect].forEach((el) => (el.disabled = true)); // 도중에 대상이 바뀌면 캡션 갱신이 엉킨다
 	autoLabelStatus.textContent = "모델 로드 중...";
 
 	const params = new URLSearchParams({captcha_id: captchaId, rev, device: "auto", min_confidence: minConfidence});
-	autoLabelSource = new EventSource(`${CONTEXT_PATH}/api/v1/data-source/auto-label/stream?${params}`);
+	const endpoint = renameFiles ? "auto-label" : "confidence";
+	const action = renameFiles ? "이름 변경" : "신뢰도 계산";
+	autoLabelSource = new EventSource(`${CONTEXT_PATH}/api/v1/data-source/${endpoint}/stream?${params}`);
 	let done = 0;
 	let total = 0;
 
@@ -445,20 +625,26 @@ autoLabelButton.addEventListener("click", () => {
 		const payload = JSON.parse(event.data);
 		total = payload.total;
 		autoLabelStatus.textContent = total
-			? `이름 변경 중 0 / ${total} (${payload.device})`
-			: "라벨 없는 이미지가 없습니다";
+			? `${action} 중 0 / ${total} (${payload.device})`
+			: (renameFiles ? "라벨 없는 이미지가 없습니다" : "모든 이미지의 신뢰도가 저장되어 있습니다");
 	});
 	autoLabelSource.addEventListener("item", (event) => {
 		const payload = JSON.parse(event.data);
 		done += 1;
 		if (payload.renamed) {
-			updateThumbName(payload.name, payload.new_name);
+			rememberConfidence(payload.name, undefined);
+			updateThumbName(payload.name, payload.new_name, payload.edited_at);
 		}
-		autoLabelStatus.textContent = `이름 변경 중 ${done} / ${total}`;
+		const name = payload.renamed ? payload.new_name : payload.name;
+		if (typeof payload.confidence === "number") rememberConfidence(name, payload.confidence);
+		const input = gallery.querySelector(`input[data-name="${CSS.escape(name)}"]`);
+		if (input) renderConfidence(input.parentElement, readConfidence(name));
+		scheduleGallerySort();
+		autoLabelStatus.textContent = `${action} 중 ${done} / ${total}`;
 	});
 	autoLabelSource.addEventListener("summary", (event) => {
 		const payload = JSON.parse(event.data);
-		const parts = [`${payload.renamed}장 변경`];
+		const parts = [renameFiles ? `${payload.renamed}장 변경` : `신뢰도 ${payload.predicted}장 저장`];
 		if (payload.skipped) parts.push(`${payload.skipped}장 신뢰도 미달`);
 		if (payload.failed) parts.push(`${payload.failed}장 실패`);
 		finishAutoLabel(`완료 · ${parts.join(" · ")}`);
@@ -466,12 +652,58 @@ autoLabelButton.addEventListener("click", () => {
 	autoLabelSource.addEventListener("error", (event) => {
 		if (event.data) {
 			finishAutoLabel(`오류 · ${JSON.parse(event.data).message}`);
-		} else if (autoLabelSource && autoLabelSource.readyState === EventSource.CLOSED) {
+		} else {
 			finishAutoLabel("연결이 끊겼습니다");
 		}
 	});
+}
+
+async function moveCheckedToTrain() {
+	const {captchaId, rev} = currentTarget();
+	if (!captchaId || !rev || movingToTrain || source || autoLabelSource || galleryRefresh.disabled) return;
+	movingToTrain = true;
+	const controls = [moveToTrainButton, captchaSelect, revSelect, runButton, autoLabelButton, confidenceButton, galleryRefresh];
+	const disabledBefore = controls.map((control) => control.disabled);
+	controls.forEach((control) => (control.disabled = true));
+	gallery.querySelectorAll("input").forEach((input) => (input.disabled = true));
+	moveToTrainStatus.textContent = "확인 저장 후 train으로 이동 중…";
+	try {
+		await Promise.all([...pendingLabelSaves]);
+		const params = new URLSearchParams({captcha_id: captchaId, rev});
+		const response = await fetch(`${CONTEXT_PATH}/api/v1/data-source/move-to-train?${params}`, {method: "POST"});
+		const data = await response.json();
+		if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+		const parts = [`train으로 ${data.moved}장 이동`];
+		if (data.skipped.length) parts.push(`이름 중복 ${data.skipped.length}장 유지`);
+		if (data.failed.length) parts.push(`실패 ${data.failed.length}장 유지`);
+		moveToTrainStatus.textContent = data.moved || data.skipped.length || data.failed.length
+			? parts.join(" · ") : "이동할 체크된 이미지가 없습니다";
+		moveToTrainStatus.title = [...data.skipped, ...data.failed.map((item) => `${item.name}: ${item.error}`)].join("\n");
+	} catch (error) {
+		moveToTrainStatus.textContent = `이동 실패: ${error.message}`;
+	} finally {
+		await loadGallery();
+		movingToTrain = false;
+		controls.forEach((control, index) => (control.disabled = disabledBefore[index]));
+		gallery.querySelectorAll("input").forEach((input) => (input.disabled = false));
+	}
+}
+
+moveToTrainButton.addEventListener("click", moveCheckedToTrain);
+autoLabelButton.addEventListener("click", () => startPrediction(true));
+confidenceButton.addEventListener("click", () => startPrediction(false));
+
+[autoLabelHighConfidence, autoLabelMinConfidence].forEach((input) => {
+	input.addEventListener("input", () => {
+		if (!readConfidenceThresholds()) return;
+		gallery.querySelectorAll("figure").forEach((figure) => {
+			renderConfidence(figure, readConfidence(figure.querySelector("input").dataset.name));
+		});
+	});
+	input.addEventListener("change", () => readConfidenceThresholds(true));
 });
 
+gallery.addEventListener("focusout", scheduleGallerySort);
 galleryRefresh.addEventListener("click", loadGallery);
 Object.values(PARAM_FIELDS).forEach((el) => el.addEventListener("change", saveCurrentParams));
 contentTypeSelect.addEventListener("change", syncSelectorUi);

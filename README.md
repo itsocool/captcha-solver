@@ -31,14 +31,14 @@ cp .env.example .env       # 선택: 설정을 덮어쓸 때
 # Python CLI (샘플 경로는 보유한 이미지로 바꾸세요)
 uv run --project apps/web aso-ai -c supreme_court -i captcha_data/supreme_court/1/images/pred/091082.png
 
-# FastAPI 개발 서버: http://localhost:8000
-uv run --project apps/web uvicorn web.app:app --host 0.0.0.0 --port 8000 --reload --reload-dir apps/web
+# FastAPI 개발 서버: http://localhost:5000
+uv run --project apps/web uvicorn web.app:app --host 0.0.0.0 --port 5000 --reload --reload-dir apps/web
 
 # Docker CPU: http://localhost:30008
 docker compose -f compose-cpu.yml up --build
 ```
 
-서버가 시작되면 `/health`와 `/docs`를 확인하세요. 운영 실행은 `uv run --project apps/web fastapi run apps/web/app.py --host 0.0.0.0 --port 8000`입니다.
+서버가 시작되면 `/health`와 `/docs`를 확인하세요. 운영 실행은 `uv run --project apps/web fastapi run apps/web/app.py --host 0.0.0.0 --port 5000`입니다.
 
 ## 아키텍처
 
@@ -101,7 +101,7 @@ uv run --project apps/web aso-ai -c <captcha_id> -i <image_path> [-v]
 ## FastAPI 웹 서비스
 
 ```bash
-uv run --project apps/web uvicorn web.app:app --host 0.0.0.0 --port 8000 --reload --reload-dir apps/web
+uv run --project apps/web uvicorn web.app:app --host 0.0.0.0 --port 5000 --reload --reload-dir apps/web
 ```
 
 `/`는 웹 UI, `/status`는 모델 상태, `/health`, `/ping`, `/version`은 상태·버전 엔드포인트입니다. 서버 기동 시 서비스 대상 모델을 preload/warm-up하고 `_MODEL_CACHE`에 보관하므로 모델 파일을 바꾼 뒤에는 프로세스를 재시작해야 합니다. `/health`는 서비스 대상 ID가 모두 로드됐을 때 `status: "ok"`, 하나라도 누락됐을 때 `status: "degraded"`를 반환합니다. `degraded`도 응답 자체는 HTTP 200이며 `serviced_captcha_ids`와 `loaded_captcha_ids`로 누락 항목을 확인합니다.
@@ -130,14 +130,14 @@ Push-Location apps/springBoot; java -jar target\captchaSolver-0.0.1-SNAPSHOT.jar
 
 ## 공통 REST API
 
-FastAPI와 Spring Boot 모두 다음 경로를 제공합니다. 아래 예제의 FastAPI 기본 URL은 `http://localhost:8000`이고, Spring Boot의 기본 URL은 `http://localhost:5000`입니다.
+FastAPI와 Spring Boot 모두 다음 경로를 제공합니다. 아래 예제의 FastAPI 기본 URL은 `http://localhost:5000`이고, Spring Boot의 기본 URL은 `http://localhost:5000`입니다.
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/predictImage \
+curl -X POST http://localhost:5000/api/v1/predictImage \
   -F "captcha_id=supreme_court" \
   -F "image=@captcha_data/supreme_court/1/images/pred/091082.png"
 
-curl -X POST http://localhost:8000/api/v1/predictJson \
+curl -X POST http://localhost:5000/api/v1/predictJson \
   -H 'Content-Type: application/json' \
   -d '{"captcha_id":"supreme_court","image_data":"iVBORw0KGgo..."}'
 ```

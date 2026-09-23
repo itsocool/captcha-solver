@@ -363,3 +363,11 @@ sequenceDiagram
 - [web-api-reference.md](./web-api-reference.md) — 엔드포인트별 요청/응답 상세, 오류 코드
 - [web-dev-guide.md](./web-dev-guide.md) — 개발 환경, 실행 방법
 - [web-frontend-guide.md](./web-frontend-guide.md) — 템플릿/정적 자산 구조
+
+### 데이터 소스 예측 영속화 (`data_source_predictions`)
+
+`(captcha_id, rev, name)` 복합 키로 `prediction`, `confidence`, `image_size`, `image_mtime_ns`, `updated_at`을 저장한다. 이미지 크기·mtime이 일치하는 값만 갤러리에 제공한다. 수동/자동 이름 변경은 DB 키도 함께 바꾸며 DB 커밋 실패 시 파일명을 복원한다. 신뢰도 계산은 누락 이미지에 선택한 리비전 모델을 적용하며 파일명을 바꾸지 않는다. 저장 실패는 호출부로 전달하고 성공한 것으로 보고하지 않는다.
+
+### 수동 레이블 편집 (`data_source_label_edits`)
+
+`previous_name`, `new_name`, `edited_at`을 변경 이력으로 보관한다. `current_name`은 후속 파일명 변경을 따라 이동하는 현재 이미지 연결이며, 이미지 크기·mtime이 달라지거나 파일명이 재사용되면 연결만 해제한다. 과거 편집 내용은 유지한다. 편집 기록 추가와 예측 키 이동은 파일 이름 변경의 동일 DB 트랜잭션에서 수행한다.
