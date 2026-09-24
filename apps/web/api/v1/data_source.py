@@ -1,7 +1,11 @@
 import json
+from contextlib import closing
+
+import anyio
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 from web.services.data_source import (
 	DataSourceBusy,
@@ -21,6 +25,23 @@ from web.services.data_source import (
 
 
 router = APIRouter(tags=["api-v1"])
+
+
+class TaskStreamingResponse(StreamingResponse):
+	"""연결 종료 시 동기 작업 제너레이터를 닫아 작업 락을 즉시 반환한다."""
+
+	def __init__(self, content, **kwargs):
+		self.worker = content
+		super().__init__(content, **kwargs)
+
+	async def __call__(self, scope, receive, send):
+		try:
+			await super().__call__(scope, receive, send)
+		finally:
+			# 취소된 응답도 정리를 완료해야 한다. Starlette 스레드풀의 진행 중
+			# next()가 끝난 뒤 닫으므로 실행 중인 제너레이터를 강제 해제하지 않는다.
+			with anyio.CancelScope(shield=True):
+				await run_in_threadpool(self.worker.close)
 
 
 @router.get("/data-source/targets")
@@ -57,8 +78,9 @@ def _stream(captcha_id: str, rev: int, url: str, selector: str, count: int, dela
 	동기 제너레이터를 주면 Starlette 이 스레드풀에서 돌려준다.
 	"""
 	try:
-		for event in run(captcha_id, rev, url, selector, count, delay_ms, content_type):
-			yield _sse(event["type"], event)
+		with closing(run(captcha_id, rev, url, selector, count, delay_ms, content_type)) as events:
+			for event in events:
+				yield _sse(event["type"], event)
 	except DataSourceBusy as e:
 		# is_running() 확인과 실제 락 획득 사이에 다른 요청이 끼어든 경우.
 		yield _sse("error", {"message": str(e)})
@@ -79,7 +101,7 @@ async def data_source_stream(
 	delay_ms: int = Query(0),
 	content_type: str = Query("image"),
 ):
-	"""수집 진행 상황 SSE. EventSource 가 GET 만 지원해서 GET 이다."""
+	"""수집 진행 상황 SSE. 기존 GET 요청 URL을 유지한다."""
 	# 시작 전에 확인 가능한 오류는 스트림을 열기 전에 상태 코드로 알린다.
 	try:
 		clean_request(captcha_id, rev, url, selector, count, delay_ms, content_type)
@@ -89,7 +111,7 @@ async def data_source_stream(
 	if is_running():
 		raise HTTPException(status_code=409, detail="이미 다른 수집이 실행 중입니다")
 
-	return StreamingResponse(
+	return TaskStreamingResponse(
 		_stream(captcha_id, rev, url, selector, count, delay_ms, content_type),
 		media_type="text/event-stream",
 		headers={
@@ -102,8 +124,9 @@ async def data_source_stream(
 
 def _auto_label_stream(captcha_id: str, rev: int, device: str | None, min_confidence: float, rename_files: bool = True):
 	try:
-		for event in iter_auto_label(captcha_id, rev, device, min_confidence, rename_files=rename_files):
-			yield _sse(event["type"], event)
+		with closing(iter_auto_label(captcha_id, rev, device, min_confidence, rename_files=rename_files)) as events:
+			for event in events:
+				yield _sse(event["type"], event)
 	except DataSourceBusy as e:
 		yield _sse("error", {"message": str(e)})
 	except (ValueError, DataSourceError) as e:
@@ -124,7 +147,7 @@ async def data_source_auto_label_stream(
 		raise HTTPException(status_code=400, detail="min_confidence 는 0 ~ 1 범위여야 합니다")
 	if is_running():
 		raise HTTPException(status_code=409, detail="이미 다른 수집/라벨링이 실행 중입니다")
-	return StreamingResponse(
+	return TaskStreamingResponse(
 		_auto_label_stream(captcha_id, rev, device, min_confidence),
 		media_type="text/event-stream",
 		headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -140,7 +163,7 @@ async def data_source_confidence_stream(
 	"""DB 신뢰도가 없는 이미지에 대해서만 계산한다. 파일명을 변경하지 않는다."""
 	if is_running():
 		raise HTTPException(status_code=409, detail="이미 다른 수집/라벨링이 실행 중입니다")
-	return StreamingResponse(
+	return TaskStreamingResponse(
 		_auto_label_stream(captcha_id, rev, device, 0.0, rename_files=False),
 		media_type="text/event-stream",
 		headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

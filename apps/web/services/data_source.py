@@ -636,9 +636,9 @@ def run(captcha_id: str, rev: int, url: str, selector: str, count: int,
 	  {'type': 'item',    ...}  매 장마다. 실패도 이 이벤트로 알린다.
 	  {'type': 'summary', ...}  맨 마지막 한 번.
 
-	학습과 달리 작업이 이 제너레이터 안에서 돌기 때문에, 소비자가 끊으면 다음 yield
-	에서 GeneratorExit 가 도착해 finally 가 정상 실행된다 (services/train.py 의 주석
-	참고 — 그쪽은 큐 대기로 블로킹돼 close 가 도달하지 못한다).
+	연결 종료 시 API의 TaskStreamingResponse가 진행 중인 next()의 종료를 기다린 뒤
+	이 제너레이터를 명시적으로 close하여 finally에서 락을 반환한다. 참조가 남은
+	제너레이터의 GC에 정리를 맡기면 다음 수집 요청이 계속 409로 거절될 수 있다.
 	"""
 	import httpx
 

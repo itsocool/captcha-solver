@@ -7,6 +7,21 @@
 > 이 문서는 함수 본문과 분기 조건을 기준으로 작성했다. 웹 서비스와 모델 구현의 연결은
 > [web-architecture.md](./web-architecture.md), 데이터 구조는 [web-domain-model.md](./web-domain-model.md)를 참고한다.
 
+**분석 기준: 2026-09-24 현재 소스.** 아래 설명은 구현의 현행 동작이며, 모델 정확도나 운영 성능의
+보증이 아니다. [요구사항 정의서](./00.requirements.md)의 확정 ID는 `DS-001~007`, `DEV-001`이며,
+CRNN 구조·학습 정책 자체의 확정 ID는 아직 없다. 이 문서는 그 범위를 새 요구사항으로 확정하지 않는다.
+신뢰도 해석은 `DS-002~004`와 연결되지만, 해당 화면·DB 기능의 수용 검증은 요구사항 정의서를 따른다.
+
+| 읽을 내용 | 절 | 구현 근거 |
+|---|---|---|
+| 텐서 형상·모델 구성·CTC 학습 제약 | §1~2 | `CRNN`, `SpecAugment`, `FocalCTCLoss` |
+| 데이터 로더·학습 종료·체크포인트·추론 | §3 | `PyTorchModel` |
+| Prefix beam·길이 확률 DP·confidence | §4 | `ctc_beam_decode_fixed_length`, `length_logprob` |
+| 파일명 라벨·자동 감지·전처리·증강 | §5 | `TrainData`, `CaptchaDataset`, transform 함수 |
+| 레지스트리·웹 호출 경계·기본값 | §6 | `web.core.engine`, `web.services.train`, `web.services.captcha` |
+| 모델 파일 계약·export 검증 | §7 | `finalize_artifacts`, `CaptchaType.build_meta` |
+| 실행 예시·확인된 제약·재현 검증 | §8~10 | 호출 예시, 테스트 및 소스 대조 |
+
 모델·손실·디코더는 `aso_ai.core`, 캡차 레지스트리와 실행 진입점은 `web.core.engine`,
 전처리·경로·감지 정보는 `web.core.dataclass`가 소유한다. `aso_ai.core`의 데이터 타입 import는
 `TYPE_CHECKING` 안에 있고, 실행 중에는 전달받은 데이터 객체를 사용한다.
@@ -42,7 +57,7 @@ sidecar 캐시 갱신도 `TrainData.apply_meta()`에 위임한다. 웹 서비스
     └──────┬──────┘
            │
     ┌─────────────┐
-    │ Focal CTC   │  학습 시 log_softmax 후 FocalCTCLoss (표준 CTC 는 제거됨)
+    │ Focal CTC   │  학습 시 log_softmax → 샘플별 CTCLoss → Focal 가중치
     └─────────────┘
 ```
 
@@ -51,7 +66,8 @@ sidecar 캐시 갱신도 `TrainData.apply_meta()`에 위임한다. 웹 서비스
 ## 1. CRNN 모델 (`core.py` `class CRNN`)
 
 CRNN은 **CNN**으로 이미지를 특징 시퀀스로 바꾸고, **BiLSTM**으로 시퀀스를 모델링한 뒤, **CTC**로 텍스트를 출력하는 아키텍처다.
-입력 크기는 고정이며(전처리에서 리사이즈/크롭으로 보장), 생성자에서 더미 입력을 한 번 흘려 `feature_dim`과 `time_steps`를 계산한다.
+입력은 전처리·모델 설정이 일치하는 고정 크기를 전제로 하며, 생성자에서 더미 입력을 한 번 흘려
+`feature_dim`과 `time_steps`를 계산한다. 전처리와 메타데이터가 어긋나는 경우는 §3.6·§5.1을 참고한다.
 아래 `H/8`, `W/4` 표기는 풀링 결과를 줄여 쓴 것이다. 실제 크기는 각각 `H // 8`, `W // 4`다.
 
 ### 1.1 CNN Feature Extractor
@@ -96,6 +112,21 @@ Time steps:  T = W/4 = 30 (CTC 프레임 수)
 **생성자 검사**: `label_length`가 주어지면 `time_steps >= label_length`를 확인하고 위반 시 `ValueError`를 낸다.
 이 검사는 시퀀스 길이 하한만 확인하며 모든 타깃의 CTC 정렬 가능성을 보장하지는 않는다.
 
+기호는 `N=배치 크기`, `K=blank를 제외한 문자 수`, `T=시간 단계`로 구분하면 명확하다.
+CNN 채널 수 256과 출력 클래스 수 `K+1`은 다른 값이다.
+
+| 단계 | 텐서 형상 | 대법원 예시 (`H=40, W=120, K=10`) |
+|---|---|---|
+| 전처리·배치 구성 | `(N, 1, H, W)` | `(N, 1, 40, 120)` |
+| CNN | `(N, 256, H//8, W//4)` | `(N, 256, 5, 30)` |
+| 폭 방향 펼침 | `(N, T, 256*(H//8))` | `(N, 30, 1280)` |
+| 특징 투영·BiLSTM | `(N, T, 256)` | `(N, 30, 256)` |
+| 최종 로짓 | `(T, N, K+1)` | `(30, N, 11)` |
+
+생성자의 더미 CNN 실행은 `no_grad()` 안이지만 `eval()` 상태는 아니다. 따라서 BatchNorm의
+running 통계와 `num_batches_tracked`도 갱신된다. `no_grad()`는 학습 모드 전환과 다르다.
+높이는 feature projection의 입력 차원을 결정하므로 입력 크기와 체크포인트 구성을 함께 맞춰야 한다.
+
 ### 1.2 Feature Projection
 
 ```
@@ -119,6 +150,8 @@ Feature Projection 출력 `(N, T, 256)` 에 시간/주파수 마스킹을 건다
 `build_model()` 은 `spec_augment=True` 로 고정 생성한다.
 실제 입력은 `(N, T, C)`이며 마스크 위치는 배치 전체가 공유한다. 특징 텐서의 선택 영역을
 직접 0으로 바꾼다. `eval()`에서는 마스킹하지 않는다.
+마스크 폭은 1부터 상한까지 무작위로 선택하며, 마스크끼리 겹칠 수 있다. 여기서 `freq`는
+음성 주파수 자체가 아니라 투영된 특징 채널 축이다. 3차원 입력이 아니면 그대로 반환한다.
 
 ### 1.4 Bidirectional LSTM
 
@@ -189,6 +222,22 @@ class FocalCTCLoss(nn.Module):
 - blank 는 연속된 동일 문자를 분리하거나 반복 문자를 처리
 - `out.log_softmax(2) → CTCLoss` 순서 (`CRNN.forward` 내부)
 
+### 2.2 반복 문자와 학습 가능한 정렬
+
+CTC는 **연속된 같은 인덱스를 먼저 합친 뒤 blank를 제거**한다. blank를 먼저 지우면
+반복 문자의 의미가 달라진다. 예를 들어 `a,a,blank,a,b,b`는 `aab`가 되고,
+`a,a,a`는 `a`가 된다. `aa`에는 최소 `a,blank,a` 세 프레임이 필요하다.
+
+정답 길이 `L`과 인접한 동일 문자 쌍 수 `R`에 대해 필요한 최소 프레임은 `L+R`이다.
+예를 들어 `112233`은 `L=6, R=3`이므로 최소 9프레임이 필요하다. 현재 생성자는 `T>=L`만
+검사하고 `R`을 검사하지 않는다. 정렬 불가 샘플은 `zero_infinity=True` 때문에 CTC loss가 0이 되고,
+Focal loss도 0이 된다. 따라서 낮은 loss만으로 라벨·시간축 구성이 올바르다고 판단할 수 없다.
+
+샘플 `i`의 계산은 `l_i=-log P(y_i|x_i)`, `p_i=exp(-l_i)`,
+`f_i=0.25*(1-p_i)^2*l_i`이며 최종 loss는 `mean(f_i)`다. 이 `p_i`는 **정답 문자열의 CTC 확률**이고,
+추론 결과에서 반환하는 길이 조건부 confidence(§4)와 다르다. 현재 학습 루프는 문자열 정확도·CER을
+계산하지 않으며, best 선택과 early stopping은 검증 Focal loss만 사용한다.
+
 ---
 
 ## 3. PyTorchModel (`core.py` `class PyTorchModel`)
@@ -255,6 +304,11 @@ train_loader, val_loader = model.split_dataset(
 `num_workers`는 자신의 인자(기본 0)를 전달한다. 직접 `split_dataset()`을 호출할 때 pin-memory 판정은
 모델의 선택 디바이스가 아니라 시스템의 CUDA 가용 여부를 따른다.
 
+이 분할은 파일을 옮기지 않는다. `images/pred`는 검증 loader에 사용하지 않는 별도 평가 디렉터리다.
+`shuffle=False`도 `train_test_split`에만 적용되고 train DataLoader의 셔플은 계속 켜져 있다.
+가변 길이 padding·사용자 정의 collate·짧은 라벨 보정은 없으므로 모든 타깃은 같은 길이여야 한다.
+빈 데이터나 분할할 수 없을 만큼 작은 데이터셋은 pandas/sklearn 단계에서 예외가 전파된다.
+
 ### 3.4 학습 파이프라인 (`train_model`)
 
 ```python
@@ -295,6 +349,26 @@ model.train_model(
 `dropout` 인자는 `self.model is None`이라 모델을 새로 만들 때만 적용된다.
 `save_best=False`여도 종료 후 체크포인트 확정·export는 수행한다.
 
+종료 시 선택되는 가중치는 다음 분기를 따른다. 아래 표는 실행 전 남은 `.tmp`가 없을 때의 동작이다.
+
+| 조건 | 저장·선택 결과 |
+|---|---|
+| 검증 loader 있음, `save_best=True` | 엄격히 더 낮은 검증 loss가 나올 때마다 `.tmp` 교체 → best 에폭 승격 |
+| 검증 loader 없음, `save_best=True`, 10에폭 이상 | 마지막 10의 배수 에폭 `.tmp` 승격. 예: 15에폭 종료 시 10에폭 가중치 |
+| `.tmp` 없음 | 종료 시 메모리에 있는 가중치 저장 |
+| 기존 모델 loss ≤ 이번 best loss | `.tmp` 제거, 기존 파일 유지, `skipped` |
+| `epoch` 콜백이 `'discard'` 반환 | `.tmp` 제거, 파일 저장·export 생략 |
+
+실행 시작 시 이전 `.tmp`를 지우는 처리는 없다. 최종 승격은 `save_best` 값이 아니라 파일 존재를
+검사하므로, 실패한 과거 실행의 `.tmp`가 남아 있으면 선택에 영향을 줄 수 있다.
+`save_best=False`의 기존 모델 가드도 이번 **best loss**와 비교하지만, 새로 저장되는 것은
+종료 시 가중치이므로 두 대상이 같은 에폭이라는 보장은 없다.
+
+Warmup이 5라면 초기 optimizer LR은 `lr/5`로 시작한다. warmup 구간 뒤 cosine의
+`progress=min((step-warmup)/max(epochs-warmup,1),1)`를 사용한다.
+현재 루프는 NaN loss를 별도로 중단시키지 않으며, 모델·optimizer·scheduler·난수 상태를 묶은
+재개 체크포인트도 저장하지 않는다. `model.pth`는 가중치와 BatchNorm 버퍼를 포함한 state dict다.
+
 체크포인트 저장은 `*.writing`에 쓴 뒤 `os.replace`로 교체한다. export 파일별 저장 방식은 §7을 참고한다.
 
 ### 3.5 진행 이벤트 (`on_event`)
@@ -330,6 +404,12 @@ model.load_prediction_model(model_path=None)   # None → model.pth
 메타데이터의 `threshold`는 감지 캐시에 저장된다. 실제 전처리가 읽는 `TrainData.threshold`,
 `preprocess`, `crop`, 크롭 전 기준 크기는 이 과정에서 바뀌지 않는다. 학습 때의 전처리 설정도 함께 맞춰야 한다.
 `model_path`를 별도로 넘겨도 sidecar 조회 경로는 `TrainData.get_meta_path()`를 따른다.
+
+`_apply_meta()`는 완전한 스키마 검증기가 아니다. JSON 최상위가 객체인지, 크기·길이가 양수인지,
+문자셋이 중복 없는지, `blank_index`가 0인지 등을 일괄 검증하지 않는다. `_TrainInfo`의 타입 검증과
+정수 변환이 적용되는 범위와, 체크포인트 shape 검증을 구분해야 한다.
+문자셋은 개수뿐 아니라 **순서**도 맞아야 한다. 같은 개수의 다른 매핑은 `load_state_dict`가 성공해도
+다른 문자를 출력할 수 있다. 로드 시 `weights_only=False`를 사용하므로 신뢰할 수 있는 체크포인트를 전제로 한다.
 
 ### 3.7 추론 파이프라인
 
@@ -394,6 +474,59 @@ O(T·L·C), 상태 배열은 O(L·C)이며, 프레임마다 확률을 재스케�
 결과는 `[0, 1]`로 제한한다. 디코더는 `T == 0` 또는 `expected_length <= 0`이면 `('', 0.0)`을 반환한다.
 `length_logprob()`는 `L <= 0`, `T == 0`, `T < L`이면 `-inf`를 반환한다.
 
+### 4.1 Prefix 상태 전이
+
+prefix는 문자열이 아닌 **문자 인덱스 튜플**로 유지된다. `s`의 총점은
+`logaddexp(p_b(s), p_nb(s))`이고, 프레임의 클래스 log 확률을 `q(c)`라 할 때 전이는 다음과 같다.
+여러 경로가 같은 상태에 도착하면 최대값이 아니라 `_log_add()`로 합산한다.
+
+| 프레임 클래스 | 이동 대상 | 더하는 log 점수 |
+|---|---|---|
+| blank=0 | 같은 `s`의 blank 상태 | `total(s)+q(0)` |
+| 마지막 문자와 다른 `c` | `s+(c,)`의 nonblank 상태 | `total(s)+q(c)` |
+| 마지막 문자와 같은 `c`, blank를 안 거침 | 같은 `s`의 nonblank 상태 | `p_nb(s)+q(c)` |
+| 마지막 문자와 같은 `c`, blank를 거침 | `s+(c,)`의 nonblank 상태 | `p_b(s)+q(c)` |
+
+beam 점수는 greedy 경로 한 개의 확률이나 문자별 최대 확률 평균이 아니다.
+`top_k`는 blank를 포함한 출력 클래스 중 상위 후보 수이고, blank가 빠졌다면 따로 추가한다.
+`predict()`는 `top_k`를 노출하지 않으므로 기본 beam 10에서는 상위 최대 20개 클래스를 고른 뒤
+blank를 보장한다 (상위 20개에 blank가 없으면 총 21개).
+숫자 10종+blank는 전체 11클래스를 보지만, 더 큰 문자셋은 프레임별 후보부터 잘릴 수 있다.
+
+### 4.2 길이 확률 DP
+
+`length_logprob()`는 문자열 자체를 저장하지 않고 `(k,c)` 상태만 보관한다.
+`k`는 collapse 후 길이, `c`는 마지막 문자 인덱스이며 `B[0,0]=1`로 시작한다.
+`A[k,c]`는 현재 프레임이 문자 `c`인 확률, `B[k,c]`는 현재 프레임이 blank인 확률이다.
+
+프레임 확률을 `p(c)`, `S[k]=sum_c(A[k,c]+B[k,c])`라 하면:
+
+```text
+next_B[k,c]     = (A[k,c] + B[k,c]) * p(blank)
+next_A[k,c]     = A[k,c] * p(c)                      # 같은 문자 연속 유지
+next_A[k+1,c]  += max(S[k] - A[k,c], 0) * p(c)       # c>=1, 새 문자 추가
+```
+
+`S[k]-A[k,c]`에는 다른 문자로 끝난 경로와 blank로 끝난 경로가 포함된다.
+매 프레임 `A+B`의 전체 합으로 배열을 나누고 그 합의 로그를 누적한다. 마지막에는
+`log(sum(A[L]+B[L])) + 누적 log_scale`을 반환한다. 길이가 L을 넘는 상태는 유지하지 않는다.
+
+### 4.3 신뢰도의 해석과 실패 경계
+
+- 길이 L 전체 질량이 0.2이고 선택 prefix의 남은 질량이 0.1이면 confidence는 0.5다.
+  길이 조건을 건 값이므로 길이 L 자체가 드문 입력에서도 높게 나올 수 있다.
+- 분모 DP는 전체 클래스·경로를 고려하지만 분자는 beam에서 버린 경로를 복원하지 않는다.
+  `beam_width` 또는 `top_k` 변경은 예측뿐 아니라 confidence에도 영향을 줄 수 있다.
+- 정확한 길이 후보가 없으면 길이가 가장 가까운 후보를 찾는 것이 아니라 **점수가 가장 높은 후보**를
+  반환한다. 따라서 `fixed_length`라는 이름만으로 항상 길이 L을 보장하지 않는다.
+- `mapping_inv`에 없는 인덱스는 `[UNK]`로 문자열화한다. 길이 제약은 토큰 수에 적용되므로
+  이때 반환 문자열의 Python `len()`은 L보다 길 수 있다.
+- 입력은 `(T,K+1)`의 정규화된 log 확률, 0번 blank, `beam_width>=1`을 전제로 사용한다.
+  함수에 모든 인자·NaN·확률 정규화를 검증하는 방어 코드는 없다.
+
+이 값은 모델 예측의 점수이며 수동 라벨의 정확도를 뜻하지 않는다. `/data-source`의 구간색·자동 이름 변경
+기준·저장값 정책(`DS-002~004`)과 모델 confidence 계산은 별개 계층이다.
+
 ---
 
 ## 5. 데이터 흐름
@@ -416,17 +549,32 @@ O(T·L·C), 상태 배열은 O(L·C)이며, 프레임마다 확률을 재스케�
 경로 규약: `captcha_data/<captcha_id>/<rev>/images/{train,pred}/`, `.../model/`. 파일명 = 정답 라벨. 리비전은 **1부터 시작**한다 (`TrainData.rev` 기본값 1).
 `get_data_files()` 는 파일명 길이가 `detected_label_length` 와 같은 PNG 만 돌려준다.
 
+파일명 라벨은 엄밀히 `basename.split('.')[0]`이다. 예를 들어 `123456.extra.png`의 학습 라벨은
+`123456`이다. 감지 단계는 **길이를 필터링하기 전 모든 소문자 `.png`**를 사용하므로,
+잘못 긴 파일명 하나가 최대 길이를 바꾸고 정상 파일들을 loader 대상에서 제외할 수 있다.
+제외된 짧은 파일의 문자도 감지 문자셋에는 남는다. 대문자 `.PNG`는 이 glob에 포함되지 않는다.
+
+이미지가 없으면 감지 캐시는 `None`이고 생성자 기본값으로 폴백한다. 숫자 캡차라도 기본
+`characters=[]`이므로 데이터·유효한 sidecar 없이 자동으로 숫자 10종을 채우지는 않는다.
+감지는 생성 시 캐시되며 파일 변경을 감시하지 않는다. 재감지는 새 `TrainData`/모델 생성으로 수행한다.
+마지막 파일 한 장으로 크기를 정하므로 전체 이미지 크기·무결성 검사를 대신하지 않는다.
+
 ### 5.2 전처리 (`TrainData.image_pre_process`)
 
 `TrainData.preprocess` 값에 따라 분기한다. 모두 결과는 그레이스케일(`L`) PIL 이미지다.
 
 | `preprocess` | 흐름 | 사용 캡차 |
 |--------------|------|-----------|
-| `default` | RGBA→흰 배경 합성 → `L` → 임계값(`0<threshold<255` 이면 `p>threshold → 255`) → 테두리 2px 제거 → 밝기 >128 → 255 → 감지 크기로 리사이즈 | gov24(threshold=60), wetax |
+| `default` | RGBA→흰 배경 합성 → `L` → 임계값(`0<threshold<255` 이면 `p>threshold → 255`) → 테두리 2px 제거 → 밝기 >128 → 255 → 감지 크기로 리사이즈 | gov24(threshold=60), wetax, iros |
 | `supreme_court` | RGBA면 흰 배경 합성. 그 외 모드에서 폭·높이가 모두 감지 크기보다 크면 감지 W/H 기준 `(3,1,W-1,H-7)` 크롭 후 캔버스 `(1,1)`에 붙임 → `L` → 테두리 제거 → 배경 흰색 → 감지 크기로 리사이즈 | supreme_court |
 | `iptime` | RGBA면 흰 배경 합성 → `L` → 필요 시 기준 크기(200x70)로 리사이즈 → `crop=[27,10,195,70]` (168x60). 임계값·테두리 제거·크롭 후 리사이즈 없음 | iptime |
 
 크롭 박스는 PIL `(left, top, right, bottom)` 이며 `model.meta.json` 에 `crop` / `crop_source` 로 실려 다른 언어 클라이언트가 재현한다.
+
+임계값보다 어두운 픽셀을 0으로 만드는 완전 이진화는 아니다. 원래 밝기를 유지하고 밝은 영역만
+255로 바꾼다. 테두리 제거는 흰색으로 덮는 것이 아니라 실제 crop이며, 양쪽 2px를 제거할 수 없는
+작은 이미지는 그대로 둔다. resize에 필터 인자를 명시하지 않는다.
+알 수 없는 `preprocess` 문자열은 예외 대신 `default` 분기로 들어간다.
 
 ### 5.3 학습 Transform (`core.py` `get_train_transform`)
 
@@ -469,20 +617,29 @@ dataset = CaptchaDataset(df, path, mapping, transform)
 
 둘 다 디스크의 파일을 **실제로 옮기는** 파괴적 동작이다.
 
+웹 학습의 `train_ratio`는 이 **디스크 재분배 비율**이고, `split_dataset()`의 train/val 비율 0.8과 다르다.
+웹 기본 `train_ratio=0.6`을 재분배에 적용하면 충돌·반올림·필터 제외가 없다는 전제에서 전체의
+약 48%가 학습, 12%가 검증, 40%가 `pred`가 된다. 기본 `shuffle=False`면 재분배하지 않는다.
+재분배 함수는 seed=42지만 수집 목록을 정렬하지 않고, train/val 분할·증강에도 고정 seed가 없으므로
+전체 학습 재현성이 확보된다는 뜻은 아니다.
+
 ---
 
 ## 6. engine 진입점 (`web.core.engine`)
 
 ### 6.1 캡차 레지스트리
 
-`get_captcha_type_list(train_data_base_dir="./captcha_data")` 가 `CaptchaType` 4종을 코드로 등록한다. 등록은 이 함수가 유일한 소스다.
+`get_captcha_type_list(train_data_base_dir="./captcha_data")` 가 `CaptchaType` 5종을 코드로 등록한다.
+엔진이 모델을 만드는 기준은 이 함수다. DB의 서비스 노출 설정과 학습 설정 기록은 별도로 존재하며,
+`get_captcha_model()`은 DB에서 레지스트리 구성을 읽지 않는다.
 
 | `captcha_id` | preprocess | 기준 크기 | crop | 기타 |
 |--------------|-----------|-----------|------|------|
 | `supreme_court` | `supreme_court` | 120x40 | — | |
 | `gov24` | `default` | (기본 200x50) | — | `threshold=60` |
-| `wetax` | `default` | 높이 60 | — | |
+| `wetax` | `default` | 200x60 | — | |
 | `iptime` | `iptime` | 200x70 | `[27,10,195,70]` → 168x60 | `label_length=5`, `characters=a-z` (유일한 비숫자) |
+| `iros` | `default` | 200x60 | — | 인터넷등기소. wetax와 같은 전처리, 독립된 `iros/<rev>` 데이터·모델 경로 |
 
 모든 캡차의 rev 는 기본값 1 이다 (리비전은 1부터 시작). `with_rev(captcha_type, rev)` 는 rev 만 바꾼 사본을 만든다 — `TrainData` 가 다시 생성되면서 해당 rev 기준으로 재감지된다.
 
@@ -494,6 +651,9 @@ model = engine.get_captcha_model(train_data_base_dir="./captcha_data", captcha_i
 ```
 
 > `engine` 자체에는 모델 캐시가 없다. 호출마다 새 `PyTorchModel` 을 만든다. 메모리 캐시(`_MODEL_CACHE`)는 `apps/web/services/captcha.py` 가 관리한다.
+
+표의 크기는 등록 기본값이며 학습 데이터 감지값·추론 sidecar에 의해 달라질 수 있다.
+`iros` 등록 함수 자체가 wetax 파일을 복사하거나 wetax 모델 경로를 공유하는 것은 아니다.
 
 ### 6.2 학습 (`engine.train_model`)
 
@@ -535,6 +695,39 @@ text, confidence = engine.predict(model, image_path, verbose=1, unk_token="[UNK]
 단, 모델 로드는 `start` 이벤트 이전에 수행하므로 체크포인트 로드 실패는 전체 호출의 예외가 된다.
 이 경로는 이미지를 한 장씩 처리하며 `PyTorchModel.predict_batch()`를 사용하지 않는다.
 
+기본 디렉터리는 `get_data_files(train=False)`의 PNG·라벨 길이 필터를 거친다. 반면 사용자 지정
+`pred_image_dir`는 정렬한 `*.*`를 사용하므로 이미지가 아닌 파일도 시도 후 오류 item이 될 수 있다.
+`expected`는 `os.path.splitext(image_name)[0]`여서 §5.1의 첫 점 기준 학습 라벨과 다를 수 있다.
+`index`는 0부터 시작하며, `elapsed_sec`는 모델 로드 이후의 평가 시간이다.
+
+### 6.5 웹 호출 경계와 기본값
+
+| 항목 | `PyTorchModel.train_model` 직접 호출 | `engine.train_model` | 웹 학습의 저장값 없는 기본값 |
+|---|---|---|---|
+| epochs | 50 | 80 | 80 |
+| batch size | 전달한 loader 값 | 32 | 64 |
+| learning rate | `lr=1e-4` | `learning_rate=0.001` | 0.001 |
+| warmup | 5 | 0 | 0 |
+| early stopping patience | 0 (꺼짐) | 15 | 15 |
+| loss | 인자 → 인스턴스 → focal | focal | focal |
+| train/val 분할 | 전달한 loader 구성 | 0.8/0.2 | 엔진의 0.8/0.2 |
+
+근거: [`services/train.py`](../apps/web/services/train.py)의 `PARAM_SPEC`, `clean_params`, `start`.
+웹은 범위 검증 후 대상별 학습 파라미터를 DB에 저장하고, 별도 워커 스레드에서 새 모델을 생성한다.
+학습 세션은 SSE 연결과 수명이 분리되며 페이지를 닫아도 계속된다. 중단 플래그는 다음 `epoch`
+콜백에서 반영되므로 요청 즉시 미니배치를 중단하는 방식이 아니다. 학습 정보는 시작 때 DB에 기록하고,
+sidecar는 아티팩트 확정 때 기록한다.
+
+서빙 [`services/captcha.py`](../apps/web/services/captcha.py)의 캐시 키는 `(captcha_id, device_key)`이며
+rev·체크포인트 mtime을 포함하지 않는다. 가중치 로드 성공 후에만 캐시에 넣고, 실패 인스턴스는 넣지 않는다.
+웹 학습은 별도 인스턴스를 사용하고 완료 후 이 캐시를 비우지 않으므로, 이미 로드된 서빙 모델이 새 파일을
+자동으로 읽지는 않는다. 프로세스 재시작 등 재로드가 필요하다. `get_model()` 자체는 rev 선택 API가 아니다.
+
+웹의 디바이스 선택은 [`core/device.py`](../apps/web/core/device.py)의 `resolve()`를 먼저 거친다.
+CUDA 커널 실행 가능 여부까지 검사하여 `auto`는 실패 시 CPU로 폴백하고, 명시적 `cuda`는 오류를 낸다.
+반면 `engine.get_captcha_model(device=None)`/CLI는 `PyTorchModel`의 `torch.cuda.is_available()` 기준을
+사용한다. 엔진에 문자열 `'auto'`를 직접 넘기면 이 웹 resolver를 거치지 않는다.
+
 ---
 
 ## 7. 파일 저장 형식 (`finalize_artifacts`)
@@ -545,7 +738,7 @@ text, confidence = engine.predict(model, image_path, verbose=1, unk_token="[UNK]
 
 | 파일 | 형식 | 생성 방법 | 용도 |
 |------|------|-----------|------|
-| `model.pth` | `state_dict` | `torch.save` (`.tmp` → `os.replace`) | 파이썬 추론·재학습 기준 체크포인트 |
+| `model.pth` | `state_dict` | `torch.save` → `.writing` 교체, best 후보는 `.tmp` 승격 | 파이썬 추론·가중치 초기화 기준 (optimizer 재개 정보 없음) |
 | `model.pt2` | `torch.export` 아카이브 | `torch.export.export(wrapper, (dummy,))` → `torch.export.save`, 배치 1 고정 | PyTorch 런타임에서 원래 CRNN 클래스 정의 없이 그래프 로드 |
 | `model.onnx` | ONNX | `torch.onnx.export(..., opset_version=17, dynamo=False)`, 입력 `input`/출력 `output`, 배치 1 고정 | Rust CLI / Spring Boot / WinConsoleApp |
 | `model.ort` | ORT flatbuffer | `onnxruntime` 세션 옵션 `ORT_ENABLE_EXTENDED` + `save_model_format=ORT` | 로드 빠름, minimal build 런타임용 (`ENABLE_ALL` 은 CPU 명령셋 종속이라 쓰지 않음) |
@@ -554,6 +747,11 @@ text, confidence = engine.predict(model, image_path, verbose=1, unk_token="[UNK]
 export 는 `_InferenceWrapper` (추론 전용 `forward(x)`) 로 감싸 학습용 `y/criterion` 인자를 감춘다.
 입력은 `(1, 1, H, W)`, 출력은 **log_softmax 이전 로짓 `(T, 1, C+1)`**이다.
 `finalize_artifacts()`의 순서는 체크포인트 재로드 → `.pt2` → `.onnx` → `.ort` → meta 저장 → 검증이다.
+
+내보낸 그래프에는 PIL 전처리, 문자 매핑, CTC 디코딩, confidence 계산이 포함되지 않는다.
+소비자는 sidecar와 같은 전처리로 float32 NCHW 입력을 만들고, TNC 로짓에 log-softmax와 디코더를
+적용해야 한다. `blank_index=0`과 문자 순서, 입력 W/H, 라벨 길이를 모델 파일과 함께 배포해야 한다.
+`_InferenceWrapper.forward()`는 CRNN 반환 튜플의 첫 번째 로짓만 반환한다.
 
 `onnxruntime` 은 export/검증 시점에만 늦게 import 한다 (`_require_onnxruntime`).
 
@@ -632,8 +830,12 @@ uv run --project apps/web aso-ai -c supreme_court -i path/to/image.png -v
 uv run --project apps/web python -m aso_ai -c supreme_court -i path/to/image.png
 ```
 
-CLI 는 **현재 작업 디렉토리** 기준 `./captcha_data` 를 쓴다. 종료 코드: 이미지 없음 2, 모델 생성 실패 3.
-기본 출력은 예측 문자열(개행 없음), `-v`는 예측·confidence·소요 시간 JSON이다.
+CLI 는 **현재 작업 디렉토리** 기준 `./captcha_data` 를 쓰고 `./logs/main.log`를 만든다.
+종료 코드: 이미지 없음 2, 모델 생성 실패 3. 체크포인트 로드·추론 예외는 이 두 반환 분기 밖에서 전파된다.
+기본 출력은 예측 문자열(개행 없음)이다. `-v`는 마지막에 예측·confidence·소요 시간 JSON을 출력하지만
+모델·엔진의 verbose 출력도 섞이므로 stdout 전체가 단일 JSON 문서는 아니다.
+현재 CLI에 rev·device 옵션은 없고, `-i` 생략 시 기본 경로는 과거 `supreme_court/0/images/draft`의
+샘플 JPG를 가리킨다. 위 예시처럼 실제 이미지 경로를 명시한다.
 웹 서비스는 설정의 `CAPTCHA_DATA_DIR`을 엔진에 명시적으로 전달한다. 직접 엔진을 호출할 때의 기본
 `./captcha_data`와 실행 위치가 다를 수 있으므로 경로를 구분한다.
 
@@ -642,3 +844,106 @@ CLI 는 **현재 작업 디렉토리** 기준 `./captcha_data` 를 쓴다. 종�
 웹 `/train`에서 학습하고 `/predict`에서 일괄 평가한다. Python에서 직접 실행할 때는
 `web.core.engine.get_captcha_model()`로 모델을 만들고 `engine.train_model()` 또는
 `engine.batch_predict_model()`을 호출한다. 하드코딩된 수동 실행 스크립트는 제거했다.
+
+---
+
+## 9. 구현상 제약과 진단 순서
+
+아래는 코드에서 확인한 현행 제약이다. 이번 문서 갱신에서 실행 코드를 수정하지 않았으며,
+별도 요구사항·수정 계획으로 확정한 목록은 아니다.
+
+| 증상·오해 | 먼저 확인할 근거 | 실제 의미·한계 |
+|---|---|---|
+| checkpoint shape mismatch | `model.meta.json`, 감지 W/H·문자 수, §3.6 | sidecar 적용 후 빌드한다. 전처리 전체를 sidecar로 복원하지는 않음 |
+| shape는 맞는데 다른 문자 출력 | `characters`의 순서·중복 | 가중치의 출력 인덱스와 매핑 순서가 같아야 함 |
+| 일부 학습 이미지가 사라진 것처럼 보임 | `get_data_files`, §5.1 | 최대 파일명 길이와 다른 라벨은 loader에서 제외됨 |
+| loss가 매우 낮지만 정확도가 나쁨 | 반복 문자 최소 프레임, `zero_infinity`, §2.2 | 정렬 불가 loss=0과 실제 인식 성능을 구분해야 함 |
+| confidence가 높아도 오답 | 길이 조건부 정규화·beam 근사, §4 | 보정된 실제 정답률이나 분포 밖 입력 탐지 점수가 아님 |
+| 중단 버튼 직후에도 학습 진행 | `epoch` 콜백, §3.5 | 미니배치 중간 취소 없음 |
+| 새 모델 파일 저장 후 API 결과가 그대로 | `(captcha_id, device)` 캐시, §6.5 | 학습 완료가 이미 로드된 서빙 객체를 갱신하지 않음 |
+| `skipped`/discard 뒤 직접 predict 결과가 다름 | 디스크와 메모리 모델, §3.5 | 메모리는 이번 학습 상태. 기존 체크포인트를 명시적으로 다시 로드해야 함 |
+| export 실패 후 파일들이 서로 다름 | `finalize_artifacts`의 순서, §7.2 | 파일별 교체일 뿐 묶음 rollback 없음 |
+| 동적 ONNX 배치·입력 크기 기대 | `export_onnx`, §7.2 | 기본은 배치 1·고정 H/W. 동적 출력 배치 축 선언에 불일치 존재 |
+| 재분배 후 파일 수 차이 | `redistribute_train_pred`, §5.5 | 중복 이름 분기의 삭제·미이동, 개별 이동 실패를 확인해야 함 |
+
+소스 주석과 함수 본문이 다른 부분도 구분해야 한다. `Residual Connection`은 실제 구조에 없고,
+`CRNN.forward`의 반환 로짓은 docstring의 `log probabilities`와 다르다. `train_model` docstring에
+남은 `'ctc'` 옵션은 지원하지 않는다. 디코더 주석의 “beam_width는 신뢰도와 무관”,
+“길이가 가장 가까운 후보”도 실제 분기와 다르다. 본문 설명은 실행 코드 기준으로 작성했다.
+
+## 10. 검증 범위와 재현
+
+### 10.1 기존 회귀 검사
+
+저장소 루트에서 설치된 웹 venv를 사용한다. CPU로 한정하여 CUDA 커널·운영 모델 파일에 의존하지 않는다.
+
+```bash
+CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+  apps/web/.venv/bin/python -m pytest \
+  tests/test_prediction_model_load.py tests/test_captcha_service_cache.py \
+  tests/test_iros_type.py tests/test_device.py -q
+```
+
+| 검사 파일 | 문서와 연결되는 검증 |
+|---|---|
+| `test_prediction_model_load.py` | 손상된 checkpoint 오류 전파, 실패 모델 복원, sidecar의 감지값·문자셋 우선 적용 |
+| `test_captcha_service_cache.py` | 로드 실패 객체를 서빙 캐시에 남기지 않음, 같은 요청 재시도에서도 실패 노출 |
+| `test_iros_type.py` | iros 독립 경로·wetax와 같은 전처리, DB 초기화 시 기존 설정 보존 |
+| `test_device.py` | torch mock으로 CUDA 실행 검사 성공/실패 분기·CPU 폴백·명시적 CUDA 오류 |
+
+### 10.2 CTC 확률 재현 검사
+
+학습 데이터 없이 3클래스(blank/a/b)의 모든 프레임 경로를 열거한다. 같은 문자 연속 병합 후 blank를
+제거한 정답 확률과 DP 분모, 충분히 넓은 beam의 예측·confidence를 대조한다. beam 가지치기의
+영향을 제거한 작은 사례 검사이므로 기본 beam=10의 정확도 보증은 아니다.
+
+```bash
+CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+  apps/web/.venv/bin/python - <<'PY'
+import itertools
+from collections import defaultdict
+import numpy as np
+from aso_ai.core import ctc_beam_decode_fixed_length, length_logprob
+
+rng = np.random.default_rng(42)
+checked = 0
+for frames in range(1, 6):
+    probs = rng.uniform(0.01, 1, (frames, 3))
+    probs /= probs.sum(axis=1, keepdims=True)
+    mass = defaultdict(float)
+    for path in itertools.product(range(3), repeat=frames):
+        label = tuple(c for i, c in enumerate(path)
+                      if c != 0 and (i == 0 or c != path[i - 1]))
+        mass[label] += float(np.prod([probs[i, c] for i, c in enumerate(path)]))
+    for length in range(1, frames + 1):
+        exact = {label: p for label, p in mass.items() if len(label) == length}
+        total = sum(exact.values())
+        best = max(exact, key=exact.get)
+        log_probs = np.log(probs)
+        assert np.isclose(np.exp(length_logprob(log_probs, length)), total)
+        text, confidence = ctc_beam_decode_fixed_length(
+            log_probs, {1: 'a', 2: 'b'}, length, beam_width=1000, top_k=3,
+        )
+        assert text == ''.join('ab'[c - 1] for c in best)
+        assert np.isclose(confidence, exact[best] / total)
+        checked += 1
+print(f'{checked}개 T/L 조합 검증 통과')
+PY
+```
+
+### 10.3 이번 분석의 실제 검증 결과
+
+2026-09-23~24 검사 결과는 아래와 같다. 정적 분석과 실행 검증을 구분한다.
+실행 환경은 Python 3.13.15, PyTorch 2.14.0+cu126, NumPy 2.5.3이며 이번 검사는 CPU를 사용했다.
+
+- 기존 회귀 검사: **16건 통과**.
+- CPU 합성 입력: 120×40·200×50·200×60·168×60의 4가지 CRNN 구성에서 배치 2의 출력 형상,
+  feature dimension, Focal loss의 유한값·backward, 생성 시 BatchNorm 카운터 갱신을 확인했다.
+- CTC 경로 전수 열거: `T=1~5`, `L=1~T`의 **15개 조합**에서 길이 확률·최적 문자열·confidence 일치를 확인했다.
+  반복 문자 `aa`의 `T=2` 정렬 불가 loss=0, 빈 입력, `T<L` 경계도 확인했다.
+- 임시 디렉터리: 5종 레지스트리, iptime RGBA 크롭 결과 168×60, threshold=60의 60/61 경계,
+  평가 텐서 float32·형상, 첫 점 기준 라벨 및 대문자 확장자 제외를 확인했다.
+- 문서: 상대 링크 대상 존재, 코드 예시 문법, §10.2 명령 직접 실행을 확인했다.
+- 미실행: 실제 데이터 재학습·정답률 측정, CUDA AMP/compile, `.pt2`/ONNX/ORT 신규 export와 다중 런타임
+  출력 비교, 웹 UI 조작. 저장·중단·export 전체 흐름은 함수 본문과 호출자를 대조한 정적 분석이다.
+  운영 이미지·모델·DB는 변경하지 않았다.

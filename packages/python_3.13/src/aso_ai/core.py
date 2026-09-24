@@ -133,7 +133,7 @@ class SpecAugment(nn.Module):
         
         return features
 
-def get_train_transform(train_data: TrainData):
+def get_train_transform(train_data: TrainData, profile: str = 'current'):
     """
     학습용 Transform (Data Augmentation 포함) - torchvision.transforms.v2 사용
     
@@ -145,6 +145,14 @@ def get_train_transform(train_data: TrainData):
     - ColorJitter 확대: 밝기/대비 변화 대응
     - RandomErasing: 일부 영역 누락 대응
     """
+    if profile == 'weak':
+        return T.Compose([
+            T.Lambda(lambda img: train_data.image_pre_process(img)),
+            T.RandomAffine(degrees=3, translate=(0.02, 0.02), scale=(0.98, 1.02), fill=255),
+            T.ToImage(), T.ToDtype(torch.float32, scale=True),
+        ])
+    if profile != 'current':
+        raise ValueError(f'알 수 없는 증강 프로필: {profile}')
     return T.Compose([
         T.Lambda(lambda img: train_data.image_pre_process(img)),
         T.RandomAffine(
@@ -354,8 +362,20 @@ class CRNN(nn.Module):
             
             input_lengths = torch.full(size=(N,), fill_value=T, dtype=torch.long, device=out.device)
             target_lengths = torch.full(size=(N,), fill_value=self.label_length, dtype=torch.long, device=out.device)
-            out_log = out.log_softmax(2)
-            loss = criterion(out_log, y, input_lengths, target_lengths)
+            if y.ndim != 2 or y.shape != (N, self.label_length):
+                raise ValueError(f'CTC 라벨 길이 불일치: {tuple(y.shape)}')
+            if torch.any(y <= 0) or torch.any(y >= out.size(2)):
+                raise ValueError('CTC 라벨에 blank 또는 미등록 문자가 있습니다')
+            required = target_lengths + (y[:, 1:] == y[:, :-1]).sum(dim=1)
+            invalid = torch.where(required > T)[0].tolist()
+            if invalid:
+                raise ValueError(f'CTC 정렬 불가: 배치 내 표본 {invalid}, 시간축 {T}')
+            # AMP의 CNN/RNN 출력도 log-softmax와 CTC 계산에서는 FP32로 유지한다.
+            with autocast(device_type=out.device.type, enabled=False):
+                out_log = out.float().log_softmax(2)
+                loss = criterion(out_log, y, input_lengths, target_lengths)
+            if not torch.isfinite(loss):
+                raise ValueError(f'CTC loss NaN/Inf: 라벨 인덱스 {y.detach().cpu().tolist()}')
             
             return out, loss
         
@@ -587,13 +607,15 @@ class PyTorchModel:
         
         return pred_loader
     
-    def build_model(self, dropout: float = 0.1) -> nn.Module:
+    def build_model(self, dropout: float = 0.1, spec_augment: str = 'current') -> nn.Module:
         """
         CRNN 모델 생성
         
         Args:
             dropout: Dropout 비율 (기본: 0.1)
         """
+        if spec_augment not in ('current', 'weak', 'off'):
+            raise ValueError(f'알 수 없는 SpecAugment: {spec_augment}')
         img_width, img_height = self.image_width, self.image_height
 
         if self.verbose > 0:
@@ -605,8 +627,13 @@ class PyTorchModel:
             img_width=img_width,
             label_length=self.label_length,
             dropout=dropout,
-            spec_augment=True,
+            spec_augment=spec_augment != 'off',
+            spec_time_mask_size=4 if spec_augment == 'weak' else 15,
+            spec_freq_mask_size=4 if spec_augment == 'weak' else 8,
         )
+        if spec_augment == 'weak':
+            model.spec_augment_processor.time_mask_count = 1
+            model.spec_augment_processor.freq_mask_count = 1
         model.to(self.device)
         
         # torch.compile 지원 (PyTorch 2.0+)
@@ -628,7 +655,11 @@ class PyTorchModel:
                    warmup_epochs: int = 5, early_stopping_patience: int = 0,
                    weight_decay: float = 1e-4, grad_clip: float = 5.0,
                    loss_type: str = None, dropout: float = 0.1,
-                   on_event=None) -> List[float]:
+                   on_event=None, *, initialization: str | None = None,
+                   initial_checkpoint: str | None = None, spec_augment: str = 'current',
+                   selection_metric: str = 'loss', export_artifacts: bool = True,
+                   min_epochs: int = 0, deadline: float | None = None,
+                   on_validation=None) -> List[float]:
         """
         모델 학습 (PyTorch 2.0+ 최적화, AMP 지원)
         
@@ -650,6 +681,14 @@ class PyTorchModel:
                       평소처럼 확정된다). 'discard' 를 돌려주면 중단하면서 .tmp 를 버려
                       기존 아티팩트를 그대로 둔다 (웹 UI 의 "저장 없이 중단").
                       웹의 진행률 스트리밍용이며, 주지 않으면 기존 동작 그대로다.
+            initialization: None이면 기존 모델을 유지, scratch/finetune이면 명시적 초기화.
+            initial_checkpoint: finetune의 가중치와 같은 이름의 .meta.json 경로 기준.
+            spec_augment: 명시적 초기화 시 current/weak/off.
+            selection_metric: loss(기본) 또는 accuracy→CER→loss.
+            export_artifacts: False이면 체크포인트만 저장한다.
+            min_epochs: 이 에폭까지 patience를 누적하지 않는다.
+            deadline: time.monotonic 기준 종료 시각, 배치 경계에서 검사한다.
+            on_validation: 정확도 평가의 (에폭, 지표, 표본별 예측) 콜백.
         """
         def _emit(event_type: str, **payload):
             """진행 이벤트 전달. 콜백의 반환값(False/'discard')을 그대로 돌려준다."""
@@ -657,11 +696,22 @@ class PyTorchModel:
                 return True
             return on_event({'type': event_type, **payload})
 
-        if self.model is None:
+        if selection_metric not in ('loss', 'accuracy'):
+            raise ValueError(f'알 수 없는 선택 지표: {selection_metric}')
+        if epochs < 1 or min_epochs < 0 or min_epochs > epochs:
+            raise ValueError('에폭 범위 오류')
+        if selection_metric == 'accuracy' and val_loader is None:
+            raise ValueError('정확도 기준 선택에는 검증 loader가 필요합니다')
+        model_path = model_path if model_path is not None else self.get_model_path()
+        if selection_metric == 'accuracy' and os.path.exists(model_path):
+            raise FileExistsError('정확도 비교는 새로운 실행 경로에 저장해야 합니다')
+        if initialization is not None:
+            from .experiments import initialize_model
+            initialize_model(self, initialization, initial_checkpoint,
+                             spec_augment=spec_augment, dropout=dropout)
+        elif self.model is None:
             self.model = self.build_model(dropout=dropout)
 
-        model_path = model_path if model_path is not None else self.get_model_path()
-           
         # AdamW 옵티마이저 (weight decay 포함, fused=True for CUDA)
         use_fused = self.device.type == 'cuda' and hasattr(optim.AdamW, 'fused')
         optimizer = optim.AdamW(
@@ -701,6 +751,9 @@ class PyTorchModel:
         best_val_loss = float('inf')
         patience_counter = 0
         best_epoch = 0
+        best_score = None
+        best_metrics = None
+        best_elapsed_sec = None
         
         if self.verbose > 0:
             print(f"\nStarting training for {epochs} epochs...")
@@ -727,6 +780,7 @@ class PyTorchModel:
         train_started_at = time.time()
         stop_reason = ''
         epochs_run = 0
+        total_optimizer_steps = 0
 
         _emit('start',
               captcha_id=self.train_data.captcha_id, rev=self.train_data.rev,
@@ -741,12 +795,17 @@ class PyTorchModel:
               use_amp=scaler is not None, model_path=model_path)
 
         for epoch in range(epochs):
+            epoch_started_at = time.monotonic()
             # === Training Phase ===
             self.model.train()
             tk = tqdm(train_loader, total=len(train_loader), desc=f"Epoch {epoch+1}/{epochs} [Train]")
             epoch_train_loss = []
+            amp_skipped_steps = 0
+            optimizer_steps = 0
             
-            for data, target in tk:
+            for batch_index, (data, target) in enumerate(tk):
+                if deadline is not None and time.monotonic() >= deadline:
+                    raise TimeoutError('학습·평가 시간 예산 소진')
                 data = data.to(device=self.device, non_blocking=True)
                 target = target.to(device=self.device, non_blocking=True)
                 
@@ -754,6 +813,7 @@ class PyTorchModel:
                 
                 # AMP Forward Pass
                 if scaler is not None:
+                    previous_scale = scaler.get_scale()
                     with autocast(device_type=self.device.type, dtype=amp_dtype):
                         out, loss = self.model(data, target, criterion=criterion)
                     
@@ -763,19 +823,29 @@ class PyTorchModel:
                     # Gradient Clipping (unscale 후)
                     if grad_clip > 0:
                         scaler.unscale_(optimizer)
+                        # 동적 loss scaling의 초기 overflow는 GradScaler가 해당 step을
+                        # 건너뛰고 배율을 낮춘다. 유한한 loss와 구분하여 이벤트로 기록한다.
                         torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=grad_clip)
                     
                     scaler.step(optimizer)
                     scaler.update()
+                    if scaler.get_scale() < previous_scale:
+                        amp_skipped_steps += 1
+                        _emit('numerical_warning', reason='amp_gradient_overflow',
+                              epoch=epoch + 1, batch=batch_index + 1,
+                              previous_scale=previous_scale, new_scale=scaler.get_scale())
+                    else:
+                        optimizer_steps += 1
                 else:
                     # Standard forward pass (no AMP)
                     out, loss = self.model(data, target, criterion=criterion)
                     loss.backward()
                     
                     if grad_clip > 0:
-                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=grad_clip)
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=grad_clip, error_if_nonfinite=True)
                     
                     optimizer.step()
+                    optimizer_steps += 1
                 
                 loss_val = loss.item() if isinstance(loss, torch.Tensor) else float(loss)
                 epoch_train_loss.append(loss_val)
@@ -784,10 +854,19 @@ class PyTorchModel:
                 tk.set_postfix({'Loss': f'{loss_val:.4f}'})
             
             avg_train_loss = sum(epoch_train_loss) / len(epoch_train_loss) if epoch_train_loss else 0.0
+            total_optimizer_steps += optimizer_steps
             
             # === Validation Phase ===
             val_loss = None
-            if val_loader is not None:
+            val_metrics = None
+            if val_loader is not None and selection_metric == 'accuracy':
+                from .experiments import evaluate_loader
+                val_metrics, predictions = evaluate_loader(self, val_loader, deadline=deadline)
+                val_loss = val_metrics['loss']
+                val_hist.append(val_loss)
+                if on_validation is not None:
+                    on_validation(epoch + 1, val_metrics, predictions)
+            elif val_loader is not None:
                 self.model.eval()
                 epoch_val_loss = []
                 
@@ -829,8 +908,13 @@ class PyTorchModel:
             # === Early Stopping 및 Best Temp Model 저장 ===
             improved = False
             if val_loader is not None and val_loss is not None:
-                if val_loss < best_val_loss:
+                from .experiments import selection_key
+                score = selection_key(val_metrics) if val_metrics is not None else (-val_loss,)
+                if best_score is None or score > best_score:
                     improved = True
+                    best_score = score
+                    best_metrics = val_metrics
+                    best_elapsed_sec = time.time() - train_started_at
                     best_val_loss = val_loss
                     best_epoch = epoch + 1
                     patience_counter = 0
@@ -841,13 +925,14 @@ class PyTorchModel:
                         if self.verbose > 0:
                             print(f"  → Best temp model saved (val_loss: {val_loss:.4f})")
                 else:
-                    patience_counter += 1
+                    if epoch + 1 > min_epochs:
+                        patience_counter += 1
 
                     if self.verbose > 0:
                         print(f"  → No improvement for {patience_counter} epochs (best: {best_val_loss:.4f} at epoch {best_epoch})")
 
                     # Early stopping 체크
-                    if early_stopping_patience > 0 and patience_counter >= early_stopping_patience:
+                    if epoch + 1 >= min_epochs and early_stopping_patience > 0 and patience_counter >= early_stopping_patience:
                         # 저장과 export 는 루프 밖 한 곳에서만 한다.
                         # 여기서 하면 아래 .tmp 승격이 덮어써 아티팩트가 갈린다.
                         if self.verbose > 0:
@@ -868,6 +953,10 @@ class PyTorchModel:
                            best_val_loss=None if best_val_loss == float('inf') else best_val_loss,
                            best_epoch=best_epoch, improved=improved,
                            patience_counter=patience_counter,
+                           val_metrics=val_metrics, best_metrics=best_metrics,
+                           epoch_sec=time.monotonic() - epoch_started_at,
+                           optimizer_steps=optimizer_steps, amp_skipped_steps=amp_skipped_steps,
+                           best_elapsed_sec=best_elapsed_sec,
                            elapsed_sec=time.time() - train_started_at)
             if signal is False:
                 stop_reason = 'cancelled'
@@ -893,13 +982,16 @@ class PyTorchModel:
                   artifacts={})
             return train_hist
 
+        if not total_optimizer_steps:
+            raise ValueError('유효한 optimizer step 없음: AMP overflow·빈 학습셋을 확인하세요')
+
         # 기존 모델이 더 낫다면 갈아치우지 않는다.
         #
         # 학습은 결과가 좋든 나쁘든 아티팩트를 덮어쓴다. 실제로 예전 캡차 하나가 정체 구간에서
         # 조기 종료된 채로 서빙 중이던 86% 모델을 0% 모델로 교체한 적이 있다.
         # 같은 val_loader 로 기존 체크포인트를 재보면 비교가 공정하다.
         incumbent_val_loss = None
-        if val_loader is not None and os.path.exists(model_path):
+        if selection_metric == 'loss' and val_loader is not None and os.path.exists(model_path):
             incumbent_val_loss = self._evaluate_checkpoint(model_path, val_loader, criterion)
 
         if (incumbent_val_loss is not None and best_val_loss != float('inf')
@@ -924,7 +1016,7 @@ class PyTorchModel:
         else:
             self.save_model(model_path)
 
-        artifacts = self.finalize_artifacts(model_path)
+        artifacts = self.finalize_artifacts(model_path) if export_artifacts else {'checkpoint': model_path}
 
         if self.verbose > 0:
             print("=" * 70)
@@ -935,6 +1027,7 @@ class PyTorchModel:
         _emit('done',
               epochs_run=epochs_run, epochs=epochs,
               stop_reason=stop_reason or 'completed',
+              best_metrics=best_metrics, best_elapsed_sec=best_elapsed_sec,
               best_val_loss=None if best_val_loss == float('inf') else best_val_loss,
               best_epoch=best_epoch,
               elapsed_sec=time.time() - train_started_at,
@@ -1000,7 +1093,8 @@ class PyTorchModel:
             label = "Temp model" if temp else "Final model"
             print(f"Model saved - {label}: {target}")
 
-    def finalize_artifacts(self, model_path: str, verify: bool = True) -> Dict[str, str]:
+    def finalize_artifacts(self, model_path: str, verify: bool = True,
+                           output_dir: str | None = None) -> Dict[str, str]:
         """확정된 체크포인트 하나에서 나머지 아티팩트를 내보내고 동등성을 검증한다.
 
         메모리에 남은 모델이 아니라 **디스크의 체크포인트를 다시 읽어서** export 한다.
@@ -1018,20 +1112,22 @@ class PyTorchModel:
             {"checkpoint": ..., "export": ..., "onnx": ..., "ort": ..., "meta": ...} 경로 매핑
         """
         self.model.load_state_dict(
-            torch.load(model_path, map_location=self.device, weights_only=False)
+            torch.load(model_path, map_location=self.device, weights_only=True)
         )
         self.model.eval()
 
-        export_path = self.train_data.get_export_path()
+        if output_dir is not None:
+            os.makedirs(output_dir, exist_ok=False)
+        export_path = os.path.join(output_dir, 'model.pt2') if output_dir else self.train_data.get_export_path()
         self.export_pt2(export_path)
 
-        onnx_path = self.train_data.get_onnx_path()
+        onnx_path = os.path.join(output_dir, 'model.onnx') if output_dir else self.train_data.get_onnx_path()
         self.export_onnx(onnx_path)
 
-        ort_path = self.train_data.get_ort_path()
+        ort_path = os.path.join(output_dir, 'model.ort') if output_dir else self.train_data.get_ort_path()
         self.export_ort(onnx_path, ort_path)
 
-        meta_path = self.train_data.get_meta_path()
+        meta_path = os.path.join(output_dir, 'model.meta.json') if output_dir else self.train_data.get_meta_path()
         self.save_meta(meta_path)
 
         if verify:

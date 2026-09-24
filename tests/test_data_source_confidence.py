@@ -7,13 +7,14 @@ from pathlib import Path
 import pytest
 
 
-def test_confidence_ui_contract():
+@pytest.mark.parametrize('script', ['data_source_confidence.cjs', 'data_source_stream.cjs'])
+def test_confidence_ui_contract(script):
 	node = shutil.which("node")
 	if not node:
 		pytest.skip("프런트엔드 회귀 검사에 Node.js가 필요합니다")
 	root = Path(__file__).resolve().parents[1]
 	result = subprocess.run(
-		[node, str(root / "tests/data_source_confidence.cjs")],
+		[node, str(root / "tests" / script)],
 		cwd=root, capture_output=True, text=True, check=False,
 	)
 	assert result.returncode == 0, result.stdout + result.stderr

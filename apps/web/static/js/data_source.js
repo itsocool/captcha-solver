@@ -477,6 +477,65 @@ function addRow(item) {
 	rows.prepend(tr);
 }
 
+/** 작업 SSE는 자동 재접속하지 않고 HTTP 오류 본문과 명시적 취소를 처리한다. */
+function openTaskStream(url) {
+	const controller = new AbortController();
+	const listeners = new Map();
+	let closed = false;
+	const stream = {
+		addEventListener: (name, listener) => listeners.set(name, listener),
+		close: () => { closed = true; controller.abort(); },
+	};
+	const emit = (name, data) => {
+		if (!closed) listeners.get(name)?.({data});
+	};
+	async function consume() {
+		let reader;
+		try {
+			const response = await fetch(url, {signal: controller.signal, headers: {Accept: "text/event-stream"}});
+			if (!response.ok) {
+				const payload = await response.json().catch(() => ({}));
+				const detail = Array.isArray(payload.detail)
+					? payload.detail.map((item) => item.msg).join(" · ") : payload.detail;
+				throw new Error(detail || `요청 실패 (HTTP ${response.status})`);
+			}
+			if (!response.headers.get("content-type")?.includes("text/event-stream") || !response.body) {
+				throw new Error("서버의 수집 진행 응답을 읽을 수 없습니다");
+			}
+			reader = response.body.getReader();
+			const decoder = new TextDecoder();
+			let buffer = "";
+			while (!closed) {
+				const {value, done} = await reader.read();
+				if (done) break;
+				buffer += decoder.decode(value, {stream: true});
+				let boundary;
+				while (!closed && (boundary = /\r?\n\r?\n/.exec(buffer))) {
+					const frame = buffer.slice(0, boundary.index);
+					buffer = buffer.slice(boundary.index + boundary[0].length);
+					let name = "message";
+					const data = [];
+					for (const line of frame.split(/\r?\n/)) {
+						if (line.startsWith("event:")) name = line.slice(6).trim();
+						else if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
+					}
+					if (data.length) emit(name, data.join("\n"));
+				}
+			}
+			if (!closed) throw new Error("완료 전에 연결이 종료되었습니다. 저장된 이미지를 확인한 후 다시 시도하세요");
+		} catch (error) {
+			if (!closed) emit("error", JSON.stringify({message: error.message || "서버 연결에 실패했습니다"}));
+		} finally {
+			if (reader) {
+				await reader.cancel().catch(() => {});
+				reader.releaseLock();
+			}
+		}
+	}
+	void consume();
+	return stream;
+}
+
 function finish(label) {
 	if (source) {
 		source.close();
@@ -487,6 +546,7 @@ function finish(label) {
 }
 
 runButton.addEventListener("click", async () => {
+	if (runButton.disabled || source || autoLabelSource || movingToTrain) return;
 	const url = urlInput.value.trim();
 	if (!url) {
 		progressLabel.textContent = "URL 을 입력하세요";
@@ -494,10 +554,11 @@ runButton.addEventListener("click", async () => {
 		return;
 	}
 	const {captchaId, rev} = currentTarget();
+	setRunning(true);
 
 	// 추가를 누른 시점의 입력값을 그 대상의 마지막 값으로 DB 에 남긴다. (change 이벤트 저장과
 	// 별개로 — 스트림이 검증 오류로 열리지 않아도 입력은 보존되도록.)
-	await saveCurrentParams();
+	void saveCurrentParams();
 
 	reset();
 	counts.total = Number(countInput.value);
@@ -514,7 +575,7 @@ runButton.addEventListener("click", async () => {
 		count: countInput.value,
 		delay_ms: delayInput.value || "0",
 	});
-	source = new EventSource(`${CONTEXT_PATH}/api/v1/data-source/stream?${params}`);
+	source = openTaskStream(`${CONTEXT_PATH}/api/v1/data-source/stream?${params}`);
 
 	source.addEventListener("start", (event) => {
 		const payload = JSON.parse(event.data);
@@ -548,17 +609,18 @@ runButton.addEventListener("click", async () => {
 	});
 
 	source.addEventListener("error", (event) => {
-		// 서버가 보낸 error 이벤트에는 data 가 있고, 연결 자체가 끊기면 없다.
+		// 공용 스트림 클라이언트가 HTTP·전송 오류도 같은 메시지 형식으로 전달한다.
 		if (event.data) {
 			finish(`오류: ${JSON.parse(event.data).message}`);
-		} else if (source && source.readyState === EventSource.CLOSED) {
+		} else {
 			finish("연결이 끊겼습니다");
 		}
+		loadGallery();
 	});
 });
 
 stopButton.addEventListener("click", () => {
-	// EventSource 를 닫으면 서버 쪽 제너레이터가 정리되면서 수집 락이 풀린다.
+	// 요청을 취소하면 서버가 작업 제너레이터를 닫아 수집 락을 반환한다.
 	finish(`중단됨 · ${counts.saved}장 저장`);
 	loadGallery();
 });
@@ -617,7 +679,7 @@ function startPrediction(renameFiles) {
 	const params = new URLSearchParams({captcha_id: captchaId, rev, device: "auto", min_confidence: minConfidence});
 	const endpoint = renameFiles ? "auto-label" : "confidence";
 	const action = renameFiles ? "이름 변경" : "신뢰도 계산";
-	autoLabelSource = new EventSource(`${CONTEXT_PATH}/api/v1/data-source/${endpoint}/stream?${params}`);
+	autoLabelSource = openTaskStream(`${CONTEXT_PATH}/api/v1/data-source/${endpoint}/stream?${params}`);
 	let done = 0;
 	let total = 0;
 
