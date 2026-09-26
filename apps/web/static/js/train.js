@@ -154,6 +154,10 @@ function num(value, digits = 4) {
 	return value === null || value === undefined ? "—" : Number(value).toFixed(digits);
 }
 
+function formatLoss(value) {
+	return value === null || value === undefined ? "—" : Number(value).toFixed(6);
+}
+
 function updateProgress(done) {
 	const ratio = context.totalEpochs ? done / context.totalEpochs : 0;
 	progressBar.style.width = `${Math.min(100, ratio * 100)}%`;
@@ -203,7 +207,7 @@ function renderChart() {
 		</svg>
 		<div class="mt-2 flex justify-between font-mono text-[11px] text-muted-foreground">
 			<span>epoch ${visible[0].epoch}</span>
-			<span>${min.toFixed(4)} ~ ${max.toFixed(4)}</span>
+			<span>${min.toFixed(6)} ~ ${max.toFixed(6)}</span>
 			<span>epoch ${visible[visible.length - 1].epoch}</span>
 		</div>
 		<div class="mt-4 flex gap-4 text-xs text-muted-foreground">
@@ -227,8 +231,8 @@ function addRow(event) {
 	tr.className = "border-b border-border last:border-0";
 	tr.innerHTML = `
 		<td class="px-6 py-2.5 font-mono text-muted-foreground">${event.epoch} / ${event.epochs}</td>
-		<td class="px-6 py-2.5 font-mono">${num(event.train_loss)}</td>
-		<td class="px-6 py-2.5 font-mono ${event.improved ? "text-success" : ""}">${num(event.val_loss)}</td>
+		<td class="px-6 py-2.5 font-mono">${formatLoss(event.train_loss)}</td>
+		<td class="px-6 py-2.5 font-mono ${event.improved ? "text-success" : ""}">${formatLoss(event.val_loss)}</td>
 		<td class="px-6 py-2.5 font-mono text-muted-foreground">${num(event.lr, 6)}</td>
 		<td class="px-6 py-2.5 font-mono text-muted-foreground">${event.elapsed_sec.toFixed(1)}s</td>
 		<td class="px-6 py-2.5">${note}</td>`;
@@ -316,9 +320,9 @@ function attachStream() {
 			context.best = {valLoss: payload.best_val_loss, epoch: payload.best_epoch};
 		}
 		stat.epoch.textContent = `${payload.epoch} / ${payload.epochs}`;
-		stat.trainLoss.textContent = num(payload.train_loss);
-		stat.valLoss.textContent = num(payload.val_loss);
-		stat.best.textContent = num(payload.best_val_loss);
+		stat.trainLoss.textContent = formatLoss(payload.train_loss);
+		stat.valLoss.textContent = formatLoss(payload.val_loss);
+		stat.best.textContent = formatLoss(payload.best_val_loss);
 		stat.elapsed.textContent = `${payload.elapsed_sec.toFixed(1)}s`;
 		addRow(payload);
 		renderChart();
@@ -332,8 +336,8 @@ function attachStream() {
 		stat.elapsed.textContent = `${payload.elapsed_sec.toFixed(1)}s`;
 		artifacts.textContent = "기존 모델 유지 (교체 안 함)";
 		finish(
-			`기존 모델이 더 좋아 유지 · 기존 ${num(payload.incumbent_val_loss)} ` +
-			`vs 이번 ${num(payload.best_val_loss)} · ${payload.epochs_run}에폭`,
+			`기존 모델이 더 좋아 유지 · 기존 ${formatLoss(payload.incumbent_val_loss)} ` +
+			`vs 이번 ${formatLoss(payload.best_val_loss)} · ${payload.epochs_run}에폭`,
 		);
 	});
 
@@ -354,7 +358,7 @@ function attachStream() {
 			cancelled_discarded: "중단됨 (저장 안 함)",
 		}[payload.stop_reason] || payload.stop_reason;
 		finish(
-			`${reason} · ${payload.epochs_run}에폭 · best ${num(payload.best_val_loss)} ` +
+			`${reason} · ${payload.epochs_run}에폭 · best ${formatLoss(payload.best_val_loss)} ` +
 			`(epoch ${payload.best_epoch}) · ${payload.elapsed_sec.toFixed(1)}s`,
 		);
 	});
@@ -414,7 +418,7 @@ runButton.addEventListener("click", async () => {
 // 경계에서 멈춘 뒤 done/skipped 이벤트가 이 스트림으로 와서 finish() 를 태운다.
 stopButton.addEventListener("click", () => {
 	stopBest.textContent = context.best
-		? `현재 best: val_loss ${num(context.best.valLoss)} (epoch ${context.best.epoch})`
+		? `현재 best: val_loss ${formatLoss(context.best.valLoss)} (epoch ${context.best.epoch})`
 		: "아직 best 모델이 없습니다 (첫 검증 전이면 저장할 것도 없습니다).";
 	stopModal.classList.replace("hidden", "flex");
 

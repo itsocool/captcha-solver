@@ -231,7 +231,8 @@ function renderHistogram() {
 }
 
 function visibleItems() {
-	return onlyMismatch.checked ? items.filter((item) => !item.match) : items;
+	const visible = onlyMismatch.checked ? items.filter((item) => !item.match) : [...items];
+	return visible.sort((a, b) => a.confidence - b.confidence || a.index - b.index);
 }
 
 function renderTable() {
