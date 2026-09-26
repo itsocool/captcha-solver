@@ -1379,7 +1379,7 @@ class PyTorchModel:
         self._apply_meta()
         # 로드에 실패하면 self.model 을 원래대로 되돌리고 예외를 올린다. build_model
         # 이 self.model 에 빌드 직후의 무학습 모델을 먼저 넣어두는데(학습 경로가
-        # 그 동작에 의존한다), 체크포인트가 깨졌거나 LFS 포인터일 때 그게 그대로
+		# 그 동작에 의존한다), 체크포인트가 깨졌을 때 그게 그대로
         # 남으면 호출자가 학습된 모델로 알고 랜덤 가중치로 예측해버린다.
         previous = self.model
         model = self.build_model()

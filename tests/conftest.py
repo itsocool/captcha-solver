@@ -5,13 +5,8 @@ import zlib
 import pytest
 
 
-# 실제로 저장소에서 터진 상황: Git LFS 포인터가 model.pth 자리에 남아 있으면
-# torch.load 가 UnpicklingError("invalid load key, 'v'") 로 죽는다.
-LFS_POINTER = (
-	b"version https://git-lfs.github.com/spec/v1\n"
-	b"oid sha256:0000000000000000000000000000000000000000000000000000000000000000\n"
-	b"size 9220237\n"
-)
+# 잘못된 체크포인트가 model.pth 자리에 남아 있으면 torch.load가 실패한다.
+INVALID_CHECKPOINT = b"not a valid model checkpoint"
 
 
 def _png(width: int, height: int) -> bytes:
@@ -42,7 +37,7 @@ def captcha_data_dir(tmp_path):
 	"""
 
 	def build(captcha_id: str, rev: int = 1, labels=("012345", "678901", "234567"),
-	          size=(120, 40), checkpoint: bytes = LFS_POINTER) -> str:
+	          size=(120, 40), checkpoint: bytes = INVALID_CHECKPOINT) -> str:
 		base = tmp_path / "captcha_data"
 		train_dir = base / captcha_id / str(rev) / "images" / "train"
 		model_dir = base / captcha_id / str(rev) / "model"

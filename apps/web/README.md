@@ -8,12 +8,7 @@ Python 3.13 이상이 필요합니다. 실제 `web` 패키지는 이 디렉터�
 
 저장소 루트에서:
 
-Git LFS가 설치되어 있어야 합니다. 최초 실행 전에 추론용 가중치를 내려받으세요.
-`model.pth`가 132바이트짜리 LFS 포인터로 남아 있으면 Predict가 실패합니다.
-
 ```bash
-git lfs install --local --skip-repo
-git lfs pull --include='captcha_data/*/1/model/model.pth' --exclude=''
 uv sync --project apps/web --locked
 uv run --project apps/web web
 # 개발 시 앱 코드만 감시
