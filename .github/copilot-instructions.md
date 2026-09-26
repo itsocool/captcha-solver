@@ -17,7 +17,7 @@
 - 레이블 처리와 모델 저장 규약은 PyTorch 중심입니다. 학습 체크포인트는 `model.pth`이며, 학습 종료 시 `model.pt2`(torch.export)와 Rust·Java 런타임 배포용 `model.onnx`를 함께 내보냅니다.
 
 ### 개발자 워크플로(빠른 예시)
-- 환경 요구: `pyproject.toml`에 `requires-python = "==3.12.*"`가 설정되어 있습니다.
+- 환경 요구: 웹 앱과 Python 패키지는 Python 3.13 이상을 요구합니다 (`apps/web/pyproject.toml`, `packages/python_3.13/pyproject.toml`). 루트 `.python-version`도 3.13을 사용합니다.
 - 의존성 설치: `uv sync` (락파일 고정 설치는 `uv sync --frozen`).
 - GPU 체크: `python main.py` 출력과 `nvidia-smi`를 확인하세요.
 - 학습: 웹 `/train` 또는 `web.core.engine.train_model()`.

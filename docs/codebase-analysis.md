@@ -157,7 +157,7 @@ sequenceDiagram
 
 | 설정 | 출처/기본값 | 목적 |
 | :--- | :--- | :--- |
-| Python | `pyproject.toml`: `==3.12.*` | 실행 버전 고정 |
+| Python | `.python-version`: `3.13`; 앱 패키지 `requires-python = ">=3.13"` | 실행 버전과 최소 요구 버전 |
 | 패키지 관리자 | `uv.lock`, `uv` | 의존성 재현 |
 | 기본 캡차 | `db/schema.sql`: `service_captchas.is_default` | 환경 변수가 아니라 DB 가 결정 |
 | `WEB_HOST` | `0.0.0.0` | 직접 실행 Uvicorn 바인드 주소 |
